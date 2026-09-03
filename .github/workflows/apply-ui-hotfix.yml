@@ -96,3 +96,5 @@ jobs:
           git add components/SwipePreviewApp.tsx app/globals.css
           git commit -m "Simplify feed stats and highlight FANZA CTA"
           git push origin main
+
+# one-shot trigger
