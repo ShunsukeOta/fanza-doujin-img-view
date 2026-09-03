@@ -1,39 +1,74 @@
-# FANZA同人 サンプル画像ビューアー
+# FANZA同人 Swipe Preview
 
-DMM Webサービスの商品情報APIを使い、FANZA同人作品の `sampleImageURL.sample_l.image` を取得して横スクロールで確認するための簡易ビューアーです。
+DMM/FANZA Webサービス v3 の公式APIレスポンスだけを使って、FANZA同人作品を「縦スワイプで次作品 / 横スワイプで `sample_l` を読む」SP向けフィードとして検証するツールです。
 
-作品ID（CID）だけでなく、FANZAの商品URLをそのまま入力してもCIDを抽出します。
+## 現在の仕様
 
-## できること
+- `FloorList` から `FANZA / doujin / digital_doujin` と `floor_id` を動的解決
+- `ItemList` で同人作品を最大100件/リクエストで取得
+- `GenreSearch` で同人フロアのジャンル一覧を取得
+- ジャンル指定時は `article=genre` / `article_id=<genre_id>` をItemListへ渡す
+- サンプル画像は `sampleImageURL.sample_l.image` のみ使用
+- 最大800件を走査し、API素材タイプ別に `sample_l` の枚数分布を診断
+- サンプル枚数・レビュー件数・平均評価でフィードを絞り込み
+- CID / FANZA商品URLを直接指定して単品テスト可能
+- 各作品で `API NP / 読込 X/N / 失敗 Y` をリアルタイム表示
+- API ID / Affiliate IDはPHP側だけで使用し、ブラウザへ露出しない
 
-- FANZA同人のCIDを指定して商品情報を取得
-- `sample_l` のサンプル画像をすべて表示
-- 1画像ずつ横スワイプ / 横スクロール
-- PCの左右キー、前へ・次へボタンに対応
-- マウスホイールをビューアー上で横スクロールとして利用可能
-- スマートフォンの横スワイプに対応
-- サンプル画像枚数を表示
-- 各画像の実解像度（naturalWidth × naturalHeight）を表示
-- FANZAの商品ページへのアフィリエイトリンクを表示
-- API ID / Affiliate IDはブラウザ側へ露出しない
+## 「コミック / CG / ゲーム / ボイス」の扱いについて
+
+ここは重要です。
+
+FANZA同人の `ItemList` では、`iteminfo.genre` は「制服」「巨乳」「中出し」「男性向け」などの**ジャンルタグ**です。`iteminfo.genre` を使って「コミック作品かどうか」を判定する実装は誤りです。
+
+一方、APIが返す `imageURL` / `sampleImageURL` には、同人作品で次のようなアセットパスが実際に現れます。
+
+```text
+/digital/comic/
+/digital/cg/
+/digital/game/
+/digital/voice/
+```
+
+このツールでは、この**API自身が返した画像URLのパス**を「API素材タイプ」として判定します。
+
+これはFANZA画面上の正式な「作品形式」フィールドをAPIから取得しているわけではないため、UIでは「コミック系」「CG・イラスト系」などと表記しています。画像URLを推測・生成して判定することはしていません。
+
+公開されている実API形式のテストデータでは、`/digital/comic/` の同人作品で `sample_l` が10枚返る例も確認できます。したがって「同人コミックはAPIから複数サンプルを取得できない」という仕様ではありません。作品ごとに0枚・少数・10枚以上など差があります。
+
+## API診断
+
+右上の「絞り込み」を開くと、現在のジャンル条件で最大800件を走査した結果を表示します。
+
+```text
+API素材       総数   0P   1–4P   5–9P   10P+
+すべて
+コミック系
+CG・イラスト系
+ゲーム系
+ボイス・音声系
+その他・不明
+```
+
+この集計は、レビュー・評価・最低sample_l枚数のフィルタを掛ける**前**に行います。
+
+そのため、「コミック系800件のうち10枚以上が何件あるか」のような実データをその場で確認できます。
+
+`最低sample_l枚数 = 0` にしても、画像0枚の作品はフィードそのものには表示できません。ただし0P作品として診断集計には含まれます。
 
 ## 必要環境
 
-- PHP 7.4 以上
+- PHP 7.4以上
 - PHP cURL拡張
 - DMM Webサービス API ID
 - DMMアフィリエイト Affiliate ID
 
 ## セットアップ
 
-### 1. リポジトリを取得
-
 ```bash
 git clone https://github.com/ShunsukeOta/fanza-doujin-img-view.git
 cd fanza-doujin-img-view
 ```
-
-### 2. API設定ファイルを作成
 
 Windows:
 
@@ -47,90 +82,69 @@ macOS / Linux:
 cp config.example.php config.php
 ```
 
-作成した `config.php` を開いて、自分のAPI IDとAffiliate IDを設定します。
+`config.php`:
 
 ```php
 <?php
 
 return [
-    'api_id' => 'ここにAPI ID',
-    'affiliate_id' => 'ここにAffiliate ID',
+    'api_id' => 'YOUR_API_ID',
+    'affiliate_id' => 'YOUR_AFFILIATE_ID',
 ];
 ```
 
-`config.php` は `.gitignore` 済みなので、API IDをGitHubへコミットしないでください。
+`config.php` は `.gitignore` 済みです。API IDをGitHubへコミットしないでください。
 
-環境変数 `DMM_API_ID` / `DMM_AFFILIATE_ID` を使うこともできます。
-
-### 3. ローカルサーバーを起動
+起動:
 
 ```bash
 php -S localhost:8000
 ```
 
-ブラウザで以下を開きます。
+ブラウザ:
 
 ```text
 http://localhost:8000
 ```
 
-### 4. 作品を表示
+## 操作
 
-入力欄へ以下のどちらかを入れて `OK` を押します。
+- 上下スワイプ: 前後の作品
+- 左右スワイプ: 同一作品の `sample_l`
+- 右上「絞り込み」: API素材タイプ / ジャンル / サンプル枚数 / レビュー / 評価 / API診断
+- いいね・保存: 現在は `localStorage`
+- 共有: Web Share API、未対応環境ではURLコピー
 
-- FANZA同人の作品ID（CID）
-- FANZA同人の商品URL
-
-取得に成功すると、APIが返した `sample_l` の画像が横向きビューアーに表示されます。
-
-## 操作方法
-
-- スマートフォン: 左右にスワイプ
-- PC: 横スクロール / マウスホイール / 左右矢印キー
-- ボタン: `← 前へ` / `次へ →`
-
-画像右下に以下が表示されます。
+## 使用するAPI
 
 ```text
-3 / 10 · 1200×1697px
+https://api.dmm.com/affiliate/v3/FloorList
+https://api.dmm.com/affiliate/v3/GenreSearch
+https://api.dmm.com/affiliate/v3/ItemList
 ```
 
-これで、何枚のサンプル画像が取得できるか、APIから返る `sample_l` が実際に何pxあるかを作品ごとに確認できます。
-
-## API取得条件
-
-このツールは商品情報APIを以下の条件で呼び出します。
+ItemListの対象は、FloorListで解決した以下です。
 
 ```text
 site=FANZA
 service=doujin
 floor=digital_doujin
-cid=<入力したCID>
-hits=1
-output=json
 ```
 
-利用する画像は以下だけです。
+サンプル画像として使用するのは以下のみです。
 
 ```text
 sampleImageURL.sample_l.image
 ```
 
-試し読みビューアー内部の画像をスクレイピングしたり、画像URLを推測して別サイズを取得したりはしません。
+FANZAの試し読みビューアーをスクレイピングしたり、存在しない画像URLを規則から推測して取得したりはしません。
 
-## サンプルが表示されない場合
+## ファイル構成
 
-次を確認してください。
-
-1. CIDがFANZA同人作品のものか
-2. `config.php` のAPI ID / Affiliate IDが正しいか
-3. PHPのcURL拡張が有効か
-4. 対象作品に `sampleImageURL.sample_l.image` が存在するか
-
-商品自体が取得できても `sample_l` が0枚の場合は、その旨を画面に表示します。表紙画像をサンプルとして代用はしません。
-
-## セキュリティ
-
-API IDとAffiliate IDはPHP側からDMM Webサービスへ送信します。HTMLやJavaScriptには埋め込んでいません。
-
-公開サーバーへ設置する場合も、`config.php` をGit管理しないでください。
+```text
+index.php        UI / controller
+lib.php          FANZA API・Floor/Genre解決・フィルタ・診断集計
+assets/app.css   SPファーストUI
+assets/app.js    縦横スワイプ・画像ロード診断・いいね/保存/共有
+config.php       API認証情報（Git管理外）
+```
