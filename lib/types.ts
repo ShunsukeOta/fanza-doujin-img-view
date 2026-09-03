@@ -52,10 +52,18 @@ export type CatalogResponse = {
   items: FeedItem[];
   scanned: number;
   apiTotal: number;
-  stats: SampleStats;
   effectiveMinSamples: number;
   floor: FloorInfo;
   queryError: string;
+  offset: number;
+  nextOffset: number | null;
+  hasMore: boolean;
+};
+
+export type DiagnosticsResponse = {
+  scanned: number;
+  apiTotal: number;
+  stats: SampleStats;
 };
 
 export type MetaResponse = {
