@@ -1,4 +1,4 @@
-import { SwipePreviewApp } from "@/components/SwipePreviewApp";
+import { SwipePreviewAppOptimized } from "@/components/SwipePreviewAppOptimized";
 import type { AssetType, FilterValues } from "@/lib/types";
 
 type SearchValue = string | string[] | undefined;
@@ -31,5 +31,5 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
     minRating: boundedFloat(params.min_rating, 4.5, 0, 5),
   };
 
-  return <SwipePreviewApp initialFilters={initialFilters} initialCid={first(params.cid)} />;
+  return <SwipePreviewAppOptimized initialFilters={initialFilters} initialCid={first(params.cid)} />;
 }
