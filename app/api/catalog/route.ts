@@ -3,12 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   assetTypeDefinitions,
   feedRowFromItem,
-  fetchCatalog,
   fetchItem,
   normalizeCid,
   resolveDoujinFloor,
   safeErrorMessage,
 } from "@/lib/fanza";
+import { fetchFastCatalog } from "@/lib/fanza-catalog";
 import type { AssetType } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const floor = await resolveDoujinFloor();
-    const catalog = await fetchCatalog(floor, filters);
+    const catalog = await fetchFastCatalog(floor, filters);
     let items = catalog.items;
     let queryError = "";
 
@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
       {
         headers: cidInput
           ? { "Cache-Control": "private, no-store" }
-          : { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" },
+          : { "Cache-Control": "public, s-maxage=120, stale-while-revalidate=600" },
       },
     );
   } catch (error) {
