@@ -87,6 +87,13 @@ function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
+function formatPrice(price: string) {
+  const digits = price.replace(/[^0-9]/g, "");
+  if (!digits) return price;
+  const value = Number.parseInt(digits, 10);
+  return Number.isFinite(value) ? `¥${value.toLocaleString("ja-JP")}` : price;
+}
+
 function mergeUniqueItems(current: FeedItem[], incoming: FeedItem[]) {
   const seen = new Set(current.map((item) => item.cid));
   const next = [...current];
@@ -311,17 +318,11 @@ function WorkCard({
         <h2 className="item-title">{item.title || item.cid}</h2>
         <div className="item-stats">
           <span className="stat-chip">
-            ★ <strong>{item.rating.toFixed(1)}</strong>
-          </span>
-          <span className="stat-chip">
-            レビュー <strong>{item.reviews}</strong>
-          </span>
-          <span className="stat-chip">
-            サンプル <strong>{item.images.length}</strong>P
+            ★<strong>{item.rating.toFixed(1)}</strong> <span>({item.reviews}件)</span>
           </span>
           {item.price ? (
             <span className="stat-chip">
-              <strong>{item.price}</strong>
+              <strong>{formatPrice(item.price)}</strong>
             </span>
           ) : null}
         </div>
