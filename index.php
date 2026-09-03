@@ -15,64 +15,41 @@ function loadConfig(): array
         'api_id' => getenv('DMM_API_ID') ?: '',
         'affiliate_id' => getenv('DMM_AFFILIATE_ID') ?: '',
     ];
-
     $configPath = __DIR__ . '/config.php';
     if (is_file($configPath)) {
         $localConfig = require $configPath;
-        if (is_array($localConfig)) {
-            $config = array_merge($config, $localConfig);
-        }
+        if (is_array($localConfig)) $config = array_merge($config, $localConfig);
     }
-
     return $config;
 }
 
 function ensureApiConfig(array $config): void
 {
-    if (empty($config['api_id']) || empty($config['affiliate_id'])) {
-        throw new RuntimeException('API設定がありません。config.php に api_id と affiliate_id を設定してください。');
-    }
+    if (empty($config['api_id']) || empty($config['affiliate_id'])) throw new RuntimeException('API設定がありません。config.php に api_id と affiliate_id を設定してください。');
 }
 
 function normalizeCid(string $input): string
 {
     $input = trim($input);
-    if ($input === '') {
-        return '';
-    }
-
-    if (preg_match('~(?:^|/)cid=([^/?#&]+)~i', $input, $matches)) {
-        $input = $matches[1];
-    } elseif (preg_match('~[?&]cid=([^&#]+)~i', $input, $matches)) {
-        $input = $matches[1];
-    }
-
+    if ($input === '') return '';
+    if (preg_match('~(?:^|/)cid=([^/?#&]+)~i', $input, $matches)) $input = $matches[1];
+    elseif (preg_match('~[?&]cid=([^&#]+)~i', $input, $matches)) $input = $matches[1];
     $input = rawurldecode($input);
-
-    if (!preg_match('/^[A-Za-z0-9_-]+$/', $input)) {
-        throw new InvalidArgumentException('作品IDの形式が正しくありません。CIDまたはFANZA同人の商品URLを入力してください。');
-    }
-
+    if (!preg_match('/^[A-Za-z0-9_-]+$/', $input)) throw new InvalidArgumentException('作品IDの形式が正しくありません。CIDまたはFANZA同人の商品URLを入力してください。');
     return $input;
 }
 
 function intParam(string $key, int $default, int $min, int $max): int
 {
     $raw = $_GET[$key] ?? null;
-    if (!is_scalar($raw) || $raw === '') {
-        return $default;
-    }
-
+    if (!is_scalar($raw) || $raw === '') return $default;
     return max($min, min($max, (int) $raw));
 }
 
 function floatParam(string $key, float $default, float $min, float $max): float
 {
     $raw = $_GET[$key] ?? null;
-    if (!is_scalar($raw) || $raw === '') {
-        return $default;
-    }
-
+    if (!is_scalar($raw) || $raw === '') return $default;
     return max($min, min($max, (float) $raw));
 }
 
@@ -85,72 +62,39 @@ function stringParam(string $key, string $default = ''): string
 function apiRequest(string $endpointName, array $params, array $config): array
 {
     ensureApiConfig($config);
-
-    if (!function_exists('curl_init')) {
-        throw new RuntimeException('PHPのcURL拡張が有効になっていません。');
-    }
-
-    $params = array_merge([
-        'api_id' => $config['api_id'],
-        'affiliate_id' => $config['affiliate_id'],
-        'output' => 'json',
-    ], $params);
-
+    if (!function_exists('curl_init')) throw new RuntimeException('PHPのcURL拡張が有効になっていません。');
+    $params = array_merge(['api_id' => $config['api_id'], 'affiliate_id' => $config['affiliate_id'], 'output' => 'json'], $params);
     $endpoint = 'https://api.dmm.com/affiliate/v3/' . $endpointName . '?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
-
     $ch = curl_init($endpoint);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_CONNECTTIMEOUT => 10,
-        CURLOPT_TIMEOUT => 25,
-        CURLOPT_FOLLOWLOCATION => false,
-        CURLOPT_USERAGENT => 'fanza-doujin-img-view/2.0',
-        CURLOPT_HTTPHEADER => ['Accept: application/json'],
-    ]);
-
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_CONNECTTIMEOUT => 10, CURLOPT_TIMEOUT => 25, CURLOPT_FOLLOWLOCATION => false, CURLOPT_USERAGENT => 'fanza-doujin-img-view/2.0', CURLOPT_HTTPHEADER => ['Accept: application/json']]);
     $body = curl_exec($ch);
     if ($body === false) {
         $message = curl_error($ch);
         curl_close($ch);
         throw new RuntimeException('DMM Webサービスへの接続に失敗しました: ' . $message);
     }
-
     $httpStatus = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
     curl_close($ch);
-
-    if ($httpStatus < 200 || $httpStatus >= 300) {
-        throw new RuntimeException('DMM WebサービスがHTTP ' . $httpStatus . 'を返しました。');
-    }
-
+    if ($httpStatus < 200 || $httpStatus >= 300) throw new RuntimeException('DMM WebサービスがHTTP ' . $httpStatus . 'を返しました。');
     $data = json_decode($body, true);
-    if (!is_array($data)) {
-        throw new RuntimeException('DMM WebサービスのレスポンスをJSONとして解析できませんでした。');
-    }
-
+    if (!is_array($data)) throw new RuntimeException('DMM WebサービスのレスポンスをJSONとして解析できませんでした。');
     if (isset($data['result']['status']) && (string) $data['result']['status'] !== '200') {
         $message = isset($data['result']['message']) ? (string) $data['result']['message'] : 'APIエラーが発生しました。';
         throw new RuntimeException($message);
     }
-
     return $data;
 }
 
 function itemListRequest(array $params, array $config): array
 {
-    return apiRequest('ItemList', array_merge([
-        'site' => 'FANZA',
-        'service' => 'doujin',
-        'floor' => 'digital_doujin',
-    ], $params), $config);
+    return apiRequest('ItemList', array_merge(['site' => 'FANZA', 'service' => 'doujin', 'floor' => 'digital_doujin'], $params), $config);
 }
 
 function fetchItem(string $cid, array $config): array
 {
     $data = itemListRequest(['cid' => $cid, 'hits' => 1], $config);
     $items = $data['result']['items'] ?? [];
-    if (!is_array($items) || $items === []) {
-        throw new RuntimeException('このCIDは現在のFANZA同人APIでは取得できません。');
-    }
+    if (!is_array($items) || $items === []) throw new RuntimeException('このCIDは現在のFANZA同人APIでは取得できません。');
     return $items[0];
 }
 
@@ -158,11 +102,8 @@ function sampleImages(array $item): array
 {
     $images = $item['sampleImageURL']['sample_l']['image'] ?? [];
     if (!is_array($images)) return [];
-
     $result = [];
-    foreach ($images as $imageUrl) {
-        if (is_string($imageUrl) && filter_var($imageUrl, FILTER_VALIDATE_URL)) $result[] = $imageUrl;
-    }
+    foreach ($images as $imageUrl) if (is_string($imageUrl) && filter_var($imageUrl, FILTER_VALIDATE_URL)) $result[] = $imageUrl;
     return array_values(array_unique($result));
 }
 
@@ -170,7 +111,6 @@ function itemGenres(array $item): array
 {
     $genres = $item['iteminfo']['genre'] ?? [];
     if (!is_array($genres)) return [];
-
     $result = [];
     foreach ($genres as $genre) {
         if (!is_array($genre)) continue;
@@ -197,11 +137,8 @@ function itemMatchesCategory(array $item, string $category): bool
     if ($category === 'all') return true;
     $definitions = categoryDefinitions();
     if (!isset($definitions[$category])) return true;
-
     foreach (itemGenres($item) as $genre) {
-        foreach ($definitions[$category]['patterns'] as $pattern) {
-            if (mb_stripos($genre['name'], $pattern, 0, 'UTF-8') !== false) return true;
-        }
+        foreach ($definitions[$category]['patterns'] as $pattern) if (mb_stripos($genre['name'], $pattern, 0, 'UTF-8') !== false) return true;
     }
     return false;
 }
@@ -210,12 +147,10 @@ function normalizeGenreRows(array $data): array
 {
     $result = $data['result'] ?? [];
     if (!is_array($result)) return [];
-
     $rows = $result['genre'] ?? ($result['items'] ?? []);
     if (isset($rows['item']) && is_array($rows['item'])) $rows = $rows['item'];
     if (!is_array($rows)) return [];
     if (isset($rows['id']) || isset($rows['genre_id'])) $rows = [$rows];
-
     $genres = [];
     foreach ($rows as $row) {
         if (!is_array($row)) continue;
@@ -231,32 +166,27 @@ function fetchGenres(array $config): array
 {
     $cacheFile = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'fanza-doujin-img-view-genres.json';
     $cacheTtl = 86400;
-
     if (is_file($cacheFile) && (time() - (int) filemtime($cacheFile)) < $cacheTtl) {
         $cached = json_decode((string) file_get_contents($cacheFile), true);
         if (is_array($cached) && $cached !== []) return $cached;
     }
-
     $genres = [];
     $hits = 100;
     for ($page = 0; $page < 5; $page++) {
         $data = apiRequest('GenreSearch', ['floor_id' => DOUJIN_FLOOR_ID, 'hits' => $hits, 'offset' => 1 + ($page * $hits)], $config);
         $rows = normalizeGenreRows($data);
         foreach ($rows as $row) $genres[$row['id']] = $row;
-
         $resultCount = (int) ($data['result']['result_count'] ?? count($rows));
         $totalCount = (int) ($data['result']['total_count'] ?? count($genres));
         if ($resultCount < $hits || count($genres) >= $totalCount) break;
         usleep(150000);
     }
-
     $genres = array_values($genres);
     usort($genres, static function (array $a, array $b): int {
         $aKey = $a['ruby'] !== '' ? $a['ruby'] : $a['name'];
         $bKey = $b['ruby'] !== '' ? $b['ruby'] : $b['name'];
         return strnatcasecmp($aKey, $bKey);
     });
-
     if ($genres !== []) @file_put_contents($cacheFile, json_encode($genres, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     return $genres;
 }
@@ -281,7 +211,6 @@ function feedRowFromItem(array $item): array
         'cid' => (string) ($item['content_id'] ?? ''),
         'title' => (string) ($item['title'] ?? ''),
         'affiliate_url' => (string) ($item['affiliateURL'] ?? ''),
-        'cover' => (string) ($item['imageURL']['large'] ?? ''),
         'images' => sampleImages($item),
         'reviews' => (int) ($item['review']['count'] ?? 0),
         'rating' => (float) ($item['review']['average'] ?? 0),
@@ -298,37 +227,28 @@ function fetchFiltered(array $config, int $minSamples, int $minReviews, float $m
     $hits = 100;
     $maxPages = 8;
     $targetCount = 20;
-
     for ($page = 0; $page < $maxPages; $page++) {
         $params = ['hits' => $hits, 'offset' => 1 + ($page * $hits), 'sort' => 'review'];
         if ($genreId !== '') {
             $params['article'] = 'genre';
             $params['article_id'] = $genreId;
         }
-
         $data = itemListRequest($params, $config);
         $items = $data['result']['items'] ?? [];
         if (!is_array($items) || $items === []) break;
         $scanned += count($items);
-
         foreach ($items as $item) {
             if (!is_array($item)) continue;
             $row = feedRowFromItem($item);
             if ($row['cid'] === '' || isset($seen[$row['cid']])) continue;
             $seen[$row['cid']] = true;
-            if (count($row['images']) < $minSamples) continue;
-            if ($row['reviews'] < $minReviews) continue;
-            if ($row['rating'] < $minRating) continue;
-            if (!itemMatchesCategory($item, $category)) continue;
-
+            if (count($row['images']) < $minSamples || $row['reviews'] < $minReviews || $row['rating'] < $minRating || !itemMatchesCategory($item, $category)) continue;
             $matches[] = $row;
             if (count($matches) >= $targetCount) break 2;
         }
-
         if (count($items) < $hits) break;
         if ($page + 1 < $maxPages) usleep(220000);
     }
-
     return ['items' => $matches, 'scanned' => $scanned];
 }
 
@@ -339,10 +259,8 @@ $minReviews = intParam('min_reviews', 10, 0, 100000);
 $minRating = floatParam('min_rating', 4.5, 0, 5);
 $category = stringParam('category', 'all');
 $genreId = stringParam('genre_id');
-
 $categories = categoryDefinitions();
 if (!isset($categories[$category])) $category = 'all';
-
 $genres = [];
 $genreError = '';
 try {
@@ -351,7 +269,6 @@ try {
 } catch (Throwable $e) {
     $genreError = $e->getMessage();
 }
-
 $filtered = ['items' => [], 'scanned' => 0];
 $filterError = '';
 try {
@@ -359,7 +276,6 @@ try {
 } catch (Throwable $e) {
     $filterError = $e->getMessage();
 }
-
 $feedItems = $filtered['items'];
 $queryError = '';
 if ($query !== '') {
@@ -373,7 +289,6 @@ if ($query !== '') {
         $queryError = $e->getMessage();
     }
 }
-
 $activeGenreName = selectedGenreName($genres, $genreId);
 $activeConditionText = $categories[$category]['label'] . ' · ' . ($activeGenreName !== '' ? $activeGenreName : '全ジャンル');
 ?>
@@ -385,13 +300,13 @@ $activeConditionText = $categories[$category]['label'] . ' · ' . ($activeGenreN
 <meta name="theme-color" content="#090909">
 <title>FANZA同人 Swipe Preview</title>
 <style>
-:root{color-scheme:dark;--bg:#090909;--panel:#151515;--line:#2b2b2b;--text:#f5f5f5;--muted:#a4a4a4;--header-h:56px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif}*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}html,body{height:100%;margin:0;background:var(--bg);color:var(--text);overscroll-behavior:none}body{overflow:hidden}button,input,select{font:inherit}button,a{touch-action:manipulation}.hidden{display:none!important}
-.app-header{position:fixed;z-index:50;top:0;left:0;right:0;height:calc(var(--header-h) + env(safe-area-inset-top));padding:env(safe-area-inset-top) 12px 0;display:flex;align-items:center;justify-content:space-between;gap:10px;background:linear-gradient(180deg,rgba(8,8,8,.94) 0%,rgba(8,8,8,.62) 64%,transparent 100%);pointer-events:none}.brand{display:flex;align-items:center;gap:9px;min-width:0;pointer-events:auto}.brand-mark{width:27px;height:27px;border-radius:8px;background:#f2f2f2;color:#0b0b0b;display:grid;place-items:center;font-weight:900;font-size:12px}.brand-copy{min-width:0}.brand-title{font-weight:800;font-size:14px}.brand-condition{margin-top:1px;color:#bdbdbd;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:52vw}.header-actions{display:flex;align-items:center;gap:7px;pointer-events:auto}.icon-btn{min-width:40px;height:40px;padding:0 12px;border:1px solid rgba(255,255,255,.14);border-radius:999px;background:rgba(15,15,15,.68);backdrop-filter:blur(12px);color:#fff;font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer}.icon-btn svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.feed-count{min-width:40px;text-align:center;color:#ddd;font-size:11px;font-variant-numeric:tabular-nums}
-.feed{height:100dvh;overflow-y:auto;overflow-x:hidden;scroll-snap-type:y mandatory;scrollbar-width:none;overscroll-behavior-y:contain;touch-action:pan-y;background:#050505}.feed::-webkit-scrollbar,.preview-track::-webkit-scrollbar{display:none}.feed-item{position:relative;height:100dvh;min-height:100dvh;scroll-snap-align:start;scroll-snap-stop:always;overflow:hidden;background:#050505}.preview-track{position:absolute;inset:0;display:flex;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;scrollbar-width:none;overscroll-behavior-x:contain;touch-action:pan-x;z-index:1}.preview-page{position:relative;flex:0 0 100%;width:100%;height:100%;display:grid;place-items:center;scroll-snap-align:start;scroll-snap-stop:always;padding:calc(var(--header-h) + env(safe-area-inset-top) + 10px) 0 calc(154px + env(safe-area-inset-bottom));background:#050505}.preview-page::before{content:"";position:absolute;inset:0;background:var(--blur-image) center/cover no-repeat;filter:blur(26px) brightness(.24);transform:scale(1.12);opacity:.9}.preview-page::after{content:"";position:absolute;inset:0;background:rgba(0,0,0,.08)}.preview-page img{position:relative;z-index:1;display:block;max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;user-select:none;-webkit-user-drag:none;box-shadow:0 12px 42px rgba(0,0,0,.32)}.page-counter{position:absolute;z-index:12;top:calc(var(--header-h) + env(safe-area-inset-top) + 8px);left:50%;transform:translateX(-50%);height:26px;padding:0 10px;border-radius:999px;display:flex;align-items:center;background:rgba(0,0,0,.54);backdrop-filter:blur(10px);color:#eee;font-size:11px;font-variant-numeric:tabular-nums;pointer-events:none}.swipe-hint{position:absolute;z-index:12;top:50%;left:50%;transform:translate(-50%,-50%);padding:8px 11px;border-radius:999px;background:rgba(0,0,0,.58);color:#ddd;font-size:11px;pointer-events:none;opacity:0}.feed-item:first-child .swipe-hint{animation:hint 3.3s .65s ease both}@keyframes hint{0%,100%{opacity:0}18%,62%{opacity:1}}
-.item-gradient{position:absolute;z-index:8;left:0;right:0;bottom:0;height:44%;pointer-events:none;background:linear-gradient(180deg,transparent 0%,rgba(0,0,0,.23) 18%,rgba(0,0,0,.88) 70%,#050505 100%)}.item-info{position:absolute;z-index:15;left:14px;right:78px;bottom:calc(18px + env(safe-area-inset-bottom));pointer-events:none}.item-title{margin:0;color:#fff;font-size:16px;font-weight:760;line-height:1.42;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}.item-stats{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:8px;color:#d4d4d4;font-size:11px}.stat-chip{height:25px;padding:0 8px;border-radius:999px;background:rgba(255,255,255,.1);display:flex;align-items:center;gap:4px;backdrop-filter:blur(8px)}.stat-chip strong{font-weight:800;color:#fff}.genre-line{margin-top:8px;color:#bdbdbd;font-size:11px;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.open-link{pointer-events:auto;display:inline-flex;align-items:center;justify-content:center;gap:7px;margin-top:12px;height:40px;padding:0 16px;border-radius:999px;background:#fff;color:#090909;text-decoration:none;font-size:12px;font-weight:850;box-shadow:0 7px 20px rgba(0,0,0,.28)}.open-link svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-.action-rail{position:absolute;z-index:20;right:9px;bottom:calc(18px + env(safe-area-inset-bottom));display:flex;flex-direction:column;align-items:center;gap:11px}.action-btn{width:52px;border:0;background:none;color:#fff;padding:0;display:grid;justify-items:center;gap:4px;cursor:pointer}.action-icon{width:43px;height:43px;border-radius:50%;display:grid;place-items:center;background:rgba(15,15,15,.55);border:1px solid rgba(255,255,255,.13);backdrop-filter:blur(10px)}.action-btn svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.action-btn.is-active .action-icon{background:#fff;color:#0a0a0a}.action-label{font-size:9px;color:#ddd}.next-hint{position:absolute;z-index:16;bottom:calc(4px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);color:#777;font-size:9px;letter-spacing:.08em;pointer-events:none}
+:root{color-scheme:dark;--bg:#090909;--header-h:56px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif}*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}html,body{height:100%;margin:0;background:var(--bg);color:#f5f5f5;overscroll-behavior:none}body{overflow:hidden}button,input,select{font:inherit}button,a{touch-action:manipulation}
+.app-header{position:fixed;z-index:50;top:0;left:0;right:0;height:calc(var(--header-h) + env(safe-area-inset-top));padding:env(safe-area-inset-top) 12px 0;display:flex;align-items:center;justify-content:space-between;gap:10px;background:linear-gradient(180deg,rgba(8,8,8,.94),rgba(8,8,8,.62) 64%,transparent);pointer-events:none}.brand{display:flex;align-items:center;gap:9px;min-width:0;pointer-events:auto}.brand-mark{width:27px;height:27px;border-radius:8px;background:#f2f2f2;color:#0b0b0b;display:grid;place-items:center;font-weight:900;font-size:12px}.brand-copy{min-width:0}.brand-title{font-weight:800;font-size:14px}.brand-condition{margin-top:1px;color:#bdbdbd;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:52vw}.header-actions{display:flex;align-items:center;gap:7px;pointer-events:auto}.icon-btn{height:40px;padding:0 12px;border:1px solid #ffffff24;border-radius:999px;background:#0f0f0fad;backdrop-filter:blur(12px);color:#fff;font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer}.icon-btn svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.feed-count{min-width:40px;text-align:center;color:#ddd;font-size:11px;font-variant-numeric:tabular-nums}
+.feed{height:100dvh;overflow-y:auto;overflow-x:hidden;scroll-snap-type:y mandatory;scrollbar-width:none;overscroll-behavior-y:contain;background:#050505}.feed::-webkit-scrollbar,.preview-track::-webkit-scrollbar{display:none}.feed-item{position:relative;height:100dvh;min-height:100dvh;scroll-snap-align:start;scroll-snap-stop:always;overflow:hidden;background:#050505}.preview-track{position:absolute;inset:0;display:flex;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;scrollbar-width:none;overscroll-behavior-x:contain;z-index:1}.preview-page{position:relative;flex:0 0 100%;width:100%;height:100%;display:grid;place-items:center;scroll-snap-align:start;scroll-snap-stop:always;padding:calc(var(--header-h) + env(safe-area-inset-top) + 10px) 0 calc(154px + env(safe-area-inset-bottom));background:#080808}.preview-page::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 50% 38%,#292929 0,#101010 48%,#050505 100%)}.preview-page img{position:relative;z-index:1;display:block;max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;user-select:none;-webkit-user-drag:none;box-shadow:0 12px 42px #00000052}.page-counter{position:absolute;z-index:12;top:calc(var(--header-h) + env(safe-area-inset-top) + 8px);left:50%;transform:translateX(-50%);height:26px;padding:0 10px;border-radius:999px;display:flex;align-items:center;background:#0000008a;backdrop-filter:blur(10px);color:#eee;font-size:11px;font-variant-numeric:tabular-nums;pointer-events:none}.swipe-hint{position:absolute;z-index:12;top:50%;left:50%;transform:translate(-50%,-50%);padding:8px 11px;border-radius:999px;background:#00000094;color:#ddd;font-size:11px;pointer-events:none;opacity:0}.feed-item:first-child .swipe-hint{animation:hint 3.3s .65s ease both}@keyframes hint{0%,100%{opacity:0}18%,62%{opacity:1}}
+.item-gradient{position:absolute;z-index:8;left:0;right:0;bottom:0;height:44%;pointer-events:none;background:linear-gradient(180deg,transparent,#0000003b 18%,#000000e0 70%,#050505)}.item-info{position:absolute;z-index:15;left:14px;right:78px;bottom:calc(18px + env(safe-area-inset-bottom));pointer-events:none}.item-title{margin:0;color:#fff;font-size:16px;font-weight:760;line-height:1.42;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}.item-stats{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:8px;color:#d4d4d4;font-size:11px}.stat-chip{height:25px;padding:0 8px;border-radius:999px;background:#ffffff1a;display:flex;align-items:center;gap:4px;backdrop-filter:blur(8px)}.stat-chip strong{font-weight:800;color:#fff}.genre-line{margin-top:8px;color:#bdbdbd;font-size:11px;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.open-link{pointer-events:auto;display:inline-flex;align-items:center;justify-content:center;gap:7px;margin-top:12px;height:40px;padding:0 16px;border-radius:999px;background:#fff;color:#090909;text-decoration:none;font-size:12px;font-weight:850;box-shadow:0 7px 20px #00000047}.open-link svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.action-rail{position:absolute;z-index:20;right:9px;bottom:calc(18px + env(safe-area-inset-bottom));display:flex;flex-direction:column;align-items:center;gap:11px}.action-btn{width:52px;border:0;background:none;color:#fff;padding:0;display:grid;justify-items:center;gap:4px;cursor:pointer}.action-icon{width:43px;height:43px;border-radius:50%;display:grid;place-items:center;background:#0f0f0f8c;border:1px solid #ffffff21;backdrop-filter:blur(10px)}.action-btn svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.action-btn.is-active .action-icon{background:#fff;color:#0a0a0a}.action-label{font-size:9px;color:#ddd}.next-hint{position:absolute;z-index:16;bottom:calc(4px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);color:#777;font-size:9px;letter-spacing:.08em;pointer-events:none}
 .empty-state{height:100dvh;display:grid;place-items:center;padding:30px;text-align:center;background:#0b0b0b}.empty-card{max-width:360px}.empty-card h2{margin:0 0 8px;font-size:20px}.empty-card p{margin:0;color:#aaa;font-size:13px;line-height:1.7}.empty-card button{margin-top:18px}.error-banner{position:fixed;z-index:65;top:calc(var(--header-h) + env(safe-area-inset-top) + 6px);left:12px;right:12px;padding:10px 12px;border:1px solid #6b3434;border-radius:10px;background:#281717;color:#ffdede;font-size:11px;line-height:1.5}
-.sheet-backdrop{position:fixed;z-index:80;inset:0;background:rgba(0,0,0,.58);opacity:0;pointer-events:none;transition:opacity .2s}.sheet{position:fixed;z-index:90;left:0;right:0;bottom:0;max-height:min(82dvh,760px);overflow:auto;padding:8px 14px calc(18px + env(safe-area-inset-bottom));border-radius:20px 20px 0 0;background:#141414;border-top:1px solid #292929;transform:translateY(102%);transition:transform .24s cubic-bezier(.2,.75,.2,1);box-shadow:0 -18px 45px rgba(0,0,0,.35)}body.sheet-open .sheet-backdrop{opacity:1;pointer-events:auto}body.sheet-open .sheet{transform:translateY(0)}.sheet-handle{width:38px;height:4px;margin:2px auto 12px;border-radius:999px;background:#444}.sheet-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}.sheet-title{font-size:17px;font-weight:800}.close-btn{width:36px;height:36px;border:0;border-radius:50%;background:#252525;color:#fff;font-size:20px;cursor:pointer}.filters{display:grid;grid-template-columns:1fr 1fr;gap:12px}.field{min-width:0}.field--full{grid-column:1/-1}.field label{display:block;margin-bottom:6px;color:#aaa;font-size:11px}.field input,.field select{width:100%;height:46px;border:1px solid #343434;border-radius:11px;background:#1b1b1b;color:#fff;padding:0 12px;outline:none}.filter-summary{margin:14px 0 0;padding:11px 12px;border-radius:11px;background:#1a1a1a;color:#999;font-size:10px;line-height:1.55}.sheet-actions{position:sticky;bottom:0;display:grid;grid-template-columns:1fr 1.7fr;gap:9px;margin-top:14px;padding-top:10px;background:linear-gradient(180deg,transparent,#141414 18%)}.btn{height:46px;border:0;border-radius:11px;font-weight:800;cursor:pointer}.btn-secondary{background:#252525;color:#fff}.btn-primary{background:#fff;color:#080808}.cid-test{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:16px;padding-top:16px;border-top:1px solid #292929}.cid-test input{height:44px;border:1px solid #343434;border-radius:11px;background:#1b1b1b;color:#fff;padding:0 12px;min-width:0}.cid-test button{height:44px;padding:0 14px;border:0;border-radius:11px;background:#2b2b2b;color:#fff;font-weight:700}.genre-note{margin-top:5px;color:#a76d6d;font-size:10px}.toast{position:fixed;z-index:120;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translate(-50%,20px);padding:9px 13px;border-radius:999px;background:#f5f5f5;color:#111;font-size:11px;font-weight:750;opacity:0;pointer-events:none;transition:.2s}.toast.is-show{opacity:1;transform:translate(-50%,0)}
+.sheet-backdrop{position:fixed;z-index:80;inset:0;background:#00000094;opacity:0;pointer-events:none;transition:opacity .2s}.sheet{position:fixed;z-index:90;left:0;right:0;bottom:0;max-height:min(82dvh,760px);overflow:auto;padding:8px 14px calc(18px + env(safe-area-inset-bottom));border-radius:20px 20px 0 0;background:#141414;border-top:1px solid #292929;transform:translateY(102%);transition:transform .24s cubic-bezier(.2,.75,.2,1);box-shadow:0 -18px 45px #00000059}body.sheet-open .sheet-backdrop{opacity:1;pointer-events:auto}body.sheet-open .sheet{transform:translateY(0)}.sheet-handle{width:38px;height:4px;margin:2px auto 12px;border-radius:999px;background:#444}.sheet-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}.sheet-title{font-size:17px;font-weight:800}.close-btn{width:36px;height:36px;border:0;border-radius:50%;background:#252525;color:#fff;font-size:20px;cursor:pointer}.filters{display:grid;grid-template-columns:1fr 1fr;gap:12px}.field{min-width:0}.field--full{grid-column:1/-1}.field label{display:block;margin-bottom:6px;color:#aaa;font-size:11px}.field input,.field select{width:100%;height:46px;border:1px solid #343434;border-radius:11px;background:#1b1b1b;color:#fff;padding:0 12px;outline:none}.filter-summary{margin:14px 0 0;padding:11px 12px;border-radius:11px;background:#1a1a1a;color:#999;font-size:10px;line-height:1.55}.sheet-actions{position:sticky;bottom:0;display:grid;grid-template-columns:1fr 1.7fr;gap:9px;margin-top:14px;padding-top:10px;background:linear-gradient(180deg,transparent,#141414 18%)}.btn{height:46px;border:0;border-radius:11px;font-weight:800;cursor:pointer}.btn-secondary{background:#252525;color:#fff}.btn-primary{background:#fff;color:#080808}.cid-test{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:16px;padding-top:16px;border-top:1px solid #292929}.cid-test input{height:44px;border:1px solid #343434;border-radius:11px;background:#1b1b1b;color:#fff;padding:0 12px;min-width:0}.cid-test button{height:44px;padding:0 14px;border:0;border-radius:11px;background:#2b2b2b;color:#fff;font-weight:700}.genre-note{margin-top:5px;color:#a76d6d;font-size:10px}.toast{position:fixed;z-index:120;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translate(-50%,20px);padding:9px 13px;border-radius:999px;background:#f5f5f5;color:#111;font-size:11px;font-weight:750;opacity:0;pointer-events:none;transition:.2s}.toast.is-show{opacity:1;transform:translate(-50%,0)}
 @media(min-width:760px){body{background:#111}.feed{width:min(480px,100%);margin:0 auto;border-left:1px solid #1d1d1d;border-right:1px solid #1d1d1d}.app-header{left:50%;right:auto;width:min(480px,100%);transform:translateX(-50%)}.sheet{left:50%;right:auto;width:min(480px,100%);transform:translate(-50%,102%)}body.sheet-open .sheet{transform:translate(-50%,0)}.error-banner{left:50%;right:auto;width:min(456px,calc(100% - 24px));transform:translateX(-50%)}}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -406,7 +321,7 @@ $activeConditionText = $categories[$category]['label'] . ' · ' . ($activeGenreN
 <article class="feed-item" data-work-index="<?= $workIndex ?>" data-cid="<?= h($row['cid']) ?>" data-title="<?= h($row['title']) ?>" data-url="<?= h($row['affiliate_url']) ?>">
 <div class="preview-track" data-preview-track tabindex="0">
 <?php foreach ($row['images'] as $pageIndex => $url): ?>
-<div class="preview-page" style="--blur-image:url('<?= h($url) ?>')"><img src="<?= h($url) ?>" alt="<?= h($row['title']) ?> サンプル <?= $pageIndex + 1 ?>" <?= ($workIndex < 2 && $pageIndex < 2) ? 'loading="eager"' : 'loading="lazy"' ?> decoding="async"></div>
+<div class="preview-page"><img src="<?= h($url) ?>" alt="<?= h($row['title']) ?> サンプル <?= $pageIndex + 1 ?>" <?= ($workIndex < 2 && $pageIndex < 2) ? 'loading="eager"' : 'loading="lazy"' ?> decoding="async"></div>
 <?php endforeach; ?>
 </div>
 <div class="page-counter"><span data-current-page>1</span>&nbsp;/&nbsp;<?= count($row['images']) ?></div>
