@@ -3,7 +3,6 @@ import "server-only";
 import type {
   AssetType,
   AssetTypeDefinition,
-  CatalogResponse,
   FeedItem,
   FloorInfo,
   Genre,
@@ -13,10 +12,6 @@ import type {
 
 const API_BASE = "https://api.dmm.com/affiliate/v3";
 const REQUEST_TIMEOUT_MS = 25_000;
-const CATALOG_HITS = 100;
-const CATALOG_PAGES = 8;
-const CATALOG_LIMIT = 20;
-const REQUEST_INTERVAL_MS = 350;
 
 class FanzaApiError extends Error {
   constructor(message: string) {
@@ -97,7 +92,7 @@ async function dmmRequest(
   const init: RequestInit & { next?: { revalidate: number } } = {
     headers: {
       Accept: "application/json",
-      "User-Agent": "fanza-doujin-img-view-next/1.0",
+      "User-Agent": "fanza-doujin-img-view-next/1.2",
     },
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   };
@@ -330,11 +325,6 @@ function normalizedAssetType(bucket: string): Exclude<AssetType, "all"> {
   return "other";
 }
 
-function itemHasGenreId(item: UnknownRecord, genreId: string): boolean {
-  if (!genreId) return true;
-  return itemGenres(item).some((genre) => genre.id === genreId);
-}
-
 export function feedRowFromItem(item: UnknownRecord): FeedItem {
   const images = sampleImages(item);
   const bucket = detectAssetBucket(item);
@@ -372,86 +362,6 @@ export function initialScanStats(): SampleStats {
     other: emptySampleStats(),
     rawBuckets: {},
   };
-}
-
-function incrementSampleStats(
-  stats: SampleStats,
-  type: Exclude<AssetType, "all">,
-  rawBucket: string,
-  sampleCount: number,
-) {
-  for (const key of ["all", type] as const) {
-    const row = stats[key];
-    row.total += 1;
-    if (sampleCount === 0) row.zero += 1;
-    else if (sampleCount <= 4) row.oneToFour += 1;
-    else if (sampleCount <= 9) row.fiveToNine += 1;
-    else row.tenPlus += 1;
-  }
-
-  if (type === "other") {
-    stats.rawBuckets[rawBucket] = (stats.rawBuckets[rawBucket] ?? 0) + 1;
-  }
-}
-
-type CatalogFilters = {
-  minSamples: number;
-  minReviews: number;
-  minRating: number;
-  assetType: AssetType;
-  genreId: string;
-};
-
-export async function fetchCatalog(
-  floor: FloorInfo,
-  filters: CatalogFilters,
-): Promise<Omit<CatalogResponse, "floor" | "queryError">> {
-  const items: FeedItem[] = [];
-  const seen = new Set<string>();
-  const stats = initialScanStats();
-  const effectiveMinSamples = Math.max(1, filters.minSamples);
-  let scanned = 0;
-  let apiTotal = 0;
-
-  for (let page = 0; page < CATALOG_PAGES; page += 1) {
-    const params: Record<string, string | number> = {
-      hits: CATALOG_HITS,
-      offset: 1 + page * CATALOG_HITS,
-      sort: "review",
-    };
-    if (filters.genreId) {
-      params.article = "genre";
-      params.article_id = filters.genreId;
-    }
-
-    const data = await itemList(floor, params);
-    const result = resultOf(data);
-    const rows = normalizeRows(result.items);
-    if (rows.length === 0) break;
-
-    if (page === 0) apiTotal = numberValue(result.total_count);
-    scanned += rows.length;
-
-    for (const item of rows) {
-      const row = feedRowFromItem(item);
-      if (!row.cid || seen.has(row.cid)) continue;
-      seen.add(row.cid);
-      incrementSampleStats(stats, row.assetType, row.assetBucket, row.sampleCount);
-
-      if (filters.genreId && !itemHasGenreId(item, filters.genreId)) continue;
-      if (filters.assetType !== "all" && row.assetType !== filters.assetType) continue;
-      if (row.sampleCount < effectiveMinSamples) continue;
-      if (row.reviews < filters.minReviews) continue;
-      if (row.rating < filters.minRating) continue;
-      if (items.length < CATALOG_LIMIT) items.push(row);
-    }
-
-    const resultCount = numberValue(result.result_count) || rows.length;
-    if (rows.length < CATALOG_HITS || resultCount < CATALOG_HITS) break;
-    if (page + 1 < CATALOG_PAGES) await sleep(REQUEST_INTERVAL_MS);
-  }
-
-  return { items, scanned, apiTotal, stats, effectiveMinSamples };
 }
 
 export function safeErrorMessage(error: unknown): string {
