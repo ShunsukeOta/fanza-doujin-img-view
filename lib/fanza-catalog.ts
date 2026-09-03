@@ -6,8 +6,7 @@ import type { AssetType, FeedItem, FloorInfo, SampleStats } from "@/lib/types";
 const API_BASE = "https://api.dmm.com/affiliate/v3";
 const REQUEST_TIMEOUT_MS = 25_000;
 const HITS = 100;
-const MAX_PAGES = 8;
-const FEED_LIMIT = 20;
+const DIAGNOSTIC_MAX_PAGES = 8;
 const REQUEST_INTERVAL_MS = 120;
 
 type UnknownRecord = Record<string, unknown>;
@@ -20,12 +19,14 @@ export type CatalogFilters = {
   genreId: string;
 };
 
-export type FastCatalogResult = {
+export type CatalogBatchResult = {
   items: FeedItem[];
   scanned: number;
   apiTotal: number;
   effectiveMinSamples: number;
-  stats: SampleStats;
+  offset: number;
+  nextOffset: number | null;
+  hasMore: boolean;
 };
 
 export type DiagnosticsResult = {
@@ -96,7 +97,7 @@ async function itemListRequest(
       cache: "no-store",
       headers: {
         Accept: "application/json",
-        "User-Agent": "fanza-doujin-img-view-next/1.1",
+        "User-Agent": "fanza-doujin-img-view-next/1.2",
       },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
@@ -148,10 +149,10 @@ function incrementStats(stats: SampleStats, item: FeedItem) {
   }
 }
 
-function buildParams(page: number, genreId: string): Record<string, string | number> {
+function buildParams(offset: number, genreId: string): Record<string, string | number> {
   const params: Record<string, string | number> = {
     hits: HITS,
-    offset: 1 + page * HITS,
+    offset,
     sort: "review",
   };
   if (genreId) {
@@ -162,57 +163,59 @@ function buildParams(page: number, genreId: string): Record<string, string | num
 }
 
 /**
- * 通常表示用。20件揃った時点で走査を打ち切る。
- * 以前は診断統計のため常に最大800件走査していたため、初動が遅かった。
+ * 通常フィード用。
+ * DMM APIは1回100件だけ取得し、その中から最大limit件を返す。
+ * 次の100件はnextOffsetを使ってクライアントが必要な時だけ取得する。
  */
-export async function fetchFastCatalog(
+export async function fetchCatalogBatch(
   floor: FloorInfo,
   filters: CatalogFilters,
-): Promise<FastCatalogResult> {
+  offset: number,
+  limit: number,
+): Promise<CatalogBatchResult> {
+  const safeOffset = Math.max(1, Math.trunc(offset));
+  const safeLimit = Math.max(1, Math.min(12, Math.trunc(limit)));
+  const effectiveMinSamples = Math.max(1, filters.minSamples);
+  const data = await itemListRequest(floor, buildParams(safeOffset, filters.genreId));
+  const result = resultOf(data);
+  const rows = normalizeRows(result.items);
+  const apiTotal = numberValue(result.total_count);
+  const resultCount = numberValue(result.result_count) || rows.length;
   const items: FeedItem[] = [];
   const seen = new Set<string>();
-  const stats = initialScanStats();
-  const effectiveMinSamples = Math.max(1, filters.minSamples);
-  let scanned = 0;
-  let apiTotal = 0;
 
-  for (let page = 0; page < MAX_PAGES; page += 1) {
-    const data = await itemListRequest(floor, buildParams(page, filters.genreId));
-    const result = resultOf(data);
-    const rows = normalizeRows(result.items);
-    if (rows.length === 0) break;
+  for (const rawItem of rows) {
+    const item = feedRowFromItem(rawItem);
+    if (!item.cid || seen.has(item.cid)) continue;
+    seen.add(item.cid);
 
-    if (page === 0) apiTotal = numberValue(result.total_count);
-    scanned += rows.length;
+    if (filters.genreId && !itemHasGenre(rawItem, filters.genreId)) continue;
+    if (filters.assetType !== "all" && item.assetType !== filters.assetType) continue;
+    if (item.sampleCount < effectiveMinSamples) continue;
+    if (item.reviews < filters.minReviews) continue;
+    if (item.rating < filters.minRating) continue;
 
-    for (const rawItem of rows) {
-      const item = feedRowFromItem(rawItem);
-      if (!item.cid || seen.has(item.cid)) continue;
-      seen.add(item.cid);
-      incrementStats(stats, item);
-
-      if (filters.genreId && !itemHasGenre(rawItem, filters.genreId)) continue;
-      if (filters.assetType !== "all" && item.assetType !== filters.assetType) continue;
-      if (item.sampleCount < effectiveMinSamples) continue;
-      if (item.reviews < filters.minReviews) continue;
-      if (item.rating < filters.minRating) continue;
-
-      items.push({ ...item, assetLabel: assetLabel(item.assetType) });
-      if (items.length >= FEED_LIMIT) {
-        return { items, scanned, apiTotal, stats, effectiveMinSamples };
-      }
-    }
-
-    const resultCount = numberValue(result.result_count) || rows.length;
-    if (rows.length < HITS || resultCount < HITS) break;
-    if (page + 1 < MAX_PAGES) await sleep(REQUEST_INTERVAL_MS);
+    items.push({ ...item, assetLabel: assetLabel(item.assetType) });
+    if (items.length >= safeLimit) break;
   }
 
-  return { items, scanned, apiTotal, stats, effectiveMinSamples };
+  const candidateNextOffset = safeOffset + rows.length;
+  const hasMoreByTotal = apiTotal > 0 ? candidateNextOffset <= apiTotal : rows.length >= HITS;
+  const hasMore = rows.length > 0 && resultCount >= HITS && hasMoreByTotal;
+
+  return {
+    items,
+    scanned: rows.length,
+    apiTotal,
+    effectiveMinSamples,
+    offset: safeOffset,
+    nextOffset: hasMore ? candidateNextOffset : null,
+    hasMore,
+  };
 }
 
 /**
- * API診断専用。フィード表示とは切り離し、ユーザーが絞り込みシートを開いた時だけ最大800件走査する。
+ * API診断専用。通常フィードとは完全に分離し、最大800件を走査する。
  */
 export async function scanCatalogDiagnostics(
   floor: FloorInfo,
@@ -223,8 +226,9 @@ export async function scanCatalogDiagnostics(
   let scanned = 0;
   let apiTotal = 0;
 
-  for (let page = 0; page < MAX_PAGES; page += 1) {
-    const data = await itemListRequest(floor, buildParams(page, genreId));
+  for (let page = 0; page < DIAGNOSTIC_MAX_PAGES; page += 1) {
+    const offset = 1 + page * HITS;
+    const data = await itemListRequest(floor, buildParams(offset, genreId));
     const result = resultOf(data);
     const rows = normalizeRows(result.items);
     if (rows.length === 0) break;
@@ -241,7 +245,7 @@ export async function scanCatalogDiagnostics(
 
     const resultCount = numberValue(result.result_count) || rows.length;
     if (rows.length < HITS || resultCount < HITS) break;
-    if (page + 1 < MAX_PAGES) await sleep(REQUEST_INTERVAL_MS);
+    if (page + 1 < DIAGNOSTIC_MAX_PAGES) await sleep(REQUEST_INTERVAL_MS);
   }
 
   return { scanned, apiTotal, stats };
