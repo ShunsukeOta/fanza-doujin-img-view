@@ -8,11 +8,11 @@ import {
   resolveDoujinFloor,
   safeErrorMessage,
 } from "@/lib/fanza";
-import { fetchFastCatalog } from "@/lib/fanza-catalog";
+import { fetchCatalogBatch } from "@/lib/fanza-catalog";
 import type { AssetType } from "@/lib/types";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 30;
 
 function readInt(params: URLSearchParams, key: string, fallback: number, min: number, max: number) {
   const raw = params.get(key);
@@ -43,14 +43,16 @@ export async function GET(request: NextRequest) {
     genreId: (params.get("genre_id") ?? "").trim(),
   };
   const cidInput = (params.get("cid") ?? "").trim();
+  const offset = readInt(params, "offset", 1, 1, 50_000);
+  const limit = readInt(params, "limit", 6, 1, 12);
 
   try {
     const floor = await resolveDoujinFloor();
-    const catalog = await fetchFastCatalog(floor, filters);
+    const catalog = await fetchCatalogBatch(floor, filters, offset, limit);
     let items = catalog.items;
     let queryError = "";
 
-    if (cidInput) {
+    if (cidInput && offset === 1) {
       try {
         const cid = normalizeCid(cidInput);
         const directItem = feedRowFromItem(await fetchItem(cid, floor));
@@ -66,9 +68,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       { ...catalog, items, floor, queryError },
       {
-        headers: cidInput
+        headers: cidInput && offset === 1
           ? { "Cache-Control": "private, no-store" }
-          : { "Cache-Control": "public, s-maxage=120, stale-while-revalidate=600" },
+          : { "Cache-Control": "public, s-maxage=180, stale-while-revalidate=900" },
       },
     );
   } catch (error) {
