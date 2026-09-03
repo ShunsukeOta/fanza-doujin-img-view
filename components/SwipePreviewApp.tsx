@@ -4,8 +4,6 @@ import {
   type ChangeEvent,
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
-  type PointerEvent as ReactPointerEvent,
-  type WheelEvent as ReactWheelEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -16,13 +14,21 @@ import {
 import type {
   AssetType,
   CatalogResponse,
+  DiagnosticsResponse,
   FeedItem,
   FilterValues,
   MetaResponse,
   SampleStatsRow,
 } from "@/lib/types";
 
-const ASSET_LABELS: Record<AssetType, string> = { all: "すべて", comic: "コミック系", cg: "CG・イラスト系", game: "ゲーム系", voice: "ボイス・音声系", other: "その他・不明" };
+const ASSET_LABELS: Record<AssetType, string> = {
+  all: "すべて",
+  comic: "コミック系",
+  cg: "CG・イラスト系",
+  game: "ゲーム系",
+  voice: "ボイス・音声系",
+  other: "その他・不明",
+};
 
 const DEFAULT_FILTERS: FilterValues = {
   assetType: "all",
@@ -33,6 +39,9 @@ const DEFAULT_FILTERS: FilterValues = {
 };
 
 const STAT_KEYS: AssetType[] = ["all", "comic", "cg", "game", "voice", "other"];
+const INITIAL_LIMIT = 6;
+const PREFETCH_THRESHOLD = 3;
+const AUTO_PREFETCH_MAX_PAGES = 7;
 
 type Props = {
   initialFilters: FilterValues;
@@ -41,7 +50,21 @@ type Props = {
 
 type LoadState = "pending" | "loaded" | "error";
 
-function buildCatalogQuery(filters: FilterValues, cid = "") {
+function buildCatalogQuery(filters: FilterValues, options?: { cid?: string; offset?: number; limit?: number }) {
+  const params = new URLSearchParams({
+    asset_type: filters.assetType,
+    genre_id: filters.genreId,
+    min_samples: String(filters.minSamples),
+    min_reviews: String(filters.minReviews),
+    min_rating: String(filters.minRating),
+    offset: String(options?.offset ?? 1),
+    limit: String(options?.limit ?? INITIAL_LIMIT),
+  });
+  if (options?.cid?.trim()) params.set("cid", options.cid.trim());
+  return params;
+}
+
+function buildPageQuery(filters: FilterValues, cid = "") {
   const params = new URLSearchParams({
     asset_type: filters.assetType,
     genre_id: filters.genreId,
@@ -62,6 +85,17 @@ function normalizeApiError(data: unknown, fallback: string) {
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
+}
+
+function mergeUniqueItems(current: FeedItem[], incoming: FeedItem[]) {
+  const seen = new Set(current.map((item) => item.cid));
+  const next = [...current];
+  for (const item of incoming) {
+    if (!item.cid || seen.has(item.cid)) continue;
+    seen.add(item.cid);
+    next.push(item);
+  }
+  return next;
 }
 
 function FilterIcon() {
@@ -119,18 +153,11 @@ function WorkCard({
   onToast: (message: string) => void;
 }) {
   const trackRef = useRef<HTMLDivElement | null>(null);
+  const scrollRaf = useRef<number | null>(null);
   const [currentPage, setCurrentPage] = useState(0);
   const [loadStates, setLoadStates] = useState<LoadState[]>(() => item.images.map(() => "pending"));
   const [liked, setLiked] = useState(false);
   const [saved, setSaved] = useState(false);
-  const dragRef = useRef({
-    pointerId: -1,
-    startX: 0,
-    startY: 0,
-    startScroll: 0,
-    startTime: 0,
-    axis: "" as "" | "x" | "y",
-  });
 
   useEffect(() => {
     setLoadStates(item.images.map(() => "pending"));
@@ -147,6 +174,12 @@ function WorkCard({
     }
   }, [item.cid]);
 
+  useEffect(() => {
+    return () => {
+      if (scrollRaf.current !== null) cancelAnimationFrame(scrollRaf.current);
+    };
+  }, []);
+
   const markLoad = useCallback((pageIndex: number, state: Exclude<LoadState, "pending">) => {
     setLoadStates((previous) => {
       if (previous[pageIndex] !== "pending") return previous;
@@ -161,72 +194,24 @@ function WorkCard({
 
   const pageIndexFromScroll = useCallback(() => {
     const track = trackRef.current;
-    if (!track || track.clientWidth <= 0) return 0;
+    if (!track || track.clientWidth <= 0 || item.images.length === 0) return 0;
     return clamp(Math.round(track.scrollLeft / track.clientWidth), 0, item.images.length - 1);
   }, [item.images.length]);
 
-  const goToPage = useCallback(
-    (target: number, behavior: ScrollBehavior = "smooth") => {
-      const track = trackRef.current;
-      if (!track || item.images.length === 0) return;
-      const next = clamp(target, 0, item.images.length - 1);
-      track.classList.remove("is-dragging");
-      track.scrollTo({ left: next * track.clientWidth, behavior });
-      setCurrentPage(next);
-    },
-    [item.images.length],
-  );
-
-  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.pointerType === "mouse" && event.button !== 0) return;
-    const track = trackRef.current;
-    if (!track) return;
-    dragRef.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      startScroll: track.scrollLeft,
-      startTime: performance.now(),
-      axis: "",
-    };
+  const syncCurrentPage = () => {
+    if (scrollRaf.current !== null) return;
+    scrollRaf.current = requestAnimationFrame(() => {
+      scrollRaf.current = null;
+      setCurrentPage(pageIndexFromScroll());
+    });
   };
 
-  const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+  const goToPage = (target: number) => {
     const track = trackRef.current;
-    const drag = dragRef.current;
-    if (!track || drag.pointerId !== event.pointerId) return;
-
-    const dx = event.clientX - drag.startX;
-    const dy = event.clientY - drag.startY;
-    if (!drag.axis && Math.max(Math.abs(dx), Math.abs(dy)) > 8) {
-      drag.axis = Math.abs(dx) > Math.abs(dy) * 1.12 ? "x" : "y";
-    }
-    if (drag.axis !== "x") return;
-
-    event.preventDefault();
-    track.classList.add("is-dragging");
-    track.scrollLeft = drag.startScroll - dx;
-  };
-
-  const finishPointer = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current;
-    if (drag.pointerId !== event.pointerId) return;
-    const track = trackRef.current;
-    if (!track) return;
-
-    if (drag.axis === "x") {
-      const dx = event.clientX - drag.startX;
-      const elapsed = Math.max(1, performance.now() - drag.startTime);
-      const velocity = Math.abs(dx) / elapsed;
-      let target = Math.round(drag.startScroll / Math.max(1, track.clientWidth));
-      if (Math.abs(dx) > 48 || velocity > 0.45) target += dx < 0 ? 1 : -1;
-      goToPage(target);
-    } else {
-      track.classList.remove("is-dragging");
-    }
-
-    dragRef.current.pointerId = -1;
-    dragRef.current.axis = "";
+    if (!track || item.images.length === 0) return;
+    const next = clamp(target, 0, item.images.length - 1);
+    track.scrollTo({ left: next * track.clientWidth, behavior: "smooth" });
+    setCurrentPage(next);
   };
 
   const toggleLocal = (type: "like" | "save") => {
@@ -280,19 +265,14 @@ function WorkCard({
       <div
         ref={trackRef}
         className="preview-track"
-        data-preview-track
         tabIndex={0}
-        onScroll={() => setCurrentPage(pageIndexFromScroll())}
+        onScroll={syncCurrentPage}
         onKeyDown={(event: ReactKeyboardEvent<HTMLDivElement>) => {
           if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
             event.preventDefault();
             goToPage(currentPage + (event.key === "ArrowRight" ? 1 : -1));
           }
         }}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={finishPointer}
-        onPointerCancel={finishPointer}
       >
         {item.images.map((url, pageIndex) => (
           <div
@@ -302,7 +282,8 @@ function WorkCard({
             <img
               src={url}
               alt={`${item.title} サンプル ${pageIndex + 1}`}
-              loading={index < 2 && pageIndex < 2 ? "eager" : "lazy"}
+              loading={index === 0 && pageIndex === 0 ? "eager" : "lazy"}
+              fetchPriority={index === 0 && pageIndex === 0 ? "high" : "auto"}
               decoding="async"
               onLoad={() => markLoad(pageIndex, "loaded")}
               onError={() => markLoad(pageIndex, "error")}
@@ -354,21 +335,15 @@ function WorkCard({
 
       <div className="action-rail">
         <button className={`action-btn${liked ? " is-active" : ""}`} type="button" onClick={() => toggleLocal("like")}>
-          <span className="action-icon">
-            <HeartIcon />
-          </span>
+          <span className="action-icon"><HeartIcon /></span>
           <span className="action-label">いいね</span>
         </button>
         <button className={`action-btn${saved ? " is-active" : ""}`} type="button" onClick={() => toggleLocal("save")}>
-          <span className="action-icon">
-            <BookmarkIcon />
-          </span>
+          <span className="action-icon"><BookmarkIcon /></span>
           <span className="action-label">保存</span>
         </button>
         <button className="action-btn" type="button" onClick={share}>
-          <span className="action-icon">
-            <ShareIcon />
-          </span>
+          <span className="action-icon"><ShareIcon /></span>
           <span className="action-label">共有</span>
         </button>
       </div>
@@ -377,15 +352,7 @@ function WorkCard({
   );
 }
 
-function DiagnosticRow({
-  label,
-  stats,
-  active,
-}: {
-  label: string;
-  stats: SampleStatsRow;
-  active: boolean;
-}) {
+function DiagnosticRow({ label, stats, active }: { label: string; stats: SampleStatsRow; active: boolean }) {
   return (
     <tr className={active ? "is-active" : undefined}>
       <td>{label}</td>
@@ -401,19 +368,30 @@ function DiagnosticRow({
 export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
   const feedRef = useRef<HTMLElement | null>(null);
   const [meta, setMeta] = useState<MetaResponse | null>(null);
-  const [catalog, setCatalog] = useState<CatalogResponse | null>(null);
+  const [items, setItems] = useState<FeedItem[]>([]);
+  const [lastBatch, setLastBatch] = useState<CatalogResponse | null>(null);
   const [filters, setFilters] = useState<FilterValues>(initialFilters);
   const [draftFilters, setDraftFilters] = useState<FilterValues>(initialFilters);
   const [cid, setCid] = useState(initialCid);
   const [cidDraft, setCidDraft] = useState(initialCid);
+  const [nextOffset, setNextOffset] = useState<number | null>(1);
+  const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [catalogError, setCatalogError] = useState("");
   const [metaError, setMetaError] = useState("");
   const [sheetOpen, setSheetOpen] = useState(false);
   const [activeWork, setActiveWork] = useState(0);
   const [toast, setToast] = useState("");
+  const [diagnostics, setDiagnostics] = useState<DiagnosticsResponse | null>(null);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
+  const [diagnosticsError, setDiagnosticsError] = useState("");
+  const [diagnosticsGenreId, setDiagnosticsGenreId] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const wheelLock = useRef(false);
+  const loadMoreInFlight = useRef(false);
+  const generation = useRef(0);
+  const autoPrefetchPages = useRef(0);
+  const booted = useRef(false);
 
   const showToast = useCallback((message: string) => {
     setToast(message);
@@ -422,73 +400,147 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
   }, []);
 
   const loadMeta = useCallback(async () => {
-    const response = await fetch("/api/meta", { headers: { Accept: "application/json" } });
-    const data: unknown = await response.json().catch(() => null);
-    if (!response.ok) throw new Error(normalizeApiError(data, `メタ情報の取得に失敗しました (${response.status})`));
-    setMeta(data as MetaResponse);
-  }, []);
-
-  const loadCatalog = useCallback(async (nextFilters: FilterValues, nextCid = "") => {
-    setLoading(true);
-    setCatalogError("");
-    setActiveWork(0);
     try {
-      const query = buildCatalogQuery(nextFilters, nextCid);
-      const response = await fetch(`/api/catalog?${query.toString()}`, {
-        headers: { Accept: "application/json" },
-      });
+      const response = await fetch("/api/meta", { headers: { Accept: "application/json" } });
       const data: unknown = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(normalizeApiError(data, `作品取得に失敗しました (${response.status})`));
-      setCatalog(data as CatalogResponse);
+      if (!response.ok) throw new Error(normalizeApiError(data, `メタ情報の取得に失敗しました (${response.status})`));
+      setMeta(data as MetaResponse);
+      setMetaError("");
     } catch (requestError) {
-      setCatalog(null);
-      setCatalogError(requestError instanceof Error ? requestError.message : "作品取得に失敗しました。");
-    } finally {
-      setLoading(false);
+      setMetaError(requestError instanceof Error ? requestError.message : "メタ情報の取得に失敗しました。");
     }
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      await loadCatalog(initialFilters, initialCid);
-      if (cancelled) return;
-      try {
-        await loadMeta();
-        if (!cancelled) setMetaError("");
-      } catch (requestError) {
-        if (!cancelled) {
-          setMetaError(requestError instanceof Error ? requestError.message : "メタ情報の取得に失敗しました。");
-        }
+  const loadInitial = useCallback(async (nextFilters: FilterValues, nextCid = "") => {
+    const requestGeneration = generation.current + 1;
+    generation.current = requestGeneration;
+    autoPrefetchPages.current = 0;
+    loadMoreInFlight.current = false;
+    setLoading(true);
+    setLoadingMore(false);
+    setCatalogError("");
+    setActiveWork(0);
+    setItems([]);
+    setLastBatch(null);
+    setNextOffset(1);
+    setHasMore(true);
+    feedRef.current?.scrollTo({ top: 0, behavior: "auto" });
+
+    try {
+      const query = buildCatalogQuery(nextFilters, { cid: nextCid, offset: 1, limit: INITIAL_LIMIT });
+      const response = await fetch(`/api/catalog?${query.toString()}`, { headers: { Accept: "application/json" } });
+      const data: unknown = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(normalizeApiError(data, `作品取得に失敗しました (${response.status})`));
+      if (generation.current !== requestGeneration) return;
+      const catalog = data as CatalogResponse;
+      setItems(catalog.items);
+      setLastBatch(catalog);
+      setNextOffset(catalog.nextOffset);
+      setHasMore(catalog.hasMore);
+    } catch (requestError) {
+      if (generation.current !== requestGeneration) return;
+      setCatalogError(requestError instanceof Error ? requestError.message : "作品取得に失敗しました。");
+      setHasMore(false);
+      setNextOffset(null);
+    } finally {
+      if (generation.current === requestGeneration) setLoading(false);
+    }
+  }, []);
+
+  const loadMore = useCallback(async () => {
+    if (loadMoreInFlight.current || !hasMore || nextOffset === null) return;
+    const requestGeneration = generation.current;
+    loadMoreInFlight.current = true;
+    setLoadingMore(true);
+
+    try {
+      const query = buildCatalogQuery(filters, { offset: nextOffset, limit: INITIAL_LIMIT });
+      const response = await fetch(`/api/catalog?${query.toString()}`, { headers: { Accept: "application/json" } });
+      const data: unknown = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(normalizeApiError(data, `追加作品の取得に失敗しました (${response.status})`));
+      if (generation.current !== requestGeneration) return;
+      const catalog = data as CatalogResponse;
+      setItems((current) => mergeUniqueItems(current, catalog.items));
+      setLastBatch(catalog);
+      setNextOffset(catalog.nextOffset);
+      setHasMore(catalog.hasMore);
+    } catch (requestError) {
+      if (generation.current === requestGeneration) {
+        showToast(requestError instanceof Error ? requestError.message : "追加作品の取得に失敗しました");
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [initialCid, initialFilters, loadCatalog, loadMeta]);
+    } finally {
+      if (generation.current === requestGeneration) setLoadingMore(false);
+      loadMoreInFlight.current = false;
+    }
+  }, [filters, hasMore, nextOffset, showToast]);
+
+  const loadDiagnostics = useCallback(async (genreId: string) => {
+    if (diagnosticsGenreId === genreId && (diagnostics || diagnosticsLoading)) return;
+    setDiagnosticsLoading(true);
+    setDiagnosticsError("");
+    setDiagnosticsGenreId(genreId);
+    setDiagnostics(null);
+    try {
+      const query = new URLSearchParams({ genre_id: genreId });
+      const response = await fetch(`/api/diagnostics?${query.toString()}`, { headers: { Accept: "application/json" } });
+      const data: unknown = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(normalizeApiError(data, `API診断の取得に失敗しました (${response.status})`));
+      setDiagnostics(data as DiagnosticsResponse);
+    } catch (requestError) {
+      setDiagnosticsError(requestError instanceof Error ? requestError.message : "API診断の取得に失敗しました。");
+    } finally {
+      setDiagnosticsLoading(false);
+    }
+  }, [diagnostics, diagnosticsGenreId, diagnosticsLoading]);
+
+  useEffect(() => {
+    if (booted.current) return;
+    booted.current = true;
+    void loadInitial(initialFilters, initialCid);
+    void loadMeta();
+  }, [initialCid, initialFilters, loadInitial, loadMeta]);
 
   useEffect(() => {
     if (!sheetOpen) return;
     document.body.classList.add("sheet-open");
+    void loadDiagnostics(filters.genreId);
     return () => document.body.classList.remove("sheet-open");
-  }, [sheetOpen]);
+  }, [filters.genreId, loadDiagnostics, sheetOpen]);
 
   useEffect(() => {
     const feed = feedRef.current;
-    if (!feed || !catalog?.items.length) return;
+    if (!feed || items.length === 0) return;
     const works = [...feed.querySelectorAll<HTMLElement>(".feed-item")];
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          if (!entry.isIntersecting || entry.intersectionRatio < 0.62) continue;
+          if (!entry.isIntersecting || entry.intersectionRatio < 0.6) continue;
           setActiveWork(Number((entry.target as HTMLElement).dataset.workIndex ?? 0));
         }
       },
-      { root: feed, threshold: [0.62] },
+      { root: feed, threshold: [0.6] },
     );
     works.forEach((work) => observer.observe(work));
     return () => observer.disconnect();
-  }, [catalog?.items]);
+  }, [items]);
+
+  useEffect(() => {
+    if (loading || loadingMore || !hasMore || nextOffset === null) return;
+    if (autoPrefetchPages.current >= AUTO_PREFETCH_MAX_PAGES) return;
+    if (items.length >= 10) return;
+
+    const timer = window.setTimeout(() => {
+      autoPrefetchPages.current += 1;
+      void loadMore();
+    }, items.length === 0 ? 180 : 450);
+    return () => window.clearTimeout(timer);
+  }, [hasMore, items.length, loadMore, loading, loadingMore, nextOffset]);
+
+  useEffect(() => {
+    if (loading || loadingMore || !hasMore || nextOffset === null || items.length === 0) return;
+    if (activeWork < items.length - PREFETCH_THRESHOLD) return;
+    void loadMore();
+  }, [activeWork, hasMore, items.length, loadMore, loading, loadingMore, nextOffset]);
 
   useEffect(() => {
     return () => {
@@ -503,10 +555,9 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
   const activeAssetLabel =
     meta?.assetTypes.find((definition) => definition.key === filters.assetType)?.label ?? ASSET_LABELS[filters.assetType];
   const activeConditionText = `${activeAssetLabel} · ${activeGenreName || "全ジャンル"}`;
-  const feedItems = catalog?.items ?? [];
 
   const replaceUrl = (nextFilters: FilterValues, nextCid = "") => {
-    const query = buildCatalogQuery(nextFilters, nextCid);
+    const query = buildPageQuery(nextFilters, nextCid);
     window.history.replaceState(null, "", `?${query.toString()}`);
   };
 
@@ -517,8 +568,12 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
     setCid("");
     setCidDraft("");
     setSheetOpen(false);
+    if (diagnosticsGenreId !== next.genreId) {
+      setDiagnostics(null);
+      setDiagnosticsGenreId(null);
+    }
     replaceUrl(next);
-    await loadCatalog(next);
+    await loadInitial(next);
   };
 
   const openCid = async (event: FormEvent) => {
@@ -528,7 +583,7 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
     setCid(nextCid);
     setSheetOpen(false);
     replaceUrl(filters, nextCid);
-    await loadCatalog(filters, nextCid);
+    await loadInitial(filters, nextCid);
   };
 
   const updateDraftSelect = (key: "assetType" | "genreId") => (event: ChangeEvent<HTMLSelectElement>) => {
@@ -542,20 +597,7 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
       setDraftFilters((previous) => ({ ...previous, [key]: value }));
     };
 
-  const handleWheel = (event: ReactWheelEvent<HTMLElement>) => {
-    if (!catalog?.items.length || wheelLock.current || Math.abs(event.deltaY) < 18) return;
-    event.preventDefault();
-    const feed = feedRef.current;
-    if (!feed) return;
-    const works = [...feed.querySelectorAll<HTMLElement>(".feed-item")];
-    const current = Math.round(feed.scrollTop / Math.max(1, feed.clientHeight));
-    const next = clamp(current + (event.deltaY > 0 ? 1 : -1), 0, works.length - 1);
-    works[next]?.scrollIntoView({ behavior: "smooth", block: "start" });
-    wheelLock.current = true;
-    setTimeout(() => {
-      wheelLock.current = false;
-    }, 420);
-  };
+  const noItemsButSearching = !loading && items.length === 0 && loadingMore;
 
   return (
     <>
@@ -569,7 +611,7 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
         </div>
         <div className="header-actions">
           <div className="feed-count">
-            <span>{feedItems.length > 0 ? activeWork + 1 : 0}</span> / {feedItems.length}
+            <span>{items.length > 0 ? activeWork + 1 : 0}</span> / {items.length}{hasMore ? "+" : ""}
           </div>
           <button className="icon-btn" type="button" onClick={() => setSheetOpen(true)}>
             <FilterIcon /> 絞り込み
@@ -577,15 +619,15 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
         </div>
       </header>
 
-      {catalog?.queryError ? <div className="error-banner">CID取得エラー: {catalog.queryError}</div> : null}
+      {lastBatch?.queryError ? <div className="error-banner">CID取得エラー: {lastBatch.queryError}</div> : null}
 
-      <main ref={feedRef} className="feed" id="feed" aria-label="作品フィード" onWheel={handleWheel}>
-        {loading ? (
+      <main ref={feedRef} className="feed" id="feed" aria-label="作品フィード">
+        {loading || noItemsButSearching ? (
           <section className="empty-state">
             <div className="empty-card loading-card">
               <div className="spinner" aria-hidden="true" />
-              <h2>作品を読み込んでいます</h2>
-              <p>FANZA同人APIを走査して、表示条件とsample_l分布を確認しています。</p>
+              <h2>{loading ? "最初の作品を読み込んでいます" : "次の候補を探しています"}</h2>
+              <p>{loading ? "最初の100件だけを確認して、見つかった作品からすぐ表示します。" : "条件に合う作品を100件ずつバックグラウンドで探しています。"}</p>
             </div>
           </section>
         ) : catalogError ? (
@@ -593,39 +635,39 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
             <div className="empty-card">
               <h2>API取得に失敗しました</h2>
               <p>{catalogError}</p>
-              <button className="btn btn-primary" type="button" onClick={() => setSheetOpen(true)}>
-                API診断を見る
-              </button>
+              <button className="btn btn-primary" type="button" onClick={() => setSheetOpen(true)}>API診断を見る</button>
             </div>
           </section>
-        ) : feedItems.length === 0 ? (
+        ) : items.length === 0 ? (
           <section className="empty-state">
             <div className="empty-card">
               <h2>条件に合う表示可能作品がありません</h2>
-              <p>右上の「絞り込み」を開くと、API走査結果のsample_l枚数分布を確認できます。</p>
-              <button className="btn btn-primary" type="button" onClick={() => setSheetOpen(true)}>
-                API診断を見る
-              </button>
+              <p>最大800件まで段階的に確認しました。条件を緩めるかAPI診断を確認してください。</p>
+              <button className="btn btn-primary" type="button" onClick={() => setSheetOpen(true)}>API診断を見る</button>
             </div>
           </section>
         ) : (
-          feedItems.map((item, index) => (
-            <WorkCard key={item.cid} item={item} index={index} totalWorks={feedItems.length} onToast={showToast} />
+          items.map((item, index) => (
+            <WorkCard key={item.cid} item={item} index={index} totalWorks={items.length} onToast={showToast} />
           ))
         )}
       </main>
+
+      {loadingMore && items.length > 0 ? (
+        <div className="feed-loading-more" aria-live="polite">
+          <span className="mini-spinner" aria-hidden="true" /> 次の作品を準備中
+        </div>
+      ) : null}
 
       <div className="sheet-backdrop" onClick={() => setSheetOpen(false)} aria-hidden="true" />
       <aside className="sheet" id="filterSheet" aria-hidden={!sheetOpen}>
         <div className="sheet-handle" />
         <div className="sheet-head">
           <div className="sheet-title">作品を絞り込む / API診断</div>
-          <button className="close-btn" type="button" onClick={() => setSheetOpen(false)} aria-label="閉じる">
-            ×
-          </button>
+          <button className="close-btn" type="button" onClick={() => setSheetOpen(false)} aria-label="閉じる">×</button>
         </div>
         <div className="api-note">
-          <strong>重要:</strong> ItemListの <code>iteminfo.genre</code> はジャンルタグで、作品形式ではありません。このツールではAPIが返す <code>imageURL / sampleImageURL</code> の <code>/digital/comic|cg|game|voice/</code> を「API素材タイプ」として別軸で判定します。
+          <strong>重要:</strong> ItemListの <code>iteminfo.genre</code> はジャンルタグです。APIが返す <code>imageURL / sampleImageURL</code> の <code>/digital/comic|cg|game|voice/</code> を「API素材タイプ」として別軸で判定します。
         </div>
 
         <form onSubmit={applyFilters}>
@@ -633,17 +675,8 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
             <div className="field">
               <label htmlFor="asset_type">API素材タイプ</label>
               <select id="asset_type" value={draftFilters.assetType} onChange={updateDraftSelect("assetType")}>
-                {(meta?.assetTypes ?? [
-                  { key: "all" as AssetType, label: "すべて" },
-                  { key: "comic" as AssetType, label: "コミック系" },
-                  { key: "cg" as AssetType, label: "CG・イラスト系" },
-                  { key: "game" as AssetType, label: "ゲーム系" },
-                  { key: "voice" as AssetType, label: "ボイス・音声系" },
-                  { key: "other" as AssetType, label: "その他・不明" },
-                ]).map((definition) => (
-                  <option value={definition.key} key={definition.key}>
-                    {definition.label}
-                  </option>
+                {(meta?.assetTypes ?? Object.entries(ASSET_LABELS).map(([key, label]) => ({ key: key as AssetType, label }))).map((definition) => (
+                  <option value={definition.key} key={definition.key}>{definition.label}</option>
                 ))}
               </select>
             </div>
@@ -651,128 +684,74 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
               <label htmlFor="genre_id">ジャンル</label>
               <select id="genre_id" value={draftFilters.genreId} onChange={updateDraftSelect("genreId")}>
                 <option value="">すべて</option>
-                {meta?.genres.map((genre) => (
-                  <option value={genre.id} key={genre.id}>
-                    {genre.name}
-                  </option>
-                ))}
+                {meta?.genres.map((genre) => <option value={genre.id} key={genre.id}>{genre.name}</option>)}
               </select>
               {metaError ? <div className="genre-note">GenreSearch: {metaError}</div> : null}
             </div>
             <div className="field">
               <label htmlFor="min_samples">最低sample_l枚数</label>
-              <input
-                id="min_samples"
-                type="number"
-                min="0"
-                max="100"
-                value={draftFilters.minSamples}
-                onChange={updateDraftNumber("minSamples")}
-              />
+              <input id="min_samples" type="number" min="0" max="100" value={draftFilters.minSamples} onChange={updateDraftNumber("minSamples")} />
             </div>
             <div className="field">
               <label htmlFor="min_reviews">最低レビュー件数</label>
-              <input
-                id="min_reviews"
-                type="number"
-                min="0"
-                max="100000"
-                value={draftFilters.minReviews}
-                onChange={updateDraftNumber("minReviews")}
-              />
+              <input id="min_reviews" type="number" min="0" max="100000" value={draftFilters.minReviews} onChange={updateDraftNumber("minReviews")} />
             </div>
             <div className="field field--full">
               <label htmlFor="min_rating">最低平均評価</label>
-              <input
-                id="min_rating"
-                type="number"
-                min="0"
-                max="5"
-                step="0.1"
-                value={draftFilters.minRating}
-                onChange={updateDraftNumber("minRating")}
-              />
+              <input id="min_rating" type="number" min="0" max="5" step="0.1" value={draftFilters.minRating} onChange={updateDraftNumber("minRating")} />
             </div>
           </div>
 
           <div className="filter-summary">
-            {catalog?.floor ? (
-              <>
-                API: {catalog.floor.siteCode} / {catalog.floor.serviceCode} / {catalog.floor.floorCode} / floor_id {catalog.floor.floorId}
-                <br />
-              </>
-            ) : null}
-            現在: {activeConditionText} / sample_l {filters.minSamples}枚以上 / レビュー {filters.minReviews}件以上 / 評価 {filters.minRating.toFixed(1)}以上
-            <br />
-            走査: {catalog?.scanned ?? 0}件{catalog?.apiTotal ? ` / API該当総数 ${catalog.apiTotal}件` : ""} / フィード: {feedItems.length}作品
-            {filters.minSamples < 1 ? (
-              <>
-                <br />※フィード表示には画像が必要なため、sample_l=0件は診断には含めますが表示対象外です。
-              </>
-            ) : null}
+            {lastBatch?.floor ? <>
+              API: {lastBatch.floor.siteCode} / {lastBatch.floor.serviceCode} / {lastBatch.floor.floorCode} / floor_id {lastBatch.floor.floorId}<br />
+            </> : null}
+            現在: {activeConditionText} / sample_l {filters.minSamples}枚以上 / レビュー {filters.minReviews}件以上 / 評価 {filters.minRating.toFixed(1)}以上<br />
+            フィード: {items.length}作品読込済み / 100件単位で段階取得
+            {hasMore ? " / 続きあり" : " / 最終ページ到達"}
           </div>
 
           <div className="diag">
             <div className="diag-title">sample_l 枚数分布</div>
-            <div className="diag-sub">現在のジャンル条件で取得した最大800件を、レビュー/評価/sample_l数値フィルタ適用前に集計しています。</div>
-            <table className="diag-table">
-              <thead>
-                <tr>
-                  <th>API素材</th>
-                  <th>総数</th>
-                  <th>0P</th>
-                  <th>1–4P</th>
-                  <th>5–9P</th>
-                  <th>10P+</th>
-                </tr>
-              </thead>
-              <tbody>
-                {catalog
-                  ? STAT_KEYS.map((key) => (
+            <div className="diag-sub">診断を開いた時だけ最大800件を別処理で走査します。通常フィードの初回表示は待ちません。</div>
+            {diagnosticsLoading ? (
+              <div className="diag-loading"><span className="mini-spinner" /> API診断をバックグラウンド取得中…</div>
+            ) : diagnosticsError ? (
+              <div className="genre-note">{diagnosticsError}</div>
+            ) : diagnostics ? (
+              <>
+                <table className="diag-table">
+                  <thead>
+                    <tr><th>API素材</th><th>総数</th><th>0P</th><th>1–4P</th><th>5–9P</th><th>10P+</th></tr>
+                  </thead>
+                  <tbody>
+                    {STAT_KEYS.map((key) => (
                       <DiagnosticRow
                         key={key}
                         label={meta?.assetTypes.find((definition) => definition.key === key)?.label ?? ASSET_LABELS[key]}
-                        stats={catalog.stats[key]}
-                        active={filters.assetType === key}
-                      />
-                    ))
-                  : STAT_KEYS.map((key) => (
-                      <DiagnosticRow
-                        key={key}
-                        label={meta?.assetTypes.find((definition) => definition.key === key)?.label ?? ASSET_LABELS[key]}
-                        stats={{ total: 0, zero: 0, oneToFour: 0, fiveToNine: 0, tenPlus: 0 }}
+                        stats={diagnostics.stats[key]}
                         active={filters.assetType === key}
                       />
                     ))}
-              </tbody>
-            </table>
-            {catalog && Object.keys(catalog.stats.rawBuckets).length > 0 ? (
-              <div className="diag-sub diag-raw">
-                その他bucket: {Object.entries(catalog.stats.rawBuckets).map(([key, value]) => `${key}:${value}`).join(" / ")}
-              </div>
+                  </tbody>
+                </table>
+                <div className="diag-sub diag-raw">診断走査: {diagnostics.scanned}件{diagnostics.apiTotal ? ` / API該当総数 ${diagnostics.apiTotal}件` : ""}</div>
+                {Object.keys(diagnostics.stats.rawBuckets).length > 0 ? (
+                  <div className="diag-sub diag-raw">その他bucket: {Object.entries(diagnostics.stats.rawBuckets).map(([key, value]) => `${key}:${value}`).join(" / ")}</div>
+                ) : null}
+              </>
             ) : null}
           </div>
 
           <div className="sheet-actions">
-            <button className="btn btn-secondary" type="button" onClick={() => setDraftFilters(DEFAULT_FILTERS)}>
-              初期値に戻す
-            </button>
-            <button className="btn btn-primary" type="submit" disabled={loading}>
-              {loading ? "取得中…" : "この条件で見る"}
-            </button>
+            <button className="btn btn-secondary" type="button" onClick={() => setDraftFilters(DEFAULT_FILTERS)}>初期値に戻す</button>
+            <button className="btn btn-primary" type="submit" disabled={loading}>{loading ? "取得中…" : "この条件で見る"}</button>
           </div>
         </form>
 
         <form className="cid-test" onSubmit={openCid}>
-          <input
-            value={cidDraft}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => setCidDraft(event.target.value)}
-            placeholder="CID / FANZA商品URLで直接テスト"
-            autoComplete="off"
-          />
-          <button type="submit" disabled={loading || !cidDraft.trim()}>
-            開く
-          </button>
+          <input value={cidDraft} onChange={(event: ChangeEvent<HTMLInputElement>) => setCidDraft(event.target.value)} placeholder="CID / FANZA商品URLで直接テスト" autoComplete="off" />
+          <button type="submit" disabled={loading || !cidDraft.trim()}>開く</button>
         </form>
         {cid ? <div className="cid-active">直接表示中: {cid}</div> : null}
       </aside>
