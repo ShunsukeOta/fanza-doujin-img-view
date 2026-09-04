@@ -85,11 +85,11 @@ jobs:
             if ssh -i "$HOME/.ssh/id_shin" -p 10022 \
               -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
               wp983575@wp983575.wpx.jp \
-              'mkdir -p "$HOME/wp983575.wpx.jp/public_html" "$HOME/wp983575.wpx.jp/app" && echo "SSH接続OK"'; then
+              'mkdir -p "$HOME/wp983575.wpx.jp/public_html" "$HOME/wp983575.wpx.jp/app" && test -x /usr/bin/php8.3 && /usr/bin/php8.3 -v | head -n 1 && echo "SSH接続OK"'; then
               exit 0
             fi
             if [ "$attempt" -eq 4 ]; then
-              echo "SSH接続に4回失敗しました。" >&2
+              echo "SSH接続またはPHP 8.3 CLI確認に4回失敗しました。" >&2
               exit 1
             fi
             echo "SSH接続に失敗。${attempt}/4 回目、再試行します。"
@@ -184,8 +184,9 @@ jobs:
             wp983575@wp983575.wpx.jp '
               set -eu
               APP="$HOME/wp983575.wpx.jp/app"
+              PHP_CLI=/usr/bin/php8.3
               chmod 600 "$APP/config.local.php"
-              php "$APP/cron/setup-db.php"
+              "$PHP_CLI" "$APP/cron/setup-db.php"
             ')"
           printf '%s\n' "$SETUP_OUTPUT"
           WORKS="$(printf '%s\n' "$SETUP_OUTPUT" | sed -n 's/.*works=\([0-9][0-9]*\).*/\1/p' | tail -n 1)"
@@ -198,7 +199,7 @@ jobs:
               wp983575@wp983575.wpx.jp '
                 set -eu
                 APP="$HOME/wp983575.wpx.jp/app"
-                php "$APP/cron/fanza-sync.php" --pages=20 --sort=date
+                /usr/bin/php8.3 "$APP/cron/fanza-sync.php" --pages=20 --sort=date
               '
           else
             echo "作品DBは既に ${WORKS} 件あるため初回大量同期を省略します。"

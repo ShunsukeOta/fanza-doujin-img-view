@@ -61,7 +61,8 @@ jobs:
                   echo "config.local.php が未設定なので同期をスキップします。"
                   exit 0
                 fi
-                php "$APP/cron/fanza-sync.php" --pages=5 --sort=date
+                test -x /usr/bin/php8.3
+                /usr/bin/php8.3 "$APP/cron/fanza-sync.php" --pages=5 --sort=date
               '; then
               exit 0
             fi
