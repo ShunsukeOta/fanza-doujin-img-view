@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 
 import "./globals.css";
+import "./feed-stats.css";
 
 export const metadata: Metadata = {
   title: "FANZA同人 Swipe Preview",
