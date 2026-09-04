@@ -20,6 +20,7 @@ type GestureState = {
   startX: number;
   startY: number;
   startScrollLeft: number;
+  startFeedScrollTop: number;
   startPage: number;
   startedAt: number;
   axis: GestureAxis;
@@ -63,10 +64,11 @@ function initialDetails(item: FeedItem): WorkDetails {
   };
 }
 
-export function WorkCard({ item, index, isActive, onToast, onDebug }: Props) {
+export function WorkCard({ item, index, isActive, onToast, onDebug, onVerticalSwipe }: Props) {
   const trackRef = useRef<HTMLDivElement | null>(null);
   const pageSettleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gestureRef = useRef<GestureState | null>(null);
+  const feedAnimationFrame = useRef<number | null>(null);
   const detailsRequested = useRef(false);
   const [currentPage, setCurrentPage] = useState(0);
   const [loadStates, setLoadStates] = useState<LoadState[]>(() => item.images.map(() => "pending"));
@@ -79,6 +81,51 @@ export function WorkCard({ item, index, isActive, onToast, onDebug }: Props) {
   const [detailsLoading, setDetailsLoading] = useState(false);
 
   const ctaPage = item.images.length;
+
+  const feedElement = useCallback(() => trackRef.current?.closest<HTMLElement>(".feed") ?? null, []);
+
+  const cancelFeedAnimation = useCallback(() => {
+    if (feedAnimationFrame.current !== null) {
+      cancelAnimationFrame(feedAnimationFrame.current);
+      feedAnimationFrame.current = null;
+    }
+  }, []);
+
+  const animateFeedToWork = useCallback((targetIndex: number) => {
+    const feed = feedElement();
+    if (!feed) return;
+    const target = feed.querySelector<HTMLElement>(`.feed-item[data-work-index="${targetIndex}"]`);
+    if (!target) return;
+
+    cancelFeedAnimation();
+    const start = feed.scrollTop;
+    const end = target.offsetTop;
+    const distance = end - start;
+    if (Math.abs(distance) < 1) {
+      feed.scrollTop = end;
+      return;
+    }
+
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      feed.scrollTop = end;
+      return;
+    }
+
+    const duration = 210;
+    const startedAt = performance.now();
+    const step = (now: number) => {
+      const progress = clamp((now - startedAt) / duration, 0, 1);
+      const eased = 1 - Math.pow(1 - progress, 4);
+      feed.scrollTop = start + distance * eased;
+      if (progress < 1) {
+        feedAnimationFrame.current = requestAnimationFrame(step);
+      } else {
+        feed.scrollTop = end;
+        feedAnimationFrame.current = null;
+      }
+    };
+    feedAnimationFrame.current = requestAnimationFrame(step);
+  }, [cancelFeedAnimation, feedElement]);
 
   const maxScrollLeft = useCallback(() => {
     const track = trackRef.current;
@@ -140,7 +187,7 @@ export function WorkCard({ item, index, isActive, onToast, onDebug }: Props) {
     if (next >= Math.max(0, ctaPage - 1)) void loadDetails();
     track.scrollTo({ left: scrollLeftForPage(next), behavior });
     if (pageSettleTimer.current) clearTimeout(pageSettleTimer.current);
-    pageSettleTimer.current = setTimeout(commitCurrentPage, behavior === "smooth" ? 330 : 30);
+    pageSettleTimer.current = setTimeout(commitCurrentPage, behavior === "smooth" ? 260 : 30);
   }, [commitCurrentPage, ctaPage, item.images.length, loadDetails, scrollLeftForPage]);
 
   useEffect(() => {
@@ -203,7 +250,8 @@ export function WorkCard({ item, index, isActive, onToast, onDebug }: Props) {
 
   useEffect(() => () => {
     if (pageSettleTimer.current) clearTimeout(pageSettleTimer.current);
-  }, []);
+    cancelFeedAnimation();
+  }, [cancelFeedAnimation]);
 
   const markLoad = useCallback((pageIndex: number, state: Exclude<LoadState, "pending">) => {
     setLoadStates((previous) => {
@@ -221,17 +269,20 @@ export function WorkCard({ item, index, isActive, onToast, onDebug }: Props) {
   const scheduleCurrentPageCommit = () => {
     if (gestureRef.current?.axis === "x") return;
     if (pageSettleTimer.current) clearTimeout(pageSettleTimer.current);
-    pageSettleTimer.current = setTimeout(commitCurrentPage, 90);
+    pageSettleTimer.current = setTimeout(commitCurrentPage, 70);
   };
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!event.isPrimary || (event.pointerType === "mouse" && event.button !== 0)) return;
+    if (!event.isPrimary || !isActive || (event.pointerType === "mouse" && event.button !== 0)) return;
     if (pageSettleTimer.current) clearTimeout(pageSettleTimer.current);
+    cancelFeedAnimation();
+    const feed = feedElement();
     gestureRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
       startScrollLeft: trackRef.current?.scrollLeft ?? 0,
+      startFeedScrollTop: feed?.scrollTop ?? 0,
       startPage: pageIndexFromScroll(),
       startedAt: performance.now(),
       axis: null,
@@ -245,42 +296,78 @@ export function WorkCard({ item, index, isActive, onToast, onDebug }: Props) {
 
     const dx = event.clientX - gesture.startX;
     const dy = event.clientY - gesture.startY;
-    if (gesture.axis === null && Math.max(Math.abs(dx), Math.abs(dy)) >= 8) {
-      if (Math.abs(dx) > Math.abs(dy) * 1.1) {
+    if (gesture.axis === null && Math.max(Math.abs(dx), Math.abs(dy)) >= 7) {
+      if (Math.abs(dx) > Math.abs(dy) * 1.08) {
         gesture.axis = "x";
-        try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* unsupported */ }
-      } else if (Math.abs(dy) > Math.abs(dx) * 1.1) {
+      } else if (Math.abs(dy) > Math.abs(dx) * 1.08) {
         gesture.axis = "y";
+      } else {
+        return;
       }
+      try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* unsupported */ }
     }
 
-    if (gesture.axis !== "x") return;
-    event.preventDefault();
-    // RTLでは次ページが左側にある。指を右へ動かすと内容も右へ追従し、左の次ページへ進む。
-    track.scrollLeft = clamp(gesture.startScrollLeft - dx, 0, maxScrollLeft());
+    if (gesture.axis === "x") {
+      event.preventDefault();
+      const maxTravel = track.clientWidth * 0.92;
+      const drag = clamp(dx, -maxTravel, maxTravel);
+      track.scrollLeft = clamp(gesture.startScrollLeft - drag, 0, maxScrollLeft());
+      return;
+    }
+
+    if (gesture.axis === "y") {
+      event.preventDefault();
+      const feed = feedElement();
+      if (!feed) return;
+      const maxTravel = feed.clientHeight * 0.92;
+      const drag = clamp(dy, -maxTravel, maxTravel);
+      feed.scrollTop = clamp(
+        gesture.startFeedScrollTop - drag,
+        0,
+        Math.max(0, feed.scrollHeight - feed.clientHeight),
+      );
+    }
   };
 
-  const finishHorizontalGesture = (event: ReactPointerEvent<HTMLDivElement>, cancelled = false) => {
+  const finishGesture = (event: ReactPointerEvent<HTMLDivElement>, cancelled = false) => {
     const gesture = gestureRef.current;
     gestureRef.current = null;
     if (!gesture || gesture.pointerId !== event.pointerId) return;
 
-    if (gesture.axis !== "x") {
-      if (!cancelled) pageSettleTimer.current = setTimeout(commitCurrentPage, 90);
+    const dx = event.clientX - gesture.startX;
+    const dy = event.clientY - gesture.startY;
+    const elapsed = Math.max(1, performance.now() - gesture.startedAt);
+
+    if (gesture.axis === "x") {
+      const velocity = Math.abs(dx) / elapsed;
+      const width = trackRef.current?.clientWidth ?? 0;
+      const decisive = !cancelled && (Math.abs(dx) >= Math.max(28, width * 0.1) || velocity >= 0.4);
+      const target = decisive
+        ? gesture.startPage + (dx > 0 ? 1 : -1)
+        : gesture.startPage;
+      goToPage(target);
       return;
     }
 
-    const dx = event.clientX - gesture.startX;
-    const elapsed = Math.max(1, performance.now() - gesture.startedAt);
-    const velocity = Math.abs(dx) / elapsed;
-    const width = trackRef.current?.clientWidth ?? 0;
-    const decisive = Math.abs(dx) >= Math.max(26, width * 0.1) || velocity >= 0.38;
-    const target = cancelled
-      ? pageIndexFromScroll()
-      : decisive
-        ? gesture.startPage + (dx > 0 ? 1 : -1)
-        : pageIndexFromScroll();
-    goToPage(target);
+    if (gesture.axis === "y") {
+      const feed = feedElement();
+      const height = feed?.clientHeight ?? window.innerHeight;
+      const velocity = Math.abs(dy) / elapsed;
+      const decisive = !cancelled && (Math.abs(dy) >= Math.max(48, height * 0.1) || velocity >= 0.42);
+      const direction: -1 | 1 = dy < 0 ? 1 : -1;
+      const requestedIndex = decisive ? index + direction : index;
+      const target = feed?.querySelector<HTMLElement>(`.feed-item[data-work-index="${requestedIndex}"]`);
+
+      if (decisive && !target) {
+        onVerticalSwipe?.(direction);
+        animateFeedToWork(index);
+        return;
+      }
+      animateFeedToWork(decisive ? requestedIndex : index);
+      return;
+    }
+
+    animateFeedToWork(index);
   };
 
   const toggleReaction = async (type: "like" | "save") => {
@@ -347,8 +434,8 @@ export function WorkCard({ item, index, isActive, onToast, onDebug }: Props) {
         onScroll={scheduleCurrentPageCommit}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
-        onPointerUp={(event) => finishHorizontalGesture(event)}
-        onPointerCancel={(event) => finishHorizontalGesture(event, true)}
+        onPointerUp={(event) => finishGesture(event)}
+        onPointerCancel={(event) => finishGesture(event, true)}
         onKeyDown={(event: ReactKeyboardEvent<HTMLDivElement>) => {
           if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
             event.preventDefault();
@@ -402,13 +489,11 @@ export function WorkCard({ item, index, isActive, onToast, onDebug }: Props) {
 
       <div className="item-gradient" />
       <div className="item-info">
-        <div className="item-type">{item.assetLabel}</div>
         <h2 className="item-title">{item.title || item.cid}</h2>
         <div className="item-stats">
           <span className="stat-chip">★<strong>{item.rating.toFixed(1)}</strong> <span>({item.reviews}件)</span></span>
           {item.price ? <span className="stat-chip"><strong>{formatPrice(item.price)}</strong></span> : null}
         </div>
-        {item.genres.length > 0 ? <div className="genre-line">{item.genres.slice(0, 6).join(" / ")}</div> : null}
         {/^(https?):\/\//i.test(item.affiliateUrl) ? (
           <a className="open-link" href={item.affiliateUrl} target="_blank" rel="noopener noreferrer sponsored" onClick={() => trackEvent({ eventType: "affiliate_click", cid: item.cid })}>
             FANZAで続きを読む <ExternalIcon />
