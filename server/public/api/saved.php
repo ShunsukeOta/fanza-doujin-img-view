@@ -13,7 +13,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
 
 try {
     [$anonymousUserId] = anonymous_identity();
-    $result = $userLibraryService->favorites($anonymousUserId, read_int('limit', 60, 1, 100));
+    $result = $userLibraryService->saved($anonymousUserId, read_int('limit', 60, 1, 100));
     $cids = array_values(array_map(
         static fn(array $item): string => (string)$item['cid'],
         $result['items'],
@@ -35,5 +35,5 @@ try {
         'generatedAt' => date(DATE_ATOM),
     ], 200, ['Cache-Control' => 'private, no-store']);
 } catch (Throwable $error) {
-    json_response(['error' => public_error_message($error, 'お気に入りを取得できませんでした。')], 500, ['Cache-Control' => 'no-store']);
+    json_response(['error' => public_error_message($error, '保存済み作品を取得できませんでした。')], 500, ['Cache-Control' => 'no-store']);
 }

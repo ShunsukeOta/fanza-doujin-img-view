@@ -119,14 +119,32 @@ final class FanzaClient
 
     public function feedItem(array $item): array
     {
-        $images=$this->sampleImages($item); $bucket=$this->detectAssetBucket($item);
-        $assetType=in_array($bucket,['comic','cg','game','voice'],true)?$bucket:'other';
-        $review=$this->record($item['review']??null); $prices=$this->record($item['prices']??null); $genres=$this->itemGenres($item);
+        $images = $this->sampleImages($item);
+        $bucket = $this->detectAssetBucket($item);
+        $assetType = in_array($bucket, ['comic', 'cg', 'game', 'voice'], true) ? $bucket : 'other';
+        $review = $this->record($item['review'] ?? null);
+        $prices = $this->record($item['prices'] ?? null);
+        $genres = $this->itemGenres($item);
+        $volume = trim($this->string($item['volume'] ?? null));
+
         return [
-            'cid'=>$this->string($item['content_id']??null),'title'=>$this->string($item['title']??null),'affiliateUrl'=>$this->string($item['affiliateURL']??null),
-            'images'=>$images,'sampleCount'=>count($images),'reviews'=>(int)($review['count']??0),'rating'=>(float)($review['average']??0),
-            'genres'=>array_values(array_map(static fn(array $genre):string=>$genre['name'],$genres)),'genreRows'=>$genres,'price'=>$this->string($prices['price']??null),
-            'assetBucket'=>$bucket,'assetType'=>$assetType,'assetLabel'=>self::assetLabel($assetType),'releaseDate'=>$this->string($item['date']??null),'maker'=>$this->makerName($item),
+            'cid' => $this->string($item['content_id'] ?? null),
+            'title' => $this->string($item['title'] ?? null),
+            'affiliateUrl' => $this->string($item['affiliateURL'] ?? null),
+            'images' => $images,
+            'sampleCount' => count($images),
+            'fullPageCount' => $this->pageCountFromVolume($volume),
+            'volume' => $volume,
+            'reviews' => (int)($review['count'] ?? 0),
+            'rating' => (float)($review['average'] ?? 0),
+            'genres' => array_values(array_map(static fn(array $genre): string => $genre['name'], $genres)),
+            'genreRows' => $genres,
+            'price' => $this->string($prices['price'] ?? null),
+            'assetBucket' => $bucket,
+            'assetType' => $assetType,
+            'assetLabel' => self::assetLabel($assetType),
+            'releaseDate' => $this->string($item['date'] ?? null),
+            'maker' => $this->makerName($item),
         ];
     }
 
@@ -138,6 +156,15 @@ final class FanzaClient
     public static function assetLabel(string $type): string
     {
         return match($type){'comic'=>'コミック系','cg'=>'CG・イラスト系','game'=>'ゲーム系','voice'=>'ボイス・音声系','all'=>'すべて',default=>'その他・不明'};
+    }
+
+    private function pageCountFromVolume(string $volume): ?int
+    {
+        if ($volume === '') return null;
+        $normalized = str_replace([',', '，'], '', $volume);
+        if (preg_match('/([0-9]{1,5})\s*(?:ページ|頁)/u', $normalized, $match) !== 1) return null;
+        $pages = (int)$match[1];
+        return $pages > 0 ? $pages : null;
     }
 
     private function itemList(array $floor,array $params): array

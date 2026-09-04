@@ -4,6 +4,8 @@ CREATE TABLE IF NOT EXISTS works (
   affiliate_url TEXT NOT NULL,
   sample_images_json LONGTEXT NOT NULL,
   sample_count SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+  full_page_count INT UNSIGNED NULL,
+  volume VARCHAR(128) NOT NULL DEFAULT '',
   review_count INT UNSIGNED NOT NULL DEFAULT 0,
   rating DECIMAL(3,2) NOT NULL DEFAULT 0.00,
   price VARCHAR(64) NOT NULL DEFAULT '',

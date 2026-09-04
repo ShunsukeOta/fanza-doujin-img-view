@@ -1,4 +1,5 @@
 import {
+  type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   useCallback,
@@ -13,6 +14,21 @@ import { trackEvent } from "@/src/analytics";
 import { loadReactions, updateReaction } from "@/src/reactions";
 
 type LoadState = "pending" | "loaded" | "error";
+type GestureAxis = "x" | "y" | null;
+type GestureState = {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  startScrollLeft: number;
+  startPage: number;
+  startedAt: number;
+  axis: GestureAxis;
+};
+type WorkDetails = {
+  remainingPages: number | null;
+  price: string;
+  affiliateUrl: string;
+};
 
 type Props = {
   item: FeedItem;
@@ -38,10 +54,20 @@ function formatCount(value: number) {
   return Math.max(0, value).toLocaleString("ja-JP");
 }
 
+function initialDetails(item: FeedItem): WorkDetails {
+  const fullPages = typeof item.fullPageCount === "number" ? item.fullPageCount : null;
+  return {
+    remainingPages: fullPages === null ? null : Math.max(0, fullPages - item.sampleCount),
+    price: item.price,
+    affiliateUrl: item.affiliateUrl,
+  };
+}
+
 export function WorkCard({ item, index, isActive, onToast, onDebug }: Props) {
   const trackRef = useRef<HTMLDivElement | null>(null);
   const pageSettleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const gestureRef = useRef<{ pointerId: number; x: number; y: number; startedAt: number } | null>(null);
+  const gestureRef = useRef<GestureState | null>(null);
+  const detailsRequested = useRef(false);
   const [currentPage, setCurrentPage] = useState(0);
   const [loadStates, setLoadStates] = useState<LoadState[]>(() => item.images.map(() => "pending"));
   const [liked, setLiked] = useState(item.viewerLiked);
@@ -49,11 +75,96 @@ export function WorkCard({ item, index, isActive, onToast, onDebug }: Props) {
   const [likeCount, setLikeCount] = useState(item.likeCount);
   const [saveCount, setSaveCount] = useState(item.saveCount);
   const [reactionPending, setReactionPending] = useState<"like" | "save" | null>(null);
+  const [details, setDetails] = useState<WorkDetails>(() => initialDetails(item));
+  const [detailsLoading, setDetailsLoading] = useState(false);
+
+  const ctaPage = item.images.length;
+
+  const maxScrollLeft = useCallback(() => {
+    const track = trackRef.current;
+    return track ? Math.max(0, track.scrollWidth - track.clientWidth) : 0;
+  }, []);
+
+  // DOMは左から「CTA, 最終サンプル, ... , 2P, 1P」。1Pは常に右端。
+  const scrollLeftForPage = useCallback((page: number) => {
+    const track = trackRef.current;
+    if (!track || track.clientWidth <= 0) return 0;
+    return clamp(maxScrollLeft() - clamp(page, 0, ctaPage) * track.clientWidth, 0, maxScrollLeft());
+  }, [ctaPage, maxScrollLeft]);
+
+  const pageIndexFromScroll = useCallback(() => {
+    const track = trackRef.current;
+    if (!track || track.clientWidth <= 0) return 0;
+    return clamp(Math.round((maxScrollLeft() - track.scrollLeft) / track.clientWidth), 0, ctaPage);
+  }, [ctaPage, maxScrollLeft]);
+
+  const commitCurrentPage = useCallback(() => {
+    setCurrentPage(pageIndexFromScroll());
+  }, [pageIndexFromScroll]);
+
+  const loadDetails = useCallback(async () => {
+    if (detailsRequested.current) return;
+    detailsRequested.current = true;
+    setDetailsLoading(true);
+    try {
+      const response = await fetch(`/api/work-details?cid=${encodeURIComponent(item.cid)}`, {
+        headers: { Accept: "application/json" },
+        credentials: "same-origin",
+      });
+      const data = await response.json().catch(() => null) as {
+        ok?: boolean;
+        remainingPages?: number | null;
+        price?: string;
+        affiliateUrl?: string;
+        error?: string;
+      } | null;
+      if (!response.ok || !data?.ok) throw new Error(data?.error || "作品情報を取得できませんでした");
+      setDetails({
+        remainingPages: typeof data.remainingPages === "number" ? data.remainingPages : null,
+        price: typeof data.price === "string" && data.price ? data.price : item.price,
+        affiliateUrl: typeof data.affiliateUrl === "string" && data.affiliateUrl ? data.affiliateUrl : item.affiliateUrl,
+      });
+    } catch {
+      detailsRequested.current = false;
+      // 購入導線はDB情報で継続し、未確認のページ数は推測表示しない。
+    } finally {
+      setDetailsLoading(false);
+    }
+  }, [item.affiliateUrl, item.cid, item.price]);
+
+  const goToPage = useCallback((target: number, behavior: ScrollBehavior = "smooth") => {
+    const track = trackRef.current;
+    if (!track || item.images.length === 0) return;
+    const next = clamp(target, 0, ctaPage);
+    setCurrentPage(next);
+    if (next >= Math.max(0, ctaPage - 1)) void loadDetails();
+    track.scrollTo({ left: scrollLeftForPage(next), behavior });
+    if (pageSettleTimer.current) clearTimeout(pageSettleTimer.current);
+    pageSettleTimer.current = setTimeout(commitCurrentPage, behavior === "smooth" ? 330 : 30);
+  }, [commitCurrentPage, ctaPage, item.images.length, loadDetails, scrollLeftForPage]);
 
   useEffect(() => {
     setLoadStates(item.images.map(() => "pending"));
     setCurrentPage(0);
-  }, [item.cid, item.images]);
+    setDetails(initialDetails(item));
+    detailsRequested.current = false;
+    const frame = requestAnimationFrame(() => goToPage(0, "auto"));
+    return () => cancelAnimationFrame(frame);
+  }, [goToPage, item.cid, item.images]);
+
+  useEffect(() => {
+    const track = trackRef.current;
+    if (!track || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      track.scrollTo({ left: scrollLeftForPage(currentPage), behavior: "auto" });
+    });
+    observer.observe(track);
+    return () => observer.disconnect();
+  }, [currentPage, scrollLeftForPage]);
+
+  useEffect(() => {
+    if (isActive && currentPage >= Math.max(0, item.images.length - 2)) void loadDetails();
+  }, [currentPage, isActive, item.images.length, loadDetails]);
 
   useEffect(() => {
     setLiked(item.viewerLiked);
@@ -107,59 +218,69 @@ export function WorkCard({ item, index, isActive, onToast, onDebug }: Props) {
   const failed = loadStates.filter((state) => state === "error").length;
   const pending = Math.max(0, item.images.length - loaded - failed);
 
-  const pageIndexFromScroll = useCallback(() => {
-    const track = trackRef.current;
-    if (!track || track.clientWidth <= 0 || item.images.length === 0) return 0;
-    return clamp(Math.round(track.scrollLeft / track.clientWidth), 0, item.images.length - 1);
-  }, [item.images.length]);
-
-  const commitCurrentPage = useCallback(() => {
-    setCurrentPage(pageIndexFromScroll());
-  }, [pageIndexFromScroll]);
-
   const scheduleCurrentPageCommit = () => {
-    if (gestureRef.current) return;
+    if (gestureRef.current?.axis === "x") return;
     if (pageSettleTimer.current) clearTimeout(pageSettleTimer.current);
-    pageSettleTimer.current = setTimeout(commitCurrentPage, 120);
-  };
-
-  const goToPage = (target: number) => {
-    const track = trackRef.current;
-    if (!track || item.images.length === 0) return;
-    const next = clamp(target, 0, item.images.length - 1);
-    setCurrentPage(next);
-    track.scrollTo({ left: next * track.clientWidth, behavior: "smooth" });
-    if (pageSettleTimer.current) clearTimeout(pageSettleTimer.current);
-    pageSettleTimer.current = setTimeout(commitCurrentPage, 360);
+    pageSettleTimer.current = setTimeout(commitCurrentPage, 90);
   };
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!event.isPrimary || event.pointerType === "mouse") return;
+    if (!event.isPrimary || (event.pointerType === "mouse" && event.button !== 0)) return;
     if (pageSettleTimer.current) clearTimeout(pageSettleTimer.current);
     gestureRef.current = {
       pointerId: event.pointerId,
-      x: event.clientX,
-      y: event.clientY,
+      startX: event.clientX,
+      startY: event.clientY,
+      startScrollLeft: trackRef.current?.scrollLeft ?? 0,
+      startPage: pageIndexFromScroll(),
       startedAt: performance.now(),
+      axis: null,
     };
   };
 
-  const handlePointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const start = gestureRef.current;
-    gestureRef.current = null;
-    if (!start || start.pointerId !== event.pointerId) return;
-    const dx = event.clientX - start.x;
-    const dy = event.clientY - start.y;
-    const elapsed = performance.now() - start.startedAt;
+  const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const gesture = gestureRef.current;
+    const track = trackRef.current;
+    if (!gesture || !track || gesture.pointerId !== event.pointerId) return;
 
-    // 縦方向はブラウザのネイティブpan-yへ完全に任せる。
-    // touch-action: pan-y により縦操作時はpointercancelになり、親.feedがそのままスクロールする。
-    if (elapsed <= 1000 && Math.abs(dx) >= 42 && Math.abs(dx) > Math.abs(dy) * 1.08) {
-      goToPage(pageIndexFromScroll() + (dx < 0 ? 1 : -1));
+    const dx = event.clientX - gesture.startX;
+    const dy = event.clientY - gesture.startY;
+    if (gesture.axis === null && Math.max(Math.abs(dx), Math.abs(dy)) >= 8) {
+      if (Math.abs(dx) > Math.abs(dy) * 1.1) {
+        gesture.axis = "x";
+        try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* unsupported */ }
+      } else if (Math.abs(dy) > Math.abs(dx) * 1.1) {
+        gesture.axis = "y";
+      }
+    }
+
+    if (gesture.axis !== "x") return;
+    event.preventDefault();
+    // RTLでは次ページが左側にある。指を右へ動かすと内容も右へ追従し、左の次ページへ進む。
+    track.scrollLeft = clamp(gesture.startScrollLeft - dx, 0, maxScrollLeft());
+  };
+
+  const finishHorizontalGesture = (event: ReactPointerEvent<HTMLDivElement>, cancelled = false) => {
+    const gesture = gestureRef.current;
+    gestureRef.current = null;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+
+    if (gesture.axis !== "x") {
+      if (!cancelled) pageSettleTimer.current = setTimeout(commitCurrentPage, 90);
       return;
     }
 
-    pageSettleTimer.current = setTimeout(commitCurrentPage, 140);
+    const dx = event.clientX - gesture.startX;
+    const elapsed = Math.max(1, performance.now() - gesture.startedAt);
+    const velocity = Math.abs(dx) / elapsed;
+    const width = trackRef.current?.clientWidth ?? 0;
+    const decisive = Math.abs(dx) >= Math.max(26, width * 0.1) || velocity >= 0.38;
+    const target = cancelled
+      ? pageIndexFromScroll()
+      : decisive
+        ? gesture.startPage + (dx > 0 ? 1 : -1)
+        : pageIndexFromScroll();
+    goToPage(target);
   };
 
   const toggleReaction = async (type: "like" | "save") => {
@@ -212,43 +333,72 @@ export function WorkCard({ item, index, isActive, onToast, onDebug }: Props) {
     }
   };
 
+  const visiblePage = Math.min(currentPage + 1, Math.max(1, item.images.length));
+  const ctaUrl = details.affiliateUrl || item.affiliateUrl;
+  const ctaPrice = details.price || item.price;
+  const ctaStyle = { order: 0 } satisfies CSSProperties;
+
   return (
     <article className="feed-item" data-work-index={index} data-cid={item.cid} aria-label={`${index + 1}件目 ${item.title || item.cid}`}>
       <div
         ref={trackRef}
-        className="preview-track"
+        className="preview-track manga-reader-track"
         tabIndex={0}
         onScroll={scheduleCurrentPageCommit}
         onPointerDown={handlePointerDown}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={() => {
-          gestureRef.current = null;
-          pageSettleTimer.current = setTimeout(commitCurrentPage, 140);
-        }}
+        onPointerMove={handlePointerMove}
+        onPointerUp={(event) => finishHorizontalGesture(event)}
+        onPointerCancel={(event) => finishHorizontalGesture(event, true)}
         onKeyDown={(event: ReactKeyboardEvent<HTMLDivElement>) => {
           if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
             event.preventDefault();
-            goToPage(currentPage + (event.key === "ArrowRight" ? 1 : -1));
+            goToPage(currentPage + (event.key === "ArrowLeft" ? 1 : -1));
           }
         }}
       >
-        {item.images.map((url, pageIndex) => (
-          <div className={`preview-page${loadStates[pageIndex] === "error" ? " is-error" : ""}`} key={`${item.cid}-${pageIndex}`}>
-            <img
-              src={url}
-              alt={`${item.title} サンプル ${pageIndex + 1}`}
-              loading={index === 0 && pageIndex === 0 ? "eager" : "lazy"}
-              fetchPriority={index === 0 && pageIndex === 0 ? "high" : "auto"}
-              decoding="async"
-              onLoad={() => markLoad(pageIndex, "loaded")}
-              onError={() => markLoad(pageIndex, "error")}
-            />
+        <div className="preview-page preview-cta-page" style={ctaStyle} aria-label="続きを読む">
+          <div className="reader-cta">
+            <p className="reader-cta-kicker">サンプルはここまで</p>
+            {detailsLoading ? (
+              <p className="reader-cta-remaining is-loading">本編ページ数を確認中…</p>
+            ) : details.remainingPages !== null ? (
+              <p className="reader-cta-remaining">本編残り <strong>{details.remainingPages.toLocaleString("ja-JP")}</strong> ページ</p>
+            ) : (
+              <p className="reader-cta-remaining">本編の続きがあります</p>
+            )}
+            {ctaPrice ? <p className="reader-cta-price">{formatPrice(ctaPrice)}</p> : null}
+            {/^(https?):\/\//i.test(ctaUrl) ? (
+              <a className="reader-cta-button" href={ctaUrl} target="_blank" rel="noopener noreferrer sponsored" onClick={() => trackEvent({ eventType: "affiliate_click", cid: item.cid })}>
+                続きを読む <ExternalIcon />
+              </a>
+            ) : null}
           </div>
-        ))}
+        </div>
+
+        {item.images.map((url, pageIndex) => {
+          const shouldLoad = pageIndex === 0 || (isActive && pageIndex >= Math.max(0, currentPage - 1) && pageIndex <= currentPage + 2);
+          const pageStyle = { order: ctaPage - pageIndex } satisfies CSSProperties;
+          return (
+            <div className={`preview-page${loadStates[pageIndex] === "error" ? " is-error" : ""}`} style={pageStyle} key={`${item.cid}-${pageIndex}`}>
+              {shouldLoad ? (
+                <img
+                  src={url}
+                  alt={`${item.title} サンプル ${pageIndex + 1}`}
+                  loading={index === 0 && pageIndex === 0 ? "eager" : "lazy"}
+                  fetchPriority={isActive && pageIndex <= currentPage + 1 ? "high" : "auto"}
+                  decoding="async"
+                  draggable={false}
+                  onLoad={() => markLoad(pageIndex, "loaded")}
+                  onError={() => markLoad(pageIndex, "error")}
+                />
+              ) : <div className="preview-page-placeholder" aria-hidden="true" />}
+            </div>
+          );
+        })}
       </div>
 
-      <div className="page-counter" aria-live="polite"><span>{currentPage + 1}</span>&nbsp;/&nbsp;{item.images.length}</div>
-      {item.images.length > 1 && index === 0 ? <div className="swipe-hint">← 横にスワイプして読む →</div> : null}
+      <div className="page-counter" aria-live="polite"><span>{visiblePage}</span>&nbsp;/&nbsp;{item.images.length}</div>
+      {item.images.length > 1 && index === 0 ? <div className="swipe-hint">右へスワイプして読む →</div> : null}
 
       <div className="item-gradient" />
       <div className="item-info">
@@ -277,7 +427,7 @@ export function WorkCard({ item, index, isActive, onToast, onDebug }: Props) {
         <button
           className="action-btn debug-action"
           type="button"
-          onClick={() => onDebug({ item, index, currentPage, loadedImages: loaded, failedImages: failed, pendingImages: pending, liked, saved, likeCount, saveCount })}
+          onClick={() => onDebug({ item, index, currentPage: Math.min(currentPage, Math.max(0, item.images.length - 1)), loadedImages: loaded, failedImages: failed, pendingImages: pending, liked, saved, likeCount, saveCount })}
         >
           <span className="action-icon"><DebugIcon /></span><span className="action-label">デバッグ</span>
         </button>

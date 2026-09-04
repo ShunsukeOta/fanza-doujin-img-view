@@ -1,24 +1,24 @@
-import { FeedSwipeIcon, HeartIcon, UserIcon } from "@/components/icons";
+import { BookmarkIcon, FeedSwipeIcon, UserIcon } from "@/components/icons";
 
-type NavKey = "favorites" | "main" | "mypage";
+type NavKey = "saved" | "main" | "mypage";
 
 type Props = {
   active?: NavKey;
-  onFavorites?: () => void;
   onMain?: () => void;
+  onFavorites?: () => void;
   onMyPage?: () => void;
 };
 
 function currentNav(): NavKey {
   const path = window.location.pathname.replace(/\/+$/, "") || "/";
-  if (path === "/favorites") return "favorites";
+  if (path === "/saved" || path === "/favorites") return "saved";
   if (path === "/mypage") return "mypage";
   return "main";
 }
 
 export function GlobalNav({ active = currentNav(), onMain }: Props) {
-  const goFavorites = () => {
-    if (active !== "favorites") window.location.assign("/favorites");
+  const goSaved = () => {
+    if (active !== "saved") window.location.assign("/saved");
   };
   const goMain = () => {
     if (active === "main") {
@@ -33,9 +33,9 @@ export function GlobalNav({ active = currentNav(), onMain }: Props) {
 
   return (
     <nav className="global-nav" aria-label="グローバルメニュー">
-      <button className={`global-nav-item${active === "favorites" ? " is-active" : ""}`} type="button" onClick={goFavorites} aria-current={active === "favorites" ? "page" : undefined}>
-        <HeartIcon />
-        <span>お気に入り</span>
+      <button className={`global-nav-item${active === "saved" ? " is-active" : ""}`} type="button" onClick={goSaved} aria-current={active === "saved" ? "page" : undefined}>
+        <BookmarkIcon />
+        <span>保存済み</span>
       </button>
       <button className="global-nav-main" type="button" onClick={goMain} aria-current={active === "main" ? "page" : undefined} aria-label="メインページ・上下にスワイプして作品を移動">
         <FeedSwipeIcon />

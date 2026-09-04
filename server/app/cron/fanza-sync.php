@@ -37,10 +37,10 @@ $genreSaved = 0;
 
 $upsertWork = $pdo->prepare(
     'INSERT INTO works '
-    . '(cid, title, affiliate_url, sample_images_json, sample_count, review_count, rating, price, asset_bucket, asset_type, release_date, maker, is_active, first_seen_at, last_seen_at) '
-    . 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW()) '
+    . '(cid, title, affiliate_url, sample_images_json, sample_count, full_page_count, volume, review_count, rating, price, asset_bucket, asset_type, release_date, maker, is_active, first_seen_at, last_seen_at) '
+    . 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW()) '
     . 'ON DUPLICATE KEY UPDATE title=VALUES(title), affiliate_url=VALUES(affiliate_url), sample_images_json=VALUES(sample_images_json), '
-    . 'sample_count=VALUES(sample_count), review_count=VALUES(review_count), rating=VALUES(rating), price=VALUES(price), '
+    . 'sample_count=VALUES(sample_count), full_page_count=VALUES(full_page_count), volume=VALUES(volume), review_count=VALUES(review_count), rating=VALUES(rating), price=VALUES(price), '
     . 'asset_bucket=VALUES(asset_bucket), asset_type=VALUES(asset_type), release_date=VALUES(release_date), maker=VALUES(maker), '
     . 'is_active=1, last_seen_at=NOW()'
 );
@@ -85,6 +85,8 @@ for ($pageIndex = 0; $pageIndex < $pages; $pageIndex++) {
                 (string)$item['affiliateUrl'],
                 json_encode($item['images'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
                 (int)$item['sampleCount'],
+                $item['fullPageCount'] ?? null,
+                (string)($item['volume'] ?? ''),
                 (int)$item['reviews'],
                 (float)$item['rating'],
                 (string)$item['price'],

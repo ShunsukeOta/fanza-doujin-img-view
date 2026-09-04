@@ -35,11 +35,22 @@ jobs:
           test ! -e .vercel
           test ! -e vercel.json
           test ! -e styles/feed-stats.css
+          test ! -e components/FavoritesPage.tsx
+          test ! -e server/public/api/favorites.php
           test ! -e server/public/api/recommend.php
           if grep -R -n -E '(^|[^A-Za-z])(server-only|NextRequest|NextResponse|"use client"|\x27use client\x27)' components src lib server --include='*.ts' --include='*.tsx' --include='*.php'; then
             echo "旧Next.js由来のコードが残っています。" >&2
             exit 1
           fi
+      - name: 漫画ビューアーの必須実装を確認
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F 'className="preview-track manga-reader-track"' components/WorkCard.tsx >/dev/null
+          grep -F '本編残り' components/WorkCard.tsx >/dev/null
+          grep -F '続きを読む' components/WorkCard.tsx >/dev/null
+          grep -F 'reader-focus' components/FocusModeToggle.tsx >/dev/null
+          grep -F '保存済み' components/GlobalNav.tsx >/dev/null
       - name: 本番成果物を作成
         env:
           GITHUB_SHA: ${{ github.sha }}
@@ -50,9 +61,11 @@ jobs:
           test -f deploy/public_html/api/catalog.php
           test -f deploy/public_html/api/events.php
           test -f deploy/public_html/api/reactions.php
-          test -f deploy/public_html/api/favorites.php
+          test -f deploy/public_html/api/saved.php
           test -f deploy/public_html/api/me.php
+          test -f deploy/public_html/api/work-details.php
           test -f deploy/public_html/api/debug.php
+          test ! -f deploy/public_html/api/favorites.php
           test ! -f deploy/public_html/api/recommend.php
           test -f deploy/app/src/UserLibraryService.php
           test -f deploy/app/schema.sql
