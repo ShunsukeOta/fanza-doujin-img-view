@@ -11,7 +11,9 @@ import "@/styles/navigation.css";
 import "@/styles/pages.css";
 import "@/styles/page-scroll.css";
 import "@/styles/reader.css";
+import "@/styles/saved-enhancements.css";
 import { startAnalytics } from "@/src/analytics";
+import { installMainResumeLifecycle, prepareMainResumeFallback } from "@/src/navigationState";
 
 const ASSET_TYPES = new Set<AssetType>(["all", "comic", "cg", "game", "voice", "other"]);
 
@@ -25,6 +27,11 @@ function boundedFloat(params: URLSearchParams, key: string, fallback: number, mi
   return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback;
 }
 
+const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+if (pathname !== "/saved" && pathname !== "/mypage" && pathname !== "/favorites") {
+  prepareMainResumeFallback();
+}
+
 const params = new URLSearchParams(window.location.search);
 const rawAssetType = (params.get("asset_type") ?? params.get("category") ?? "all") as AssetType;
 const initialFilters: FilterValues = {
@@ -35,7 +42,6 @@ const initialFilters: FilterValues = {
   minRating: boundedFloat(params, "min_rating", 0, 0, 5),
 };
 
-const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
 const root = document.getElementById("root");
 if (!root) throw new Error("#root が見つかりません。");
 
@@ -57,5 +63,8 @@ if (pathname === "/favorites") {
   }
 
   createRoot(root).render(<StrictMode>{app}</StrictMode>);
-  if (pathname !== "/saved" && pathname !== "/mypage") startAnalytics();
+  if (pathname !== "/saved" && pathname !== "/mypage") {
+    startAnalytics();
+    installMainResumeLifecycle();
+  }
 }
