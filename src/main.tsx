@@ -15,7 +15,6 @@ import "@/styles/saved-enhancements.css";
 import "@/styles/pwa-layout.css";
 import { startAnalytics } from "@/src/analytics";
 import { installMainResumeLifecycle, prepareMainResumeFallback } from "@/src/navigationState";
-import { installPwaViewportFix } from "@/src/pwaViewport";
 
 const ASSET_TYPES = new Set<AssetType>(["all", "comic", "cg", "game", "voice", "other"]);
 
@@ -28,8 +27,6 @@ function boundedFloat(params: URLSearchParams, key: string, fallback: number, mi
   const parsed = Number.parseFloat(params.get(key) ?? "");
   return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback;
 }
-
-installPwaViewportFix();
 
 const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
 if (pathname !== "/saved" && pathname !== "/mypage" && pathname !== "/favorites") {
