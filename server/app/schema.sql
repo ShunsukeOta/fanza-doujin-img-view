@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS works (
   review_count INT UNSIGNED NOT NULL DEFAULT 0,
   rating DECIMAL(3,2) NOT NULL DEFAULT 0.00,
   price VARCHAR(64) NOT NULL DEFAULT '',
+  price_value INT UNSIGNED NULL,
   asset_bucket VARCHAR(64) NOT NULL DEFAULT 'unknown',
   asset_type VARCHAR(16) NOT NULL DEFAULT 'other',
   release_date DATETIME NULL,
@@ -21,6 +22,7 @@ CREATE TABLE IF NOT EXISTS works (
   PRIMARY KEY (cid),
   KEY idx_works_feed (is_active, sample_count, review_count, rating),
   KEY idx_works_asset (asset_type, is_active),
+  KEY idx_works_price (is_active, price_value),
   KEY idx_works_release (release_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
