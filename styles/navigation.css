@@ -1,20 +1,20 @@
 :root {
-  --global-nav-h: 66px;
+  --global-nav-h: 48px;
 }
 
 .app-header {
   justify-content: flex-end;
 }
 
-/* 縦方向は親.feedのネイティブスクロールに渡す。横方向だけWorkCardでページ送りする。 */
+/* Shorts型ジェスチャーはWorkCard側で縦横とも制御する。 */
 .preview-track {
-  touch-action: pan-y pinch-zoom;
-  overscroll-behavior-y: auto;
+  touch-action: none;
+  overscroll-behavior: none;
 }
 
 .preview-page,
 .feed-item {
-  scroll-snap-stop: always;
+  scroll-snap-stop: normal;
 }
 
 .preview-page {
@@ -23,19 +23,21 @@
 
 .item-info,
 .action-rail {
-  bottom: calc(var(--global-nav-h) + 14px + env(safe-area-inset-bottom));
+  bottom: calc(var(--global-nav-h) + 10px + env(safe-area-inset-bottom));
 }
 
 .item-gradient {
-  height: 54%;
+  height: 52%;
 }
 
 .action-rail {
-  gap: 7px;
+  right: 8px;
+  gap: 5px;
 }
 
 .action-btn {
-  gap: 2px;
+  width: 46px;
+  gap: 1px;
 }
 
 .action-btn:disabled {
@@ -43,15 +45,35 @@
   cursor: wait;
 }
 
+.action-icon {
+  width: 37px;
+  height: 37px;
+}
+
+.action-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.debug-action .action-icon {
+  width: 34px;
+  height: 34px;
+}
+
+.debug-action svg {
+  width: 16px;
+  height: 16px;
+}
+
 .action-count {
-  min-width: 28px;
-  max-width: 52px;
+  min-width: 24px;
+  max-width: 46px;
   overflow: hidden;
   text-overflow: ellipsis;
   color: #fff;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 800;
-  line-height: 1.1;
+  line-height: 1.05;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -63,7 +85,7 @@
 
 .feed-loading-more,
 .toast {
-  bottom: calc(var(--global-nav-h) + 16px + env(safe-area-inset-bottom));
+  bottom: calc(var(--global-nav-h) + 12px + env(safe-area-inset-bottom));
 }
 
 .global-nav {
@@ -73,11 +95,11 @@
   right: 0;
   bottom: 0;
   height: calc(var(--global-nav-h) + env(safe-area-inset-bottom));
-  padding: 6px 18px env(safe-area-inset-bottom);
+  padding: 3px 16px env(safe-area-inset-bottom);
   display: grid;
-  grid-template-columns: 1fr 78px 1fr;
+  grid-template-columns: 1fr 58px 1fr;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   background: #0a0a0af2;
   border-top: 1px solid #ffffff14;
   backdrop-filter: blur(18px);
@@ -95,8 +117,7 @@
 }
 
 .global-nav-item {
-  gap: 3px;
-  min-height: 48px;
+  min-height: 36px;
 }
 
 .global-nav-item.is-active {
@@ -105,8 +126,8 @@
 
 .global-nav-item svg,
 .global-nav-main svg {
-  width: 23px;
-  height: 23px;
+  width: 20px;
+  height: 20px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;
@@ -114,25 +135,31 @@
   stroke-linejoin: round;
 }
 
+/* 見た目はアイコンだけ。ラベルはARIAで保持する。 */
 .global-nav-item span {
-  font-size: 9px;
-  font-weight: 650;
+  display: none;
 }
 
 .global-nav-main {
-  width: 58px;
-  height: 48px;
+  width: 44px;
+  height: 34px;
   justify-self: center;
-  border-radius: 18px;
-  background: #ff2d55;
+  border-radius: 10px;
+  background: #ff2d55 !important;
+  background-image: none !important;
   color: #fff;
-  box-shadow: 0 8px 22px #ff2d5545;
+  box-shadow: 0 6px 16px #ff2d5538;
+}
+
+.global-nav-main[aria-current="page"] {
+  background: #ff2d55 !important;
+  background-image: none !important;
 }
 
 .global-nav-main svg {
-  width: 28px;
-  height: 28px;
-  stroke-width: 2.1;
+  width: 23px;
+  height: 23px;
+  stroke-width: 2;
 }
 
 .sr-only {
@@ -152,9 +179,10 @@
     padding-left: 10px;
     padding-right: 10px;
   }
+
   .item-info,
   .action-rail {
-    bottom: calc(var(--global-nav-h) + 10px + env(safe-area-inset-bottom));
+    bottom: calc(var(--global-nav-h) + 8px + env(safe-area-inset-bottom));
   }
 }
 

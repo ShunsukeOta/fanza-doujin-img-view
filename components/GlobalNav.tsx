@@ -33,15 +33,33 @@ export function GlobalNav({ active = currentNav(), onMain }: Props) {
 
   return (
     <nav className="global-nav" aria-label="グローバルメニュー">
-      <button className={`global-nav-item${active === "saved" ? " is-active" : ""}`} type="button" onClick={goSaved} aria-current={active === "saved" ? "page" : undefined}>
+      <button
+        className={`global-nav-item${active === "saved" ? " is-active" : ""}`}
+        type="button"
+        onClick={goSaved}
+        aria-label="保存済み"
+        aria-current={active === "saved" ? "page" : undefined}
+      >
         <BookmarkIcon />
         <span>保存済み</span>
       </button>
-      <button className="global-nav-main" type="button" onClick={goMain} aria-current={active === "main" ? "page" : undefined} aria-label="メインページ・上下にスワイプして作品を移動">
+      <button
+        className="global-nav-main"
+        type="button"
+        onClick={goMain}
+        aria-current={active === "main" ? "page" : undefined}
+        aria-label="メインページ・上下にスワイプして作品を移動"
+      >
         <FeedSwipeIcon />
         <span className="sr-only">メインページ</span>
       </button>
-      <button className={`global-nav-item${active === "mypage" ? " is-active" : ""}`} type="button" onClick={goMyPage} aria-current={active === "mypage" ? "page" : undefined}>
+      <button
+        className={`global-nav-item${active === "mypage" ? " is-active" : ""}`}
+        type="button"
+        onClick={goMyPage}
+        aria-label="マイページ"
+        aria-current={active === "mypage" ? "page" : undefined}
+      >
         <UserIcon />
         <span>マイページ</span>
       </button>

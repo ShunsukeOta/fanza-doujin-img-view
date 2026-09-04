@@ -57,10 +57,10 @@ html {
 .reader-cta {
   position: relative;
   z-index: 3;
-  width: min(360px, 100%);
-  padding: 26px 21px;
+  width: min(340px, 100%);
+  padding: 24px 20px;
   border: 1px solid rgba(255, 255, 255, .12);
-  border-radius: 22px;
+  border-radius: 20px;
   background: rgba(12, 12, 12, .9);
   box-shadow: 0 18px 50px rgba(0, 0, 0, .34);
   text-align: center;
@@ -69,7 +69,7 @@ html {
 }
 
 .reader-cta-kicker {
-  margin: 0 0 11px;
+  margin: 0 0 10px;
   color: #8f8f8f;
   font-size: 11px;
   font-weight: 750;
@@ -79,51 +79,27 @@ html {
 .reader-cta-remaining {
   margin: 0;
   color: #f4f4f4;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 720;
   line-height: 1.5;
 }
 
 .reader-cta-remaining strong {
-  font-size: 21px;
+  font-size: 20px;
   font-variant-numeric: tabular-nums;
 }
 
 .reader-cta-remaining.is-loading {
   color: #aaa;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .reader-cta-price {
-  margin: 13px 0 17px;
+  margin: 12px 0 0;
   color: #fff;
-  font-size: 23px;
+  font-size: 22px;
   font-weight: 850;
   font-variant-numeric: tabular-nums;
-}
-
-.reader-cta-button {
-  width: 100%;
-  height: 48px;
-  border-radius: 999px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  background: #ff2d55;
-  color: #fff;
-  font-size: 14px;
-  font-weight: 850;
-  text-decoration: none;
-  box-shadow: 0 10px 28px rgba(255, 45, 85, .3);
-}
-
-.reader-cta-button svg {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
 }
 
 /* フィルターの右隣に独立した集中モードボタンを置く。 */
@@ -166,26 +142,45 @@ html {
   border-color: #f4f4f4;
 }
 
-/* 集中モード: 漫画、ページ数、絞り込み、目ボタン、グローバルメニューだけを残す。 */
-.reader-focus .feed-count,
-.reader-focus .item-gradient,
+/*
+ * 集中モードではレイアウトを一切変えない。
+ * 16:9等の画像位置が動かないよう、preview-pageのpaddingも通常時と完全共通にする。
+ */
+.item-gradient,
+.item-info,
+.action-rail,
+.swipe-hint,
+.feed-count,
+.feed-loading-more,
+.toast {
+  transition: opacity 160ms ease;
+}
+
+.reader-focus .feed-count {
+  opacity: .32;
+}
+
+.reader-focus .item-gradient {
+  opacity: .3;
+}
+
 .reader-focus .item-info,
-.reader-focus .action-rail,
+.reader-focus .action-rail {
+  opacity: .2;
+}
+
 .reader-focus .swipe-hint,
 .reader-focus .feed-loading-more,
 .reader-focus .toast {
-  display: none !important;
+  opacity: .25;
 }
 
-.reader-focus .preview-page {
-  padding-bottom: calc(var(--global-nav-h) + env(safe-area-inset-bottom) + 10px);
+.reader-focus .item-info *,
+.reader-focus .action-rail * {
+  pointer-events: none !important;
 }
 
-.reader-focus .preview-cta-page {
-  padding-bottom: calc(var(--global-nav-h) + env(safe-area-inset-bottom) + 22px);
-}
-
-/* 公開UIは前回より一段だけ小さくし、元の極小サイズには戻さない。 */
+/* 公開UIの文字密度をさらに一段コンパクトにする。 */
 .icon-btn {
   font-size: 12px;
 }
@@ -202,40 +197,43 @@ html {
 }
 
 .swipe-hint {
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .item-title {
-  font-size: 16px;
-  line-height: 1.42;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .item-stats {
-  font-size: 12px;
+  font-size: 10px;
 }
 
 .stat-chip {
-  height: 27px;
-  padding: 0 9px;
+  height: 24px;
+  padding: 0 8px;
 }
 
 .open-link {
-  min-height: 42px;
-  padding: 0 16px;
-  font-size: 13px;
+  min-height: 40px;
+  padding: 0 15px;
+  font-size: 11px;
 }
 
-.action-label,
+.open-link svg {
+  width: 13px;
+  height: 13px;
+}
+
+.action-label {
+  font-size: 9px;
+}
+
 .action-count {
-  font-size: 10px;
+  font-size: 9px;
 }
 
-.global-nav-item span {
-  font-size: 10px;
-  font-weight: 700;
-}
-
-/* 保存済み・マイページも同じ比率で少し縮小。 */
+/* 保存済み・マイページは現状の読みやすさを維持。 */
 .subpage-eyebrow {
   font-size: 10px;
 }
@@ -383,10 +381,10 @@ html {
   }
 
   .item-title {
-    font-size: 15px;
+    font-size: 12px;
   }
 
   .item-stats {
-    font-size: 11px;
+    font-size: 10px;
   }
 }
