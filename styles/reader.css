@@ -4,17 +4,29 @@ html {
 }
 
 /*
- * 横方向はブラウザのRTLスクロールに依存させずWorkCardが正のscrollLeftだけで制御する。
- * 縦方向はpan-yを許可し、親.feedのネイティブ作品送りへ渡す。
+ * Shorts型操作: ブラウザの慣性スクロールへ渡さず、WorkCardで縦横を一度だけ軸ロックする。
+ * 縦は1ジェスチャー最大1作品、横は最大1ページだけ移動する。
  */
+.feed {
+  overflow-y: hidden !important;
+  overflow-x: hidden !important;
+  scroll-snap-type: none !important;
+  overscroll-behavior: none !important;
+  touch-action: none !important;
+}
+
+.feed-item {
+  scroll-snap-align: none !important;
+  scroll-snap-stop: normal !important;
+}
+
 .manga-reader-track {
   overflow-x: hidden;
   overflow-y: hidden;
   scroll-snap-type: none;
   scroll-behavior: auto;
-  touch-action: pan-y pinch-zoom;
-  overscroll-behavior-x: none;
-  overscroll-behavior-y: auto;
+  touch-action: none;
+  overscroll-behavior: none;
   user-select: none;
   -webkit-user-select: none;
   cursor: grab;
@@ -46,7 +58,7 @@ html {
   position: relative;
   z-index: 3;
   width: min(360px, 100%);
-  padding: 28px 22px;
+  padding: 26px 21px;
   border: 1px solid rgba(255, 255, 255, .12);
   border-radius: 22px;
   background: rgba(12, 12, 12, .9);
@@ -57,9 +69,9 @@ html {
 }
 
 .reader-cta-kicker {
-  margin: 0 0 12px;
+  margin: 0 0 11px;
   color: #8f8f8f;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 750;
   letter-spacing: .08em;
 }
@@ -67,32 +79,32 @@ html {
 .reader-cta-remaining {
   margin: 0;
   color: #f4f4f4;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 720;
   line-height: 1.5;
 }
 
 .reader-cta-remaining strong {
-  font-size: 24px;
+  font-size: 21px;
   font-variant-numeric: tabular-nums;
 }
 
 .reader-cta-remaining.is-loading {
   color: #aaa;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .reader-cta-price {
-  margin: 14px 0 18px;
+  margin: 13px 0 17px;
   color: #fff;
-  font-size: 26px;
+  font-size: 23px;
   font-weight: 850;
   font-variant-numeric: tabular-nums;
 }
 
 .reader-cta-button {
   width: 100%;
-  height: 50px;
+  height: 48px;
   border-radius: 999px;
   display: flex;
   align-items: center;
@@ -100,15 +112,15 @@ html {
   gap: 8px;
   background: #ff2d55;
   color: #fff;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 850;
   text-decoration: none;
   box-shadow: 0 10px 28px rgba(255, 45, 85, .3);
 }
 
 .reader-cta-button svg {
-  width: 17px;
-  height: 17px;
+  width: 16px;
+  height: 16px;
   fill: none;
   stroke: currentColor;
   stroke-width: 2;
@@ -173,135 +185,128 @@ html {
   padding-bottom: calc(var(--global-nav-h) + env(safe-area-inset-bottom) + 22px);
 }
 
-/* メイン画面の公開テキスト。以前の8〜11px指定を読みやすい寸法へ補正。 */
+/* 公開UIは前回より一段だけ小さくし、元の極小サイズには戻さない。 */
 .icon-btn {
-  font-size: 13px;
-}
-
-.feed-count {
   font-size: 12px;
 }
 
+.feed-count {
+  font-size: 11px;
+}
+
 .page-counter {
-  min-height: 30px;
-  padding: 0 12px;
-  font-size: 13px;
+  min-height: 28px;
+  padding: 0 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 
 .swipe-hint {
-  font-size: 13px;
-}
-
-.item-type {
-  height: 24px;
-  padding: 0 9px;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .item-title {
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1.42;
 }
 
-.item-stats,
-.genre-line {
-  font-size: 13px;
+.item-stats {
+  font-size: 12px;
 }
 
 .stat-chip {
-  height: 29px;
-  padding: 0 10px;
+  height: 27px;
+  padding: 0 9px;
 }
 
 .open-link {
-  min-height: 44px;
-  padding: 0 18px;
-  font-size: 14px;
+  min-height: 42px;
+  padding: 0 16px;
+  font-size: 13px;
 }
 
 .action-label,
 .action-count {
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .global-nav-item span {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
 }
 
-/* 保存済み・マイページ。 */
+/* 保存済み・マイページも同じ比率で少し縮小。 */
 .subpage-eyebrow {
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .subpage-header h1 {
-  font-size: 28px;
+  font-size: 25px;
 }
 
 .subpage-description {
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.65;
 }
 
 .subpage-refresh {
-  min-width: 68px;
-  height: 38px;
-  font-size: 12px;
+  min-width: 66px;
+  height: 36px;
+  font-size: 11px;
 }
 
 .subpage-summary span {
-  font-size: 13px;
-}
-
-.subpage-summary strong {
-  font-size: 30px;
-}
-
-.subpage-summary small {
   font-size: 12px;
 }
 
+.subpage-summary strong {
+  font-size: 27px;
+}
+
+.subpage-summary small {
+  font-size: 11px;
+}
+
 .subpage-state strong {
-  font-size: 17px;
+  font-size: 16px;
 }
 
 .subpage-state p,
 .subpage-state button {
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .favorite-body h2 {
   min-height: 3em;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.5;
 }
 
 .favorite-type {
-  font-size: 10px;
+  font-size: 9px;
 }
 
 .favorite-meta,
 .favorite-reactions {
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .favorite-genres {
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .favorite-actions button,
 .favorite-actions a {
-  min-height: 38px;
+  min-height: 36px;
   font-size: 11px;
 }
 
 .profile-copy strong {
-  font-size: 15px;
+  font-size: 14px;
 }
 
 .profile-copy span {
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .profile-stats--two {
@@ -311,7 +316,7 @@ html {
 .profile-stats--two > div,
 .profile-stats--two > button {
   min-width: 0;
-  padding: 15px 12px;
+  padding: 14px 11px;
   border: 1px solid #202020;
   border-radius: 14px;
   display: grid;
@@ -331,7 +336,7 @@ html {
   justify-content: center;
   gap: 5px;
   color: #8d8d8d;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .profile-stats--two span svg {
@@ -343,28 +348,28 @@ html {
 }
 
 .profile-stats--two strong {
-  font-size: 22px;
+  font-size: 20px;
 }
 
 .profile-section-head h2 {
-  font-size: 15px;
+  font-size: 14px;
 }
 
 .profile-tags span {
-  padding: 7px 10px;
-  font-size: 12px;
+  padding: 6px 9px;
+  font-size: 11px;
 }
 
 .profile-empty,
 .profile-footnote {
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.7;
 }
 
 .profile-date {
   margin: 0;
   color: #e4e4e4;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
 }
 
@@ -378,11 +383,10 @@ html {
   }
 
   .item-title {
-    font-size: 17px;
+    font-size: 15px;
   }
 
-  .item-stats,
-  .genre-line {
-    font-size: 12px;
+  .item-stats {
+    font-size: 11px;
   }
 }
