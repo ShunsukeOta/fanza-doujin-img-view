@@ -36,6 +36,17 @@
   margin-top: 8px;
 }
 
+.filter-error {
+  margin-top: -3px;
+  color: #e49a9a;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.field input::placeholder {
+  color: #666;
+}
+
 @media (display-mode: standalone) {
   .subpage-shell {
     min-height: 100dvh;
