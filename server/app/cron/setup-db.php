@@ -36,6 +36,19 @@ foreach ($statements as $statement) {
     $pdo->exec($statement);
 }
 
+function ensure_column(PDO $pdo, string $table, string $column, string $definition): void
+{
+    $stmt = $pdo->prepare(
+        'SELECT COUNT(*) FROM information_schema.columns '
+        . 'WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?',
+    );
+    $stmt->execute([$table, $column]);
+    if ((int)$stmt->fetchColumn() > 0) {
+        return;
+    }
+    $pdo->exec('ALTER TABLE `' . $table . '` ADD COLUMN `' . $column . '` ' . $definition);
+}
+
 function ensure_index(PDO $pdo, string $table, string $index, string $definition): void
 {
     $stmt = $pdo->prepare(
@@ -49,6 +62,8 @@ function ensure_index(PDO $pdo, string $table, string $index, string $definition
     $pdo->exec('ALTER TABLE `' . $table . '` ADD INDEX `' . $index . '` ' . $definition);
 }
 
+ensure_column($pdo, 'works', 'full_page_count', 'INT UNSIGNED NULL AFTER sample_count');
+ensure_column($pdo, 'works', 'volume', "VARCHAR(128) NOT NULL DEFAULT '' AFTER full_page_count");
 ensure_index($pdo, 'events', 'idx_events_user_type_time', '(anonymous_user_id, event_type, created_at)');
 ensure_index($pdo, 'events', 'idx_events_user_work_type', '(anonymous_user_id, work_cid, event_type)');
 ensure_index($pdo, 'user_work_states', 'idx_user_work_states_work_reactions', '(work_cid, liked, saved)');
