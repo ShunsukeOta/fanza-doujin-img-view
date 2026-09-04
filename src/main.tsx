@@ -40,6 +40,8 @@ const initialFilters: FilterValues = {
   minSamples: boundedInt(params, "min_samples", 1, 1, 100),
   minReviews: boundedInt(params, "min_reviews", 0, 0, 100_000),
   minRating: boundedFloat(params, "min_rating", 0, 0, 5),
+  minPrice: boundedInt(params, "min_price", 0, 0, 10_000_000),
+  maxPrice: boundedInt(params, "max_price", 0, 0, 10_000_000),
 };
 
 const root = document.getElementById("root");
