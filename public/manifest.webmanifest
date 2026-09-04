@@ -1,0 +1,21 @@
+{
+  "id": "/",
+  "name": "Swipe Preview",
+  "short_name": "Swipe Preview",
+  "description": "FANZA同人作品のサンプルを縦横スワイプで閲覧するWebアプリ",
+  "lang": "ja",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#090909",
+  "theme_color": "#090909",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icons/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
