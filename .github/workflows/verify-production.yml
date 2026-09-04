@@ -1,0 +1,51 @@
+name: 本番公開を検証
+
+on:
+  workflow_run:
+    workflows: ["シンレンタルサーバーへデプロイ"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 本番の公開状態を確認
+        shell: bash
+        env:
+          DEPLOYED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          CURL=(curl --fail --silent --show-error --retry 5 --retry-all-errors --retry-delay 2 --connect-timeout 10 --max-time 30 -H 'Cache-Control: no-cache')
+
+          VERSION="$("${CURL[@]}" "https://wp983575.wpx.jp/version.json?verify=${DEPLOYED_SHA}")"
+          printf '%s' "$VERSION" | grep -F "\"commit\":\"${DEPLOYED_SHA}\"" >/dev/null
+
+          HEALTH="$("${CURL[@]}" "https://wp983575.wpx.jp/api/health?verify=${DEPLOYED_SHA}")"
+          printf '%s' "$HEALTH" | grep -F '"connected":true' >/dev/null
+          printf '%s' "$HEALTH" | grep -F '"catalogReady":true' >/dev/null
+          printf '%s' "$HEALTH" | grep -F '"configured":true' >/dev/null
+
+          CATALOG="$("${CURL[@]}" 'https://wp983575.wpx.jp/api/catalog?limit=1')"
+          printf '%s' "$CATALOG" | grep -F '"effectiveMinSamples":1' >/dev/null
+          printf '%s' "$CATALOG" | grep -F '"likeCount":' >/dev/null
+          printf '%s' "$CATALOG" | grep -F '"saveCount":' >/dev/null
+          CID="$(printf '%s' "$CATALOG" | python3 -c 'import json,sys; data=json.load(sys.stdin); print(data["items"][0]["cid"])')"
+          test -n "$CID"
+
+          REACTIONS="$("${CURL[@]}" "https://wp983575.wpx.jp/api/reactions?cids=${CID}")"
+          printf '%s' "$REACTIONS" | grep -F '"ok":true' >/dev/null
+          printf '%s' "$REACTIONS" | grep -F '"likeCount":' >/dev/null
+          printf '%s' "$REACTIONS" | grep -F '"saveCount":' >/dev/null
+          printf '%s' "$REACTIONS" | grep -F '"viewerLiked":' >/dev/null
+          printf '%s' "$REACTIONS" | grep -F '"viewerSaved":' >/dev/null
+
+          DEBUG="$("${CURL[@]}" "https://wp983575.wpx.jp/api/debug?verify=${DEPLOYED_SHA}")"
+          printf '%s' "$DEBUG" | grep -F '"connected":true' >/dev/null
+          printf '%s' "$DEBUG" | grep -F '"works":' >/dev/null
+
+          echo "本番公開API確認OK: ${DEPLOYED_SHA} / CID=${CID}"
