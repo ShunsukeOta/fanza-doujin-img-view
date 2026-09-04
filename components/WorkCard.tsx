@@ -125,6 +125,7 @@ export function WorkCard({ item, index, isActive, onToast, onDebug }: Props) {
         affiliateUrl: typeof data.affiliateUrl === "string" && data.affiliateUrl ? data.affiliateUrl : item.affiliateUrl,
       });
     } catch {
+      detailsRequested.current = false;
       // 購入導線はDB情報で継続し、未確認のページ数は推測表示しない。
     } finally {
       setDetailsLoading(false);
@@ -255,8 +256,8 @@ export function WorkCard({ item, index, isActive, onToast, onDebug }: Props) {
 
     if (gesture.axis !== "x") return;
     event.preventDefault();
-    // 指を左へ動かすとscrollLeftも左方向へ減り、次ページが右から左へ現れる。
-    track.scrollLeft = clamp(gesture.startScrollLeft + dx, 0, maxScrollLeft());
+    // RTLでは次ページが左側にある。指を右へ動かすと内容も右へ追従し、左の次ページへ進む。
+    track.scrollLeft = clamp(gesture.startScrollLeft - dx, 0, maxScrollLeft());
   };
 
   const finishHorizontalGesture = (event: ReactPointerEvent<HTMLDivElement>, cancelled = false) => {
@@ -277,7 +278,7 @@ export function WorkCard({ item, index, isActive, onToast, onDebug }: Props) {
     const target = cancelled
       ? pageIndexFromScroll()
       : decisive
-        ? gesture.startPage + (dx < 0 ? 1 : -1)
+        ? gesture.startPage + (dx > 0 ? 1 : -1)
         : pageIndexFromScroll();
     goToPage(target);
   };
@@ -397,7 +398,7 @@ export function WorkCard({ item, index, isActive, onToast, onDebug }: Props) {
       </div>
 
       <div className="page-counter" aria-live="polite"><span>{visiblePage}</span>&nbsp;/&nbsp;{item.images.length}</div>
-      {item.images.length > 1 && index === 0 ? <div className="swipe-hint">← 左へスワイプして読む</div> : null}
+      {item.images.length > 1 && index === 0 ? <div className="swipe-hint">右へスワイプして読む →</div> : null}
 
       <div className="item-gradient" />
       <div className="item-info">
