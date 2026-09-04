@@ -213,7 +213,7 @@ jobs:
             if ssh -i "$HOME/.ssh/id_shin" -p 10022 \
               -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
               wp983575@wp983575.wpx.jp \
-              "cd wp983575.wpx.jp && grep -F '\"commit\":\"${GITHUB_SHA}\"' public_html/version.json >/dev/null && test -f public_html/api/health.php && test -f public_html/api/debug.php && test -f app/cron/fanza-sync.php && test -f app/cron/setup-db.php"; then
+              "cd wp983575.wpx.jp && grep -F '\"commit\":\"${GITHUB_SHA}\"' public_html/version.json >/dev/null && test -f public_html/api/health.php && test -f public_html/api/debug.php && test -f public_html/api/saved.php && test -f public_html/api/me.php && test -f public_html/api/work-details.php && test ! -f public_html/api/favorites.php && test -f app/cron/fanza-sync.php && test -f app/cron/setup-db.php"; then
               echo "サーバー内配置確認OK: ${GITHUB_SHA}"
               exit 0
             fi
