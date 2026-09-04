@@ -1,5 +1,5 @@
 import { BookmarkIcon, FeedSwipeIcon, UserIcon } from "@/components/icons";
-import { rememberMainBeforeSubpage, resumeMainFromSubpage } from "@/src/navigationState";
+import { continueSubpageNavigation, rememberMainBeforeSubpage, resumeMainFromSubpage } from "@/src/navigationState";
 
 type NavKey = "saved" | "main" | "mypage";
 
@@ -21,6 +21,7 @@ export function GlobalNav({ active = currentNav(), onMain }: Props) {
   const goSaved = () => {
     if (active === "saved") return;
     if (active === "main") rememberMainBeforeSubpage("/saved");
+    else continueSubpageNavigation("/saved");
     window.location.assign("/saved");
   };
 
@@ -35,6 +36,7 @@ export function GlobalNav({ active = currentNav(), onMain }: Props) {
   const goMyPage = () => {
     if (active === "mypage") return;
     if (active === "main") rememberMainBeforeSubpage("/mypage");
+    else continueSubpageNavigation("/mypage");
     window.location.assign("/mypage");
   };
 
