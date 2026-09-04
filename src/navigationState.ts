@@ -1,5 +1,5 @@
-const MAIN_RETURN_KEY = "swipe-preview:main-return-v1";
-const RESUME_REQUEST_KEY = "swipe-preview:resume-request-v1";
+const MAIN_RETURN_KEY = "swipe-preview:main-return-v2";
+const RESUME_REQUEST_KEY = "swipe-preview:resume-request-v2";
 const MAX_STATE_AGE_MS = 12 * 60 * 60 * 1000;
 
 type SubpagePath = "/saved" | "/mypage";
@@ -9,6 +9,7 @@ type MainReturnState = {
   cid: string;
   page: number;
   subpage: SubpagePath;
+  historySteps: number;
   savedAt: number;
 };
 
@@ -46,6 +47,8 @@ function readState(): MainReturnState | null {
       || typeof parsed.cid !== "string"
       || typeof parsed.page !== "number"
       || (parsed.subpage !== "/saved" && parsed.subpage !== "/mypage")
+      || typeof parsed.historySteps !== "number"
+      || parsed.historySteps < 1
       || typeof parsed.savedAt !== "number"
       || Date.now() - parsed.savedAt > MAX_STATE_AGE_MS
     ) {
@@ -91,6 +94,7 @@ export function rememberMainBeforeSubpage(subpage: SubpagePath): void {
     cid: snapshot.cid,
     page: snapshot.page,
     subpage,
+    historySteps: 1,
     savedAt: Date.now(),
   };
   safeSessionSet(MAIN_RETURN_KEY, JSON.stringify(state));
@@ -100,7 +104,12 @@ export function rememberMainBeforeSubpage(subpage: SubpagePath): void {
 export function continueSubpageNavigation(subpage: SubpagePath): void {
   const state = readState();
   if (!state) return;
-  safeSessionSet(MAIN_RETURN_KEY, JSON.stringify({ ...state, subpage, savedAt: Date.now() } satisfies MainReturnState));
+  safeSessionSet(MAIN_RETURN_KEY, JSON.stringify({
+    ...state,
+    subpage,
+    historySteps: state.historySteps + 1,
+    savedAt: Date.now(),
+  } satisfies MainReturnState));
 }
 
 export function resumeMainFromSubpage(): void {
@@ -113,9 +122,9 @@ export function resumeMainFromSubpage(): void {
 
   safeSessionSet(RESUME_REQUEST_KEY, "1");
 
-  // 通常は history.back() でBFCache上のReact状態・取得済み作品列・スクロール位置を丸ごと復元する。
-  if (window.history.length > 1) {
-    window.history.back();
+  // 同一タブ内では、経由したサブページ数だけ履歴を戻してBFCache上のReact状態を丸ごと復元する。
+  if (window.history.length > state.historySteps) {
+    window.history.go(-state.historySteps);
     return;
   }
 
