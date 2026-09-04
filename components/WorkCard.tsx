@@ -28,7 +28,6 @@ type GestureState = {
 type WorkDetails = {
   remainingPages: number | null;
   price: string;
-  affiliateUrl: string;
 };
 
 type Props = {
@@ -60,7 +59,6 @@ function initialDetails(item: FeedItem): WorkDetails {
   return {
     remainingPages: fullPages === null ? null : Math.max(0, fullPages - item.sampleCount),
     price: item.price,
-    affiliateUrl: item.affiliateUrl,
   };
 }
 
@@ -69,6 +67,7 @@ export function WorkCard({ item, index, isActive, onToast, onDebug, onVerticalSw
   const pageSettleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gestureRef = useRef<GestureState | null>(null);
   const feedAnimationFrame = useRef<number | null>(null);
+  const pageAnimationFrame = useRef<number | null>(null);
   const detailsRequested = useRef(false);
   const [currentPage, setCurrentPage] = useState(0);
   const [loadStates, setLoadStates] = useState<LoadState[]>(() => item.images.map(() => "pending"));
@@ -88,6 +87,13 @@ export function WorkCard({ item, index, isActive, onToast, onDebug, onVerticalSw
     if (feedAnimationFrame.current !== null) {
       cancelAnimationFrame(feedAnimationFrame.current);
       feedAnimationFrame.current = null;
+    }
+  }, []);
+
+  const cancelPageAnimation = useCallback(() => {
+    if (pageAnimationFrame.current !== null) {
+      cancelAnimationFrame(pageAnimationFrame.current);
+      pageAnimationFrame.current = null;
     }
   }, []);
 
@@ -162,33 +168,62 @@ export function WorkCard({ item, index, isActive, onToast, onDebug, onVerticalSw
         ok?: boolean;
         remainingPages?: number | null;
         price?: string;
-        affiliateUrl?: string;
         error?: string;
       } | null;
       if (!response.ok || !data?.ok) throw new Error(data?.error || "作品情報を取得できませんでした");
       setDetails({
         remainingPages: typeof data.remainingPages === "number" ? data.remainingPages : null,
         price: typeof data.price === "string" && data.price ? data.price : item.price,
-        affiliateUrl: typeof data.affiliateUrl === "string" && data.affiliateUrl ? data.affiliateUrl : item.affiliateUrl,
       });
     } catch {
       detailsRequested.current = false;
-      // 購入導線はDB情報で継続し、未確認のページ数は推測表示しない。
+      // 未確認のページ数は推測せず、価格はDB情報をそのまま使う。
     } finally {
       setDetailsLoading(false);
     }
-  }, [item.affiliateUrl, item.cid, item.price]);
+  }, [item.cid, item.price]);
 
   const goToPage = useCallback((target: number, behavior: ScrollBehavior = "smooth") => {
     const track = trackRef.current;
     if (!track || item.images.length === 0) return;
     const next = clamp(target, 0, ctaPage);
-    setCurrentPage(next);
     if (next >= Math.max(0, ctaPage - 1)) void loadDetails();
-    track.scrollTo({ left: scrollLeftForPage(next), behavior });
+
+    cancelPageAnimation();
     if (pageSettleTimer.current) clearTimeout(pageSettleTimer.current);
-    pageSettleTimer.current = setTimeout(commitCurrentPage, behavior === "smooth" ? 260 : 30);
-  }, [commitCurrentPage, ctaPage, item.images.length, loadDetails, scrollLeftForPage]);
+
+    const end = scrollLeftForPage(next);
+    if (behavior === "auto" || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      track.scrollLeft = end;
+      setCurrentPage(next);
+      return;
+    }
+
+    const start = track.scrollLeft;
+    const distance = end - start;
+    if (Math.abs(distance) < 1) {
+      track.scrollLeft = end;
+      setCurrentPage(next);
+      return;
+    }
+
+    // 縦作品送りと同じイージングで、指を離した位置から次ページへ自然に吸着させる。
+    const duration = 220;
+    const startedAt = performance.now();
+    const step = (now: number) => {
+      const progress = clamp((now - startedAt) / duration, 0, 1);
+      const eased = 1 - Math.pow(1 - progress, 4);
+      track.scrollLeft = start + distance * eased;
+      if (progress < 1) {
+        pageAnimationFrame.current = requestAnimationFrame(step);
+      } else {
+        track.scrollLeft = end;
+        pageAnimationFrame.current = null;
+        setCurrentPage(next);
+      }
+    };
+    pageAnimationFrame.current = requestAnimationFrame(step);
+  }, [cancelPageAnimation, ctaPage, item.images.length, loadDetails, scrollLeftForPage]);
 
   useEffect(() => {
     setLoadStates(item.images.map(() => "pending"));
@@ -203,11 +238,12 @@ export function WorkCard({ item, index, isActive, onToast, onDebug, onVerticalSw
     const track = trackRef.current;
     if (!track || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => {
-      track.scrollTo({ left: scrollLeftForPage(currentPage), behavior: "auto" });
+      cancelPageAnimation();
+      track.scrollLeft = scrollLeftForPage(currentPage);
     });
     observer.observe(track);
     return () => observer.disconnect();
-  }, [currentPage, scrollLeftForPage]);
+  }, [cancelPageAnimation, currentPage, scrollLeftForPage]);
 
   useEffect(() => {
     if (isActive && currentPage >= Math.max(0, item.images.length - 2)) void loadDetails();
@@ -251,7 +287,8 @@ export function WorkCard({ item, index, isActive, onToast, onDebug, onVerticalSw
   useEffect(() => () => {
     if (pageSettleTimer.current) clearTimeout(pageSettleTimer.current);
     cancelFeedAnimation();
-  }, [cancelFeedAnimation]);
+    cancelPageAnimation();
+  }, [cancelFeedAnimation, cancelPageAnimation]);
 
   const markLoad = useCallback((pageIndex: number, state: Exclude<LoadState, "pending">) => {
     setLoadStates((previous) => {
@@ -267,7 +304,7 @@ export function WorkCard({ item, index, isActive, onToast, onDebug, onVerticalSw
   const pending = Math.max(0, item.images.length - loaded - failed);
 
   const scheduleCurrentPageCommit = () => {
-    if (gestureRef.current?.axis === "x") return;
+    if (gestureRef.current?.axis === "x" || pageAnimationFrame.current !== null) return;
     if (pageSettleTimer.current) clearTimeout(pageSettleTimer.current);
     pageSettleTimer.current = setTimeout(commitCurrentPage, 70);
   };
@@ -276,6 +313,7 @@ export function WorkCard({ item, index, isActive, onToast, onDebug, onVerticalSw
     if (!event.isPrimary || !isActive || (event.pointerType === "mouse" && event.button !== 0)) return;
     if (pageSettleTimer.current) clearTimeout(pageSettleTimer.current);
     cancelFeedAnimation();
+    cancelPageAnimation();
     const feed = feedElement();
     gestureRef.current = {
       pointerId: event.pointerId,
@@ -389,7 +427,6 @@ export function WorkCard({ item, index, isActive, onToast, onDebug, onVerticalSw
     try {
       const reaction = await updateReaction(type, item.cid, nextActive);
       applyReaction(reaction);
-      onToast(type === "like" ? (nextActive ? "いいねしました" : "いいねを解除しました") : (nextActive ? "保存しました" : "保存を解除しました"));
     } catch {
       setLiked(liked);
       setSaved(saved);
@@ -410,18 +447,14 @@ export function WorkCard({ item, index, isActive, onToast, onDebug, onVerticalSw
       } else if (navigator.clipboard) {
         await navigator.clipboard.writeText(url);
         trackEvent({ eventType: "share", cid: item.cid });
-        onToast("リンクをコピーしました");
-      } else {
-        onToast("このブラウザでは共有できません");
       }
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
-      onToast("共有できませんでした");
+      // 共有UIのキャンセル・失敗はフィード上にトーストを出さない。
     }
   };
 
   const visiblePage = Math.min(currentPage + 1, Math.max(1, item.images.length));
-  const ctaUrl = details.affiliateUrl || item.affiliateUrl;
   const ctaPrice = details.price || item.price;
   const ctaStyle = { order: 0 } satisfies CSSProperties;
 
@@ -443,22 +476,17 @@ export function WorkCard({ item, index, isActive, onToast, onDebug, onVerticalSw
           }
         }}
       >
-        <div className="preview-page preview-cta-page" style={ctaStyle} aria-label="続きを読む">
+        <div className="preview-page preview-cta-page" style={ctaStyle} aria-label="サンプル読了">
           <div className="reader-cta">
             <p className="reader-cta-kicker">サンプルはここまで</p>
             {detailsLoading ? (
               <p className="reader-cta-remaining is-loading">本編ページ数を確認中…</p>
             ) : details.remainingPages !== null ? (
-              <p className="reader-cta-remaining">本編残り <strong>{details.remainingPages.toLocaleString("ja-JP")}</strong> ページ</p>
+              <p className="reader-cta-remaining">本編残りは <strong>{details.remainingPages.toLocaleString("ja-JP")}</strong> ページ</p>
             ) : (
               <p className="reader-cta-remaining">本編の続きがあります</p>
             )}
             {ctaPrice ? <p className="reader-cta-price">{formatPrice(ctaPrice)}</p> : null}
-            {/^(https?):\/\//i.test(ctaUrl) ? (
-              <a className="reader-cta-button" href={ctaUrl} target="_blank" rel="noopener noreferrer sponsored" onClick={() => trackEvent({ eventType: "affiliate_click", cid: item.cid })}>
-                続きを読む <ExternalIcon />
-              </a>
-            ) : null}
           </div>
         </div>
 
