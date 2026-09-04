@@ -213,7 +213,7 @@ jobs:
             if ssh -i "$HOME/.ssh/id_shin" -p 10022 \
               -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
               wp983575@wp983575.wpx.jp \
-              "cd wp983575.wpx.jp && grep -F '\"commit\":\"${GITHUB_SHA}\"' public_html/version.json >/dev/null && test -f public_html/api/health.php && test -f app/cron/fanza-sync.php && test -f app/cron/setup-db.php"; then
+              "cd wp983575.wpx.jp && grep -F '\"commit\":\"${GITHUB_SHA}\"' public_html/version.json >/dev/null && test -f public_html/api/health.php && test -f public_html/api/debug.php && test -f app/cron/fanza-sync.php && test -f app/cron/setup-db.php"; then
               echo "サーバー内配置確認OK: ${GITHUB_SHA}"
               exit 0
             fi
@@ -233,7 +233,11 @@ jobs:
           printf '%s' "$VERSION" | grep -F "\"commit\":\"${GITHUB_SHA}\"" >/dev/null
           HEALTH="$(curl "${CURL_ARGS[@]}" "https://wp983575.wpx.jp/api/health?sha=${GITHUB_SHA}")"
           printf '%s' "$HEALTH" | grep -F '"runtime":"php"' >/dev/null
-          echo "HTTPS公開確認OK: ${GITHUB_SHA}"
+          DEBUG="$(curl "${CURL_ARGS[@]}" "https://wp983575.wpx.jp/api/debug?sha=${GITHUB_SHA}")"
+          printf '%s' "$DEBUG" | grep -F '"connected":true' >/dev/null
+          printf '%s' "$DEBUG" | grep -F '"works":' >/dev/null
+          printf '%s' "$DEBUG" | grep -F '"diagnostics":' >/dev/null
+          echo "HTTPS公開・デバッグAPI確認OK: ${GITHUB_SHA}"
 
       - name: DBとFANZA APIの本番稼働を確認
         shell: bash
