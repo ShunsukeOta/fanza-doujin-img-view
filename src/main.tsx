@@ -1,8 +1,8 @@
 import { StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 
-import { FavoritesPage } from "@/components/FavoritesPage";
 import { MyPage } from "@/components/MyPage";
+import { SavedPage } from "@/components/SavedPage";
 import { SwipePreviewApp } from "@/components/SwipePreviewApp";
 import type { AssetType, FilterValues } from "@/lib/types";
 import "@/styles/globals.css";
@@ -37,15 +37,18 @@ const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
 const root = document.getElementById("root");
 if (!root) throw new Error("#root が見つかりません。");
 
-let app: ReactNode;
 if (pathname === "/favorites") {
-  app = <FavoritesPage />;
-} else if (pathname === "/mypage") {
-  app = <MyPage />;
+  window.location.replace("/saved");
 } else {
-  app = <SwipePreviewApp initialFilters={initialFilters} initialCid={params.get("cid") ?? ""} />;
+  let app: ReactNode;
+  if (pathname === "/saved") {
+    app = <SavedPage />;
+  } else if (pathname === "/mypage") {
+    app = <MyPage />;
+  } else {
+    app = <SwipePreviewApp initialFilters={initialFilters} initialCid={params.get("cid") ?? ""} />;
+  }
+
+  createRoot(root).render(<StrictMode>{app}</StrictMode>);
+  if (pathname !== "/saved" && pathname !== "/mypage") startAnalytics();
 }
-
-createRoot(root).render(<StrictMode>{app}</StrictMode>);
-
-if (pathname !== "/favorites" && pathname !== "/mypage") startAnalytics();
