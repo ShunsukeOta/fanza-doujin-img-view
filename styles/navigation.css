@@ -2,14 +2,13 @@
   --global-nav-h: 66px;
 }
 
-/* 公開画面の左上ブランドは表示しない。 */
 .app-header {
   justify-content: flex-end;
 }
 
-/* 横読み領域が縦ジェスチャーを握り潰さないよう、縦移動はWorkCard側で判定する。 */
+/* 縦方向は親.feedのネイティブスクロールに渡す。横方向だけWorkCardでページ送りする。 */
 .preview-track {
-  touch-action: pan-x pinch-zoom;
+  touch-action: pan-y pinch-zoom;
   overscroll-behavior-y: auto;
 }
 
@@ -98,6 +97,10 @@
 .global-nav-item {
   gap: 3px;
   min-height: 48px;
+}
+
+.global-nav-item.is-active {
+  color: #f3f3f3;
 }
 
 .global-nav-item svg,
