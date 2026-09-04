@@ -3,6 +3,17 @@
   --nav-safe-bottom: env(safe-area-inset-bottom);
 }
 
+/*
+ * Home Screen PWA ではブラウザ下部ツールバーが存在しないため、
+ * グローバルナビ自身に safe-area 分の空白を追加しない。
+ * Safari通常表示では従来どおり env(safe-area-inset-bottom) を維持する。
+ */
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  :root {
+    --nav-safe-bottom: 0px;
+  }
+}
+
 .app-header {
   justify-content: flex-end;
 }
