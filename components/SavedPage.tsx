@@ -94,7 +94,7 @@ export function SavedPage() {
             <span className="subpage-state-icon"><BookmarkIcon /></span>
             <strong>まだ保存した作品がありません</strong>
             <p>メインページで「保存」を押した作品がここに並びます。</p>
-            <button type="button" onClick={() => openWorkInMain("") || window.location.assign("/")}>作品を探す</button>
+            <button type="button" onClick={() => window.location.assign("/")}>作品を探す</button>
           </div>
         ) : (
           <div className="favorite-grid">
