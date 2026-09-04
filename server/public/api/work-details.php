@@ -22,7 +22,7 @@ try {
         throw new RuntimeException('作品DBが利用できません。');
     }
 
-    $stmt = $pdo->prepare('SELECT cid, sample_count, full_page_count, volume, price, affiliate_url FROM works WHERE cid = ? LIMIT 1');
+    $stmt = $pdo->prepare('SELECT cid, sample_count, full_page_count, volume, price, affiliate_url, updated_at FROM works WHERE cid = ? LIMIT 1');
     $stmt->execute([$cid]);
     $row = $stmt->fetch();
     if (!is_array($row)) {
@@ -33,9 +33,11 @@ try {
     $volume = (string)($row['volume'] ?? '');
     $price = (string)($row['price'] ?? '');
     $affiliateUrl = (string)($row['affiliate_url'] ?? '');
+    $updatedAt = strtotime((string)($row['updated_at'] ?? '')) ?: 0;
+    $needsRefresh = $fullPageCount === null || $updatedAt < time() - 600;
 
-    // 既存DBにページ数が無い作品だけ、CTA到達時にFANZA APIから1回補完する。
-    if ($fullPageCount === null && $fanza->configured()) {
+    // CTAに到達した作品だけFANZA APIを確認。10分以内の同一作品はDBキャッシュを使う。
+    if ($needsRefresh && $fanza->configured()) {
         try {
             $item = $fanza->feedItem($fanza->fetchItem($cid, $fanza->resolveDoujinFloor()));
             $fullPageCount = isset($item['fullPageCount']) && is_int($item['fullPageCount']) ? $item['fullPageCount'] : null;
@@ -46,11 +48,11 @@ try {
             if ((string)($item['affiliateUrl'] ?? '') !== '') {
                 $affiliateUrl = (string)$item['affiliateUrl'];
             }
-            $update = $pdo->prepare('UPDATE works SET full_page_count = ?, volume = ?, price = ?, affiliate_url = ? WHERE cid = ?');
+            $update = $pdo->prepare('UPDATE works SET full_page_count = ?, volume = ?, price = ?, affiliate_url = ?, updated_at = NOW() WHERE cid = ?');
             $update->execute([$fullPageCount, $volume, $price, $affiliateUrl, $cid]);
         } catch (Throwable $error) {
-            // CTA自体はDB情報で表示し、ページ数補完失敗だけで購入導線を止めない。
-            error_log('work-details FANZA補完失敗: ' . $error->getMessage());
+            // FANZA側の一時失敗でもCTAを止めず、最後に取得済みの価格とURLを使う。
+            error_log('work-details FANZA更新失敗: ' . $error->getMessage());
         }
     }
 
