@@ -58,8 +58,11 @@ jobs:
           test -f public/manifest.webmanifest
           test -f public/sw.js
           test -f public/icons/app-icon.svg
-          test -f src/pwaViewport.ts
+          test ! -e src/pwaViewport.ts
+          grep -F 'viewport-fit=cover' index.html >/dev/null
           grep -F 'apple-mobile-web-app-capable' index.html >/dev/null
+          grep -F 'apple-mobile-web-app-status-bar-style' index.html >/dev/null
+          grep -F 'black-translucent' index.html >/dev/null
           grep -F 'rel="manifest"' index.html >/dev/null
           python3 - <<'PY'
           import json
@@ -68,25 +71,34 @@ jobs:
           assert manifest['display'] == 'standalone'
           assert manifest['start_url'] == '/'
           assert manifest['scope'] == '/'
+          assert manifest['background_color'] == '#0a0a0a'
+          assert manifest['theme_color'] == '#0a0a0a'
           PY
-          grep -F 'installPwaViewportFix();' src/main.tsx >/dev/null
-          grep -F 'window.visualViewport' src/pwaViewport.ts >/dev/null
-          grep -F 'window.screen.height' src/pwaViewport.ts >/dev/null
-          grep -F -- '--pwa-bottom-extension' src/pwaViewport.ts >/dev/null
+          if grep -R -F 'installPwaViewportFix' src >/dev/null; then
+            echo "不要なPWA viewport補正が残っています。" >&2
+            exit 1
+          fi
           grep -F 'rememberMainBeforeSubpage' components/GlobalNav.tsx >/dev/null
           grep -F 'resumeMainFromSubpage' components/GlobalNav.tsx >/dev/null
           grep -F 'history.go(-state.historySteps)' src/navigationState.ts >/dev/null
           grep -F 'prepareMainResumeFallback' src/main.tsx >/dev/null
-      - name: PWA余白の回帰を確認
+      - name: PWAナビ配置を確認
         shell: bash
         run: |
           set -euo pipefail
           test -f styles/pwa-layout.css
-          grep -F -- '--pwa-bottom-extension: 0px' styles/navigation.css >/dev/null
-          grep -F 'bottom: calc(-1 * var(--pwa-bottom-extension))' styles/navigation.css >/dev/null
-          grep -F 'height: calc(var(--global-nav-h) + var(--nav-safe-bottom) + var(--pwa-bottom-extension))' styles/navigation.css >/dev/null
+          grep -F -- '--nav-safe-bottom: env(safe-area-inset-bottom)' styles/navigation.css >/dev/null
+          grep -F 'bottom: 0;' styles/navigation.css >/dev/null
+          grep -F 'height: calc(var(--global-nav-h) + var(--nav-safe-bottom))' styles/navigation.css >/dev/null
           grep -F 'padding: 3px 16px var(--nav-safe-bottom)' styles/navigation.css >/dev/null
-          grep -F 'html[data-pwa-standalone="true"]' styles/navigation.css >/dev/null
+          if grep -F -- '--pwa-bottom-extension' styles/navigation.css >/dev/null; then
+            echo "動的なPWA下端補正が残っています。" >&2
+            exit 1
+          fi
+          if grep -F '100dvh' styles/pwa-layout.css >/dev/null; then
+            echo "サブページにPWA専用の強制100dvhが残っています。" >&2
+            exit 1
+          fi
           grep -F 'padding-bottom: calc(var(--global-nav-h) + var(--nav-safe-bottom) + 6px)' styles/pwa-layout.css >/dev/null
       - name: 集中モードの残骸を確認
         shell: bash
