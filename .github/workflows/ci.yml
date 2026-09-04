@@ -14,9 +14,25 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install dependencies
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: curl, pdo_mysql
+          coverage: none
+      - name: 依存関係をインストール
         run: npm install --no-audit --no-fund
-      - name: Typecheck
+      - name: TypeScript型チェック
         run: npm run typecheck
-      - name: Build
-        run: npm run build
+      - name: PHP構文チェック
+        run: npm run check:php
+      - name: 本番成果物を作成
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+        run: npm run build:shin
+      - name: 成果物を確認
+        run: |
+          test -f deploy/public_html/index.html
+          test -f deploy/public_html/api/catalog.php
+          test -f deploy/public_html/api/events.php
+          test -f deploy/app/schema.sql
+          test -f deploy/app/cron/fanza-sync.php

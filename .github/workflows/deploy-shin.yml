@@ -26,14 +26,26 @@ jobs:
         with:
           node-version: 22
 
+      - name: PHPを準備
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: curl, pdo_mysql
+          coverage: none
+
       - name: 依存関係をインストール
         run: npm install --no-audit --no-fund
 
       - name: 型チェック
-        run: npm run typecheck --if-present
+        run: npm run typecheck
+
+      - name: PHP構文チェック
+        run: npm run check:php
 
       - name: シンレンタルサーバー用成果物を作成
-        run: npm run build:shin --if-present
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+        run: npm run build:shin
 
       - name: SSHを設定
         shell: bash
@@ -51,34 +63,34 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ssh \
-            -i "$HOME/.ssh/id_shin" \
-            -p 10022 \
-            -o BatchMode=yes \
-            -o IdentitiesOnly=yes \
+          ssh -i "$HOME/.ssh/id_shin" -p 10022 -o BatchMode=yes -o IdentitiesOnly=yes \
             wp983575@wp983575.wpx.jp \
-            'test -d "$HOME/wp983575.wpx.jp/public_html" && echo "SSH接続OK: $HOME/wp983575.wpx.jp/public_html"'
+            'mkdir -p "$HOME/wp983575.wpx.jp/public_html" "$HOME/wp983575.wpx.jp/app" && echo "SSH接続OK"'
 
-      - name: デプロイ成果物を確認
-        id: artifact
-        shell: bash
-        run: |
-          if [ -d "deploy" ] && [ -n "$(find deploy -mindepth 1 -maxdepth 1 -print -quit)" ]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-            echo "deploy/ を公開します。"
-          else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "deploy/ がまだ生成されていないため、今回はファイル転送をスキップします。"
-            echo "React/Vite + PHP への移行時に build:shin で deploy/ を生成すると自動デプロイが有効になります。"
-          fi
-
-      - name: rsyncでpublic_htmlへ同期
-        if: steps.artifact.outputs.ready == 'true'
+      - name: public_htmlへ同期
         shell: bash
         run: |
           set -euo pipefail
           rsync -az --delete \
-            --exclude='.env' \
             -e "ssh -i $HOME/.ssh/id_shin -p 10022 -o BatchMode=yes -o IdentitiesOnly=yes" \
-            deploy/ \
+            deploy/public_html/ \
             wp983575@wp983575.wpx.jp:wp983575.wpx.jp/public_html/
+
+      - name: 非公開アプリ領域へ同期
+        shell: bash
+        run: |
+          set -euo pipefail
+          rsync -az --delete \
+            --exclude='config.local.php' \
+            -e "ssh -i $HOME/.ssh/id_shin -p 10022 -o BatchMode=yes -o IdentitiesOnly=yes" \
+            deploy/app/ \
+            wp983575@wp983575.wpx.jp:wp983575.wpx.jp/app/
+
+      - name: デプロイ内容を確認
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/id_shin" -p 10022 -o BatchMode=yes -o IdentitiesOnly=yes \
+            wp983575@wp983575.wpx.jp \
+            "grep -F '\"commit\":\"${GITHUB_SHA}\"' '$HOME/wp983575.wpx.jp/public_html/version.json' >/dev/null && test -f '$HOME/wp983575.wpx.jp/public_html/api/health.php' && test -f '$HOME/wp983575.wpx.jp/app/cron/fanza-sync.php'"
+          echo "デプロイ確認OK: ${GITHUB_SHA}"

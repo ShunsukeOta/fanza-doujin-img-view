@@ -1,0 +1,45 @@
+name: FANZA作品DBを同期
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shin-catalog-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: SSHを設定
+        shell: bash
+        env:
+          SHIN_SSH_PRIVATE_KEY: ${{ secrets.SHIN_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SHIN_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_shin"
+          chmod 600 "$HOME/.ssh/id_shin"
+          ssh-keyscan -p 10022 -H wp983575.wpx.jp >> "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: サーバー上で作品DBを同期
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/id_shin" -p 10022 -o BatchMode=yes -o IdentitiesOnly=yes \
+            wp983575@wp983575.wpx.jp '
+              set -eu
+              APP="$HOME/wp983575.wpx.jp/app"
+              if [ ! -f "$APP/config.local.php" ]; then
+                echo "config.local.php が未設定なので同期をスキップします。"
+                exit 0
+              fi
+              php "$APP/cron/fanza-sync.php" --pages=5 --sort=date
+            '

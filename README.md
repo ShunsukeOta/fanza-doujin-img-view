@@ -1,367 +1,155 @@
-# FANZA同人 Swipe Preview — Next.js / Vercel
+# FANZA同人 Swipe Preview
 
-FANZA同人の公式 DMM Webサービス v3 レスポンスだけを使い、スマートフォンで「上下スワイプ = 次作品 / 左右スワイプ = `sample_l` プレビュー」を検証するNext.jsアプリです。
+FANZA同人作品の `sampleImageURL.sample_l.image` を縦フィード + 横ページ送りで閲覧するモバイル向けWebアプリです。
 
-旧PHP版のUI・フィルタ・API診断・縦横スワイプ仕様を維持しつつ、Vercelでそのまま公開できる構成へ移行しています。
+本番構成は **React + Vite / PHP 8.3 / MariaDB / シンレンタルサーバー** です。Node.jsはビルド時にだけ使用し、本番Webサーバー上では常駐させません。
 
-## Stack
-
-- Next.js 16.3.3 / App Router
-- React 19.2.x
-- TypeScript
-- Vercel Functions (Node.js runtime)
-- DMM/FANZA Webサービス v3
-
-## 仕様
-
-- SPファースト、1作品 = `100dvh`
-- 上下スワイプで前後作品
-- 左右スワイプで同一作品の `sampleImageURL.sample_l.image`
-- 横操作は方向ロック付きで縦フィードと競合しにくい実装
-- 作品ごとに `API NP · 読込 X/N · 失敗 Y` を表示
-- いいね / 保存は `localStorage`
-- 共有は Web Share API、未対応環境はClipboard
-- FANZAアフィリエイトリンクへ遷移
-- API素材タイプ / ジャンル / 最低sample_l枚数 / レビュー件数 / 平均評価で絞り込み
-- 現在のジャンル条件で最大800件を走査し、sample_l枚数分布を表示
-- CIDまたはFANZA商品URLの直接テスト
-- API ID / Affiliate IDはサーバー側だけで参照し、クライアントbundleへ入れない
-
-## APIの扱い
-
-### Floor
-
-`/api/meta` と `/api/catalog` は `FloorList` から以下を動的に解決します。
+## 本番構成
 
 ```text
-site=FANZA
-service=doujin
-floor=digital_doujin
+ブラウザ
+  ↓
+React / Vite 静的ファイル
+  ↓
+/api/catalog       おすすめフィード
+/api/meta          ジャンル・素材タイプ
+/api/events        行動イベント
+/api/diagnostics   sample_l診断
+/api/health        稼働確認
+  ↓
+PHP 8.3
+  ├─ MariaDB: 作品 / ジャンル / 行動 / 嗜好スコア
+  └─ DMM Web Service API v3: DB未同期時のフォールバック / 定期同期
 ```
 
-`floor_id` はハードコードしません。
+公開先は `https://wp983575.wpx.jp/`。
 
-### Genre
+GitHub `main` へのpushで `.github/workflows/deploy-shin.yml` が実行され、SSH + rsyncで自動デプロイします。
 
-`GenreSearch` で取得したジャンルを使用します。ジャンル指定時はItemListへ以下を渡します。
-
-```text
-article=genre
-article_id=<genre_id>
-```
-
-`iteminfo.genre` は「制服」「巨乳」「中出し」「男性向け」などのジャンルタグとして扱い、「コミック / CG / ゲーム / ボイス」の判定には使用しません。
-
-### API素材タイプ
-
-ItemListに正式な作品形式フィールドがないため、API自身が返した `imageURL` / `sampleImageURL` のパスを診断用の「API素材タイプ」として扱います。
-
-```text
-/digital/comic/ -> コミック系
-/digital/cg/    -> CG・イラスト系
-/digital/game/  -> ゲーム系
-/digital/voice/ -> ボイス・音声系
-```
-
-画像URLを推測して生成することはありません。
-
-### Sample images
-
-表示するサンプル画像は以下のみです。
-
-```text
-sampleImageURL.sample_l.image
-```
-
-試し読みビューアーのスクレイピングは行いません。
-
-## Environment Variables
-
-必要なのは2つだけです。
-
-```text
-DMM_API_ID
-DMM_AFFILIATE_ID
-```
-
-`.env.example` を用意しています。
-
-```bash
-cp .env.example .env.local
-```
-
-Windows CMD:
-
-```bat
-copy .env.example .env.local
-```
-
-`.env.local`:
-
-```env
-DMM_API_ID=実際のAPI_ID
-DMM_AFFILIATE_ID=実際のAffiliate_ID
-```
-
-`NEXT_PUBLIC_` は絶対に付けません。`NEXT_PUBLIC_*` はクライアントbundleへ埋め込まれるためです。
-
-## Local development
-
-Node.js 20.9以上を使用してください。
+## 開発
 
 ```bash
 npm install
 npm run dev
 ```
 
-ブラウザ:
+PHP APIもローカルで動かす場合は別ターミナルで:
 
-```text
-http://localhost:3000
+```bash
+npm run dev:api
 ```
 
-本番ビルド確認:
+Viteは `/api` を `127.0.0.1:8787` にプロキシします。
+
+## チェック
 
 ```bash
 npm run typecheck
-npm run build
-npm start
+npm run check:php
+npm run build:shin
 ```
 
-## Health check
-
-環境変数とFANZA API疎通だけを安全に確認できるエンドポイントがあります。
+`build:shin` は以下を生成します。
 
 ```text
-http://localhost:3000/api/health
+deploy/
+├─ public_html/   # Vite成果物 + 公開PHP API
+└─ app/           # 非公開PHPアプリ / schema / cron
 ```
 
-正常例:
+## サーバー設定
 
-```json
-{
-  "ok": true,
-  "env": {
-    "DMM_API_ID": true,
-    "DMM_AFFILIATE_ID": true
-  },
-  "upstream": "reachable",
-  "floor": {
-    "site": "FANZA",
-    "service": "doujin",
-    "floor": "digital_doujin",
-    "floorId": "..."
-  }
-}
-```
-
-このAPIは環境変数の**値そのものを返しません**。
-
-## Deploy to Vercel
-
-### 1. GitHub repositoryをVercelへImport
-
-Vercel Dashboardから `ShunsukeOta/fanza-doujin-img-view` をImportします。
-
-設定は基本的に自動検出のままで構いません。
+秘密情報はGitHubへコミットしません。シンレンタルサーバー側の以下のファイルにだけ保存します。
 
 ```text
-Framework Preset: Next.js
-Root Directory: ./
-Build Command: next build (default)
-Output Directory: default
-Install Command: npm install (default)
+/home/wp983575/wp983575.wpx.jp/app/config.local.php
 ```
 
-独自の `vercel.json` は不要です。
+初回は `app/config.example.php` をコピーして値を設定します。
 
-### 2. Environment Variablesを登録
-
-Vercelの対象Projectで:
-
-```text
-Settings
-  -> Environment Variables
+```php
+<?php
+return [
+    'dmm' => [
+        'api_id' => 'DMM API ID',
+        'affiliate_id' => 'DMM affiliate ID',
+    ],
+    'db' => [
+        'host' => 'MariaDBホスト',
+        'port' => 3306,
+        'name' => 'DB名',
+        'user' => 'DBユーザー',
+        'password' => 'DBパスワード',
+        'charset' => 'utf8mb4',
+    ],
+    'app' => [
+        'timezone' => 'Asia/Tokyo',
+        'event_retention_days' => 60,
+        'sync_pages' => 5,
+    ],
+];
 ```
 
-以下を登録します。
+`config.local.php` はデプロイ時の `rsync --delete` から明示的に除外しているため、main更新で消えません。
 
-```text
-DMM_API_ID=<API ID>
-DMM_AFFILIATE_ID=<Affiliate ID>
-```
+## DB初期化
 
-少なくとも `Production` に設定してください。
+MariaDB作成後、`app/schema.sql` を1回適用します。
 
-Preview Deploymentでも確認する場合は `Preview` にも設定してください。
+主要テーブル:
 
-Vercel上の値をローカルへ持ってくる場合はCLIで:
+- `works`: FANZA作品情報・sample_l画像URL
+- `genres`: ジャンル
+- `work_genres`: 作品とジャンル
+- `anonymous_users`: ランダムUUIDだけの匿名ユーザー
+- `events`: impression / 滞在時間 / ページ進捗 / like / save / share / affiliate click
+- `user_genre_scores`: 行動から更新するジャンル嗜好スコア
+
+IPアドレスや実名情報は保存しません。
+
+## FANZA同期
+
+サーバー上で手動実行:
 
 ```bash
-npm i -g vercel
-vercel login
-vercel link
-vercel env pull .env.local
+php ~/wp983575.wpx.jp/app/cron/fanza-sync.php --pages=5 --sort=date
 ```
 
-### 3. Deploy / Redeploy
+GitHub Actionsの `FANZA作品DBを同期` も6時間ごとに同じ処理を実行します。`config.local.php` がまだ無い場合は正常終了でスキップします。
 
-環境変数を追加・変更した後はRedeployしてください。
+同期処理は:
 
-GitHub連携済みなら `main` へのpushでProduction Deploymentが更新されます。
+1. FloorListで `FANZA / doujin / digital_doujin` を解決
+2. GenreSearchを同期
+3. ItemListを100件単位で取得
+4. `works / genres / work_genres` をUPSERT
+5. 古いイベント生ログを設定日数より前で削除
 
-CLIなら:
+を行います。
 
-```bash
-vercel --prod
-```
+## レコメンド
 
-## Vercel上での表示確認手順
+DBに作品が1件以上入ると `/api/catalog` は自動的にDBフィードへ切り替わります。
 
-### A. Health check
+候補生成は「人気」「新着」「探索」の複数プールを混ぜ、その後に以下を加点・減点して並べ替えます。
 
-Deployment URLが例えば:
+- ジャンル嗜好スコア
+- 評価
+- レビュー人気度
+- 新着度
+- ユーザーごとの決定的探索スコア
+- 直近14日で表示済みの作品へのペナルティ
+
+嗜好スコアは `view_end` の滞在時間・読了率、いいね、保存、共有、FANZAクリックから更新します。1.2秒未満かつ読了率20%未満の離脱は弱いネガティブとして扱います。
+
+DB未設定・未同期の間は、DMM API設定があれば従来通りItemListから直接取得します。
+
+## GitHub Actions Secret
+
+自動デプロイに必要なRepository Secretは現在1つだけです。
 
 ```text
-https://fanza-doujin-img-view.vercel.app
+SHIN_SSH_PRIVATE_KEY
 ```
 
-なら最初に:
-
-```text
-https://fanza-doujin-img-view.vercel.app/api/health
-```
-
-を開きます。
-
-以下を確認します。
-
-```text
-ok = true
-DMM_API_ID = true
-DMM_AFFILIATE_ID = true
-upstream = reachable
-floor = digital_doujin
-```
-
-### B. Top page
-
-次にルートを開きます。
-
-```text
-https://fanza-doujin-img-view.vercel.app/
-```
-
-初期条件:
-
-```text
-API素材タイプ: すべて
-ジャンル: すべて
-最低sample_l: 10
-最低レビュー: 10
-最低評価: 4.5
-```
-
-作品が読み込まれればAPI接続とフィード生成は成功です。
-
-### C. API診断
-
-右上 `絞り込み` から:
-
-```text
-API素材タイプ: コミック系
-ジャンル: すべて
-最低sample_l: 0
-最低レビュー: 0
-最低評価: 0.0
-```
-
-で実行します。
-
-`sample_l 枚数分布` の `コミック系 / 10P+` に数値が出れば、コミック系の複数サンプル取得をVercel環境から実測できています。
-
-### D. 横スワイプ
-
-各作品上部の表示を確認します。
-
-```text
-API 10P · 読込 10/10
-```
-
-この状態で左右スワイプできれば正常です。
-
-```text
-API 10P · 読込 8/10 · 失敗 2
-```
-
-ならAPIは10URL返しているが、ブラウザ画像ロードで2枚失敗しています。
-
-### E. Secretsがクライアントへ出ていないことを確認
-
-ブラウザDevToolsのSources / Networkで `DMM_API_ID` の実値を検索しても出ないことを確認できます。
-
-ブラウザが直接アクセスするのは同一オリジンの:
-
-```text
-/api/meta
-/api/catalog
-/api/health
-```
-
-で、DMM APIへの認証付きリクエストはVercel Function内だけで実行されます。
-
-## API routes
-
-```text
-GET /api/health
-GET /api/meta
-GET /api/catalog
-```
-
-`/api/catalog` query example:
-
-```text
-/api/catalog?asset_type=comic&genre_id=&min_samples=10&min_reviews=10&min_rating=4.5
-```
-
-CID直接指定:
-
-```text
-/api/catalog?asset_type=all&genre_id=&min_samples=10&min_reviews=10&min_rating=4.5&cid=d_xxxxxx
-```
-
-## Vercel / rate limit considerations
-
-DMM/FANZA Webサービスは1リクエスト最大100件で、一定時間内のリクエスト回数にも上限があります。
-
-このアプリは:
-
-- 1ページ100件
-- 最大8ページ = 800件
-- ItemListのページ間に短い間隔を入れる
-- `/api/catalog` の同一URLをVercel CDNで短時間キャッシュ
-- Floor / Genre系は長めにキャッシュ
-
-として、アクセスごとに無制限にDMM APIへリクエストしないようにしています。
-
-## Directory
-
-```text
-app/
-  api/
-    catalog/route.ts  ItemList + 最大800件診断
-    health/route.ts   env/API疎通確認
-    meta/route.ts     FloorList + GenreSearch
-  globals.css         現行SP UI
-  layout.tsx
-  page.tsx
-components/
-  SwipePreviewApp.tsx 縦横フィード・フィルタ・診断・actions
-lib/
-  fanza.ts            server-only FANZA API層
-  types.ts            shared types
-.env.example
-next.config.ts
-package.json
-tsconfig.json
-```
+ホスト・ユーザー・ポートは秘密情報ではないためworkflow内に固定しています。
