@@ -4,8 +4,8 @@ DirectoryIndex index.html
 <IfModule mod_rewrite.c>
   RewriteEngine On
 
-  RewriteRule ^api/(catalog|meta|diagnostics|debug|health|events|reactions)\.php$ - [L]
-  RewriteRule ^api/(catalog|meta|diagnostics|debug|health|events|reactions)/?$ api/$1.php [L,QSA]
+  RewriteRule ^api/(catalog|meta|diagnostics|debug|health|events|reactions|favorites|me)\.php$ - [L]
+  RewriteRule ^api/(catalog|meta|diagnostics|debug|health|events|reactions|favorites|me)/?$ api/$1.php [L,QSA]
   RewriteRule ^api/ - [R=404,L]
 
   RewriteCond %{REQUEST_FILENAME} -f [OR]
