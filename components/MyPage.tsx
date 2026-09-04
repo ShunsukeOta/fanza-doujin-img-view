@@ -57,9 +57,7 @@ export function MyPage() {
     <div className="subpage-shell">
       <header className="subpage-header">
         <div>
-          <p className="subpage-eyebrow">MY PAGE</p>
           <h1>マイページ</h1>
-          <p className="subpage-description">保存した作品や、これまでの閲覧からあなた向けの情報をまとめます。</p>
         </div>
       </header>
 

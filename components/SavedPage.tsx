@@ -72,17 +72,14 @@ export function SavedPage() {
     <div className="subpage-shell">
       <header className="subpage-header">
         <div>
-          <p className="subpage-eyebrow">LIBRARY</p>
           <h1>保存済み</h1>
-          <p className="subpage-description">あとで読みたい作品をまとめて確認できます。</p>
         </div>
         <button className="subpage-refresh" type="button" onClick={() => void load()} disabled={loading}>再読込</button>
       </header>
 
       <main className="subpage-content">
-        <div className="subpage-summary">
-          <span>保存した作品</span>
-          <strong>{total.toLocaleString("ja-JP")}<small>件</small></strong>
+        <div className="subpage-summary" aria-label={`保存した作品 ${total}件`}>
+          <span>保存した作品 <strong>{total.toLocaleString("ja-JP")}</strong>件</span>
         </div>
 
         {loading ? (

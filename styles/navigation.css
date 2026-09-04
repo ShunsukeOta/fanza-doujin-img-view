@@ -1,13 +1,18 @@
 :root {
   --global-nav-h: 48px;
   --nav-safe-bottom: env(safe-area-inset-bottom);
+  --pwa-bottom-extension: 0px;
 }
 
-/* standaloneではSafariツールバー分の補正が不要なため、ホームジェスチャーに必要な分だけ残す。 */
+/* standaloneでは下端の非クライアント領域をJSで実測して埋める。safe-areaの二重加算はしない。 */
 @media (display-mode: standalone) {
   :root {
-    --nav-safe-bottom: max(0px, calc(env(safe-area-inset-bottom) - 14px));
+    --nav-safe-bottom: 0px;
   }
+}
+
+html[data-pwa-standalone="true"] {
+  --nav-safe-bottom: 0px;
 }
 
 .app-header {
@@ -101,14 +106,14 @@
   z-index: 70;
   left: 0;
   right: 0;
-  bottom: 0;
-  height: calc(var(--global-nav-h) + var(--nav-safe-bottom));
+  bottom: calc(-1 * var(--pwa-bottom-extension));
+  height: calc(var(--global-nav-h) + var(--nav-safe-bottom) + var(--pwa-bottom-extension));
   padding: 3px 16px var(--nav-safe-bottom);
   display: grid;
   grid-template-columns: 1fr 58px 1fr;
   align-items: center;
   gap: 6px;
-  background: #0a0a0af2;
+  background: #0a0a0a;
   border-top: 1px solid #ffffff14;
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);

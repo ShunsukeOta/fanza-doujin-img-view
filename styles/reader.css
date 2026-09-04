@@ -143,8 +143,8 @@ html {
 }
 
 /*
- * 集中モードではレイアウトを一切変えない。
- * 16:9等の画像位置が動かないよう、preview-pageのpaddingも通常時と完全共通にする。
+ * 集中モードでは画像とページカウンター、集中モード解除ボタン、グローバルナビだけを残す。
+ * 半透明に残すとstat-chip等が「残骸」に見えるため、補助UIは完全に消す。
  */
 .item-gradient,
 .item-info,
@@ -153,26 +153,19 @@ html {
 .feed-count,
 .feed-loading-more,
 .toast {
-  transition: opacity 160ms ease;
+  transition: opacity 160ms ease, visibility 160ms ease;
 }
 
-.reader-focus .feed-count {
-  opacity: .32;
-}
-
-.reader-focus .item-gradient {
-  opacity: .3;
-}
-
+.reader-focus .feed-count,
+.reader-focus .item-gradient,
 .reader-focus .item-info,
-.reader-focus .action-rail {
-  opacity: .2;
-}
-
+.reader-focus .action-rail,
 .reader-focus .swipe-hint,
 .reader-focus .feed-loading-more,
 .reader-focus .toast {
-  opacity: .25;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none !important;
 }
 
 .reader-focus .item-info *,
