@@ -35,6 +35,30 @@ jobs:
       - name: シンレンタルサーバー用成果物を作成
         run: npm run build:shin --if-present
 
+      - name: SSHを設定
+        shell: bash
+        env:
+          SHIN_SSH_PRIVATE_KEY: ${{ secrets.SHIN_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SHIN_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_shin"
+          chmod 600 "$HOME/.ssh/id_shin"
+          ssh-keyscan -p 10022 -H wp983575.wpx.jp >> "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: SSH接続を確認
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh \
+            -i "$HOME/.ssh/id_shin" \
+            -p 10022 \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            wp983575@wp983575.wpx.jp \
+            'test -d "$HOME/wp983575.wpx.jp/public_html" && echo "SSH接続OK: $HOME/wp983575.wpx.jp/public_html"'
+
       - name: デプロイ成果物を確認
         id: artifact
         shell: bash
@@ -44,21 +68,17 @@ jobs:
             echo "deploy/ を公開します。"
           else
             echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "deploy/ がまだ生成されていないため、今回はデプロイをスキップします。"
+            echo "deploy/ がまだ生成されていないため、今回はファイル転送をスキップします。"
             echo "React/Vite + PHP への移行時に build:shin で deploy/ を生成すると自動デプロイが有効になります。"
           fi
 
-      - name: FTPSでpublic_htmlへ同期
+      - name: rsyncでpublic_htmlへ同期
         if: steps.artifact.outputs.ready == 'true'
-        uses: SamKirkland/FTP-Deploy-Action@v4.4.0
-        with:
-          server: ${{ secrets.SHIN_FTP_SERVER }}
-          username: wp983575
-          password: ${{ secrets.SHIN_FTP_PASSWORD }}
-          protocol: ftps
-          port: 21
-          local-dir: ./deploy/
-          server-dir: ./wp983575.wpx.jp/public_html/
-          security: strict
-          timeout: 60000
-          log-level: standard
+        shell: bash
+        run: |
+          set -euo pipefail
+          rsync -az --delete \
+            --exclude='.env' \
+            -e "ssh -i $HOME/.ssh/id_shin -p 10022 -o BatchMode=yes -o IdentitiesOnly=yes" \
+            deploy/ \
+            wp983575@wp983575.wpx.jp:wp983575.wpx.jp/public_html/
