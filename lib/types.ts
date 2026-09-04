@@ -35,6 +35,7 @@ export type FeedItem = {
   affiliateUrl: string;
   images: string[];
   sampleCount: number;
+  fullPageCount?: number | null;
   reviews: number;
   rating: number;
   genres: string[];
