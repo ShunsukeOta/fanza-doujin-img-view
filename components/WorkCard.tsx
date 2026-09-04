@@ -20,7 +20,7 @@ type Props = {
   isActive: boolean;
   onToast: (message: string) => void;
   onDebug: (snapshot: WorkDebugSnapshot) => void;
-  onVerticalSwipe: (direction: -1 | 1) => void;
+  onVerticalSwipe?: (direction: -1 | 1) => void;
 };
 
 function clamp(value: number, min: number, max: number) {
@@ -38,7 +38,7 @@ function formatCount(value: number) {
   return Math.max(0, value).toLocaleString("ja-JP");
 }
 
-export function WorkCard({ item, index, isActive, onToast, onDebug, onVerticalSwipe }: Props) {
+export function WorkCard({ item, index, isActive, onToast, onDebug }: Props) {
   const trackRef = useRef<HTMLDivElement | null>(null);
   const pageSettleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gestureRef = useRef<{ pointerId: number; x: number; y: number; startedAt: number } | null>(null);
@@ -77,7 +77,7 @@ export function WorkCard({ item, index, isActive, onToast, onDebug, onVerticalSw
         const reactions = await loadReactions([item.cid]);
         if (!cancelled && reactions[item.cid]) applyReaction(reactions[item.cid]);
       } catch {
-        // リアルタイム更新は補助機能なので、フィード表示自体は止めない。
+        // 件数同期の失敗でフィード本体は止めない。
       }
     };
     void refresh();
@@ -90,10 +90,8 @@ export function WorkCard({ item, index, isActive, onToast, onDebug, onVerticalSw
     };
   }, [applyReaction, isActive, item.cid, reactionPending]);
 
-  useEffect(() => {
-    return () => {
-      if (pageSettleTimer.current) clearTimeout(pageSettleTimer.current);
-    };
+  useEffect(() => () => {
+    if (pageSettleTimer.current) clearTimeout(pageSettleTimer.current);
   }, []);
 
   const markLoad = useCallback((pageIndex: number, state: Exclude<LoadState, "pending">) => {
@@ -153,10 +151,14 @@ export function WorkCard({ item, index, isActive, onToast, onDebug, onVerticalSw
     const dx = event.clientX - start.x;
     const dy = event.clientY - start.y;
     const elapsed = performance.now() - start.startedAt;
-    if (elapsed <= 1000 && Math.abs(dy) >= 46 && Math.abs(dy) > Math.abs(dx) * 1.12) {
-      onVerticalSwipe(dy < 0 ? 1 : -1);
+
+    // 縦方向はブラウザのネイティブpan-yへ完全に任せる。
+    // touch-action: pan-y により縦操作時はpointercancelになり、親.feedがそのままスクロールする。
+    if (elapsed <= 1000 && Math.abs(dx) >= 42 && Math.abs(dx) > Math.abs(dy) * 1.08) {
+      goToPage(pageIndexFromScroll() + (dx < 0 ? 1 : -1));
       return;
     }
+
     pageSettleTimer.current = setTimeout(commitCurrentPage, 140);
   };
 
@@ -219,7 +221,10 @@ export function WorkCard({ item, index, isActive, onToast, onDebug, onVerticalSw
         onScroll={scheduleCurrentPageCommit}
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
-        onPointerCancel={() => { gestureRef.current = null; pageSettleTimer.current = setTimeout(commitCurrentPage, 140); }}
+        onPointerCancel={() => {
+          gestureRef.current = null;
+          pageSettleTimer.current = setTimeout(commitCurrentPage, 140);
+        }}
         onKeyDown={(event: ReactKeyboardEvent<HTMLDivElement>) => {
           if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
             event.preventDefault();
@@ -242,9 +247,7 @@ export function WorkCard({ item, index, isActive, onToast, onDebug, onVerticalSw
         ))}
       </div>
 
-      <div className="page-counter" aria-live="polite">
-        <span>{currentPage + 1}</span>&nbsp;/&nbsp;{item.images.length}
-      </div>
+      <div className="page-counter" aria-live="polite"><span>{currentPage + 1}</span>&nbsp;/&nbsp;{item.images.length}</div>
       {item.images.length > 1 && index === 0 ? <div className="swipe-hint">← 横にスワイプして読む →</div> : null}
 
       <div className="item-gradient" />
@@ -257,13 +260,7 @@ export function WorkCard({ item, index, isActive, onToast, onDebug, onVerticalSw
         </div>
         {item.genres.length > 0 ? <div className="genre-line">{item.genres.slice(0, 6).join(" / ")}</div> : null}
         {/^(https?):\/\//i.test(item.affiliateUrl) ? (
-          <a
-            className="open-link"
-            href={item.affiliateUrl}
-            target="_blank"
-            rel="noopener noreferrer sponsored"
-            onClick={() => trackEvent({ eventType: "affiliate_click", cid: item.cid })}
-          >
+          <a className="open-link" href={item.affiliateUrl} target="_blank" rel="noopener noreferrer sponsored" onClick={() => trackEvent({ eventType: "affiliate_click", cid: item.cid })}>
             FANZAで続きを読む <ExternalIcon />
           </a>
         ) : null}
@@ -271,37 +268,18 @@ export function WorkCard({ item, index, isActive, onToast, onDebug, onVerticalSw
 
       <div className="action-rail">
         <button className={`action-btn${liked ? " is-active" : ""}`} type="button" disabled={reactionPending !== null} onClick={() => void toggleReaction("like")}>
-          <span className="action-icon"><HeartIcon /></span>
-          <span className="action-label">いいね</span>
-          <span className="action-count">{formatCount(likeCount)}</span>
+          <span className="action-icon"><HeartIcon /></span><span className="action-label">いいね</span><span className="action-count">{formatCount(likeCount)}</span>
         </button>
         <button className={`action-btn${saved ? " is-active" : ""}`} type="button" disabled={reactionPending !== null} onClick={() => void toggleReaction("save")}>
-          <span className="action-icon"><BookmarkIcon /></span>
-          <span className="action-label">保存</span>
-          <span className="action-count">{formatCount(saveCount)}</span>
+          <span className="action-icon"><BookmarkIcon /></span><span className="action-label">保存</span><span className="action-count">{formatCount(saveCount)}</span>
         </button>
-        <button className="action-btn" type="button" onClick={share}>
-          <span className="action-icon"><ShareIcon /></span>
-          <span className="action-label">共有</span>
-        </button>
+        <button className="action-btn" type="button" onClick={share}><span className="action-icon"><ShareIcon /></span><span className="action-label">共有</span></button>
         <button
           className="action-btn debug-action"
           type="button"
-          onClick={() => onDebug({
-            item,
-            index,
-            currentPage,
-            loadedImages: loaded,
-            failedImages: failed,
-            pendingImages: pending,
-            liked,
-            saved,
-            likeCount,
-            saveCount,
-          })}
+          onClick={() => onDebug({ item, index, currentPage, loadedImages: loaded, failedImages: failed, pendingImages: pending, liked, saved, likeCount, saveCount })}
         >
-          <span className="action-icon"><DebugIcon /></span>
-          <span className="action-label">デバッグ</span>
+          <span className="action-icon"><DebugIcon /></span><span className="action-label">デバッグ</span>
         </button>
       </div>
     </article>
