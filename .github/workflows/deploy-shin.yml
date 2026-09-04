@@ -92,5 +92,5 @@ jobs:
           set -euo pipefail
           ssh -i "$HOME/.ssh/id_shin" -p 10022 -o BatchMode=yes -o IdentitiesOnly=yes \
             wp983575@wp983575.wpx.jp \
-            "grep -F '\"commit\":\"${GITHUB_SHA}\"' '$HOME/wp983575.wpx.jp/public_html/version.json' >/dev/null && test -f '$HOME/wp983575.wpx.jp/public_html/api/health.php' && test -f '$HOME/wp983575.wpx.jp/app/cron/fanza-sync.php'"
+            "cd wp983575.wpx.jp && grep -F '\"commit\":\"${GITHUB_SHA}\"' public_html/version.json >/dev/null && test -f public_html/api/health.php && test -f app/cron/fanza-sync.php"
           echo "デプロイ確認OK: ${GITHUB_SHA}"
