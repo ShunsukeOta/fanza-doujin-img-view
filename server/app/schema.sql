@@ -1,7 +1,9 @@
 CREATE TABLE IF NOT EXISTS works (
   cid VARCHAR(128) NOT NULL,
   title VARCHAR(512) NOT NULL DEFAULT '',
+  product_url TEXT NULL,
   affiliate_url TEXT NOT NULL,
+  description LONGTEXT NULL,
   sample_images_json LONGTEXT NOT NULL,
   sample_count SMALLINT UNSIGNED NOT NULL DEFAULT 0,
   full_page_count INT UNSIGNED NULL,
@@ -36,6 +38,16 @@ CREATE TABLE IF NOT EXISTS genres (
   KEY idx_genres_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS series (
+  id VARCHAR(64) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  ruby VARCHAR(255) NOT NULL DEFAULT '',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_series_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS work_genres (
   work_cid VARCHAR(128) NOT NULL,
   genre_id VARCHAR(64) NOT NULL,
@@ -43,6 +55,27 @@ CREATE TABLE IF NOT EXISTS work_genres (
   KEY idx_work_genres_genre (genre_id, work_cid),
   CONSTRAINT fk_work_genres_work FOREIGN KEY (work_cid) REFERENCES works(cid) ON DELETE CASCADE,
   CONSTRAINT fk_work_genres_genre FOREIGN KEY (genre_id) REFERENCES genres(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS work_series (
+  work_cid VARCHAR(128) NOT NULL,
+  series_id VARCHAR(64) NOT NULL,
+  PRIMARY KEY (work_cid, series_id),
+  KEY idx_work_series_series (series_id, work_cid),
+  CONSTRAINT fk_work_series_work FOREIGN KEY (work_cid) REFERENCES works(cid) ON DELETE CASCADE,
+  CONSTRAINT fk_work_series_series FOREIGN KEY (series_id) REFERENCES series(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS work_price_history (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  work_cid VARCHAR(128) NOT NULL,
+  price VARCHAR(64) NOT NULL DEFAULT '',
+  price_value INT UNSIGNED NULL,
+  observed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_work_price_history_work_time (work_cid, observed_at),
+  KEY idx_work_price_history_time (observed_at),
+  CONSTRAINT fk_work_price_history_work FOREIGN KEY (work_cid) REFERENCES works(cid) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS anonymous_users (
