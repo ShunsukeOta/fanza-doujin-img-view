@@ -1,0 +1,95 @@
+name: 直近1年分FANZA作品をバックフィル
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/backfill-2025-09-05.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shin-year-backfill-2025-09-05
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: 本番デプロイ完了を待機
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            version="$(curl --silent --show-error --connect-timeout 8 --max-time 15 -H 'Cache-Control: no-cache' "https://wp983575.wpx.jp/version.json?backfill=${GITHUB_SHA}" || true)"
+            if printf '%s' "$version" | grep -F "\"commit\":\"${GITHUB_SHA}\"" >/dev/null; then
+              echo "対象コミットの本番反映を確認: ${GITHUB_SHA}"
+              exit 0
+            fi
+            echo "本番反映待ち ${attempt}/60"
+            sleep 10
+          done
+          echo "10分待機しても対象コミットを確認できませんでした。" >&2
+          exit 1
+
+      - name: SSHを設定
+        shell: bash
+        env:
+          SHIN_SSH_PRIVATE_KEY: ${{ secrets.SHIN_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SHIN_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_shin"
+          chmod 600 "$HOME/.ssh/id_shin"
+          : > "$HOME/.ssh/known_hosts"
+          for attempt in 1 2 3 4 5; do
+            tmp_hosts="$(mktemp)"
+            if timeout 20s ssh-keyscan -T 10 -p 10022 -H wp983575.wpx.jp > "$tmp_hosts" 2>/dev/null && [ -s "$tmp_hosts" ]; then
+              cat "$tmp_hosts" >> "$HOME/.ssh/known_hosts"
+              rm -f "$tmp_hosts"
+              break
+            fi
+            rm -f "$tmp_hosts"
+            if [ "$attempt" -eq 5 ]; then
+              echo "SSHホスト鍵を取得できませんでした。" >&2
+              exit 1
+            fi
+            sleep $((attempt * 3))
+          done
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: 2025-09-05以降の全作品を取得
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/id_shin" -p 10022 \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
+            -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+            wp983575@wp983575.wpx.jp '
+              set -eu
+              APP="$HOME/wp983575.wpx.jp/app"
+              PHP_CLI=/usr/bin/php8.3
+              test -f "$APP/config.local.php"
+              "$PHP_CLI" "$APP/cron/setup-db.php"
+              UNTIL="$(date +%Y-%m-%dT%H:%M:%S)"
+              echo "バックフィル開始: 2025-09-05T00:00:00 - ${UNTIL}"
+              "$PHP_CLI" "$APP/cron/fanza-sync.php" \
+                --pages=500 \
+                --sort=date \
+                --since=2025-09-05T00:00:00 \
+                --until="${UNTIL}"
+              "$PHP_CLI" -r '
+                $config = require getenv("HOME") . "/wp983575.wpx.jp/app/config.local.php";
+                $dsn = sprintf("mysql:host=%s;port=%d;dbname=%s;charset=%s", $config["db"]["host"], $config["db"]["port"], $config["db"]["name"], $config["db"]["charset"]);
+                $pdo = new PDO($dsn, $config["db"]["user"], $config["db"]["password"], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+                $works = (int)$pdo->query("SELECT COUNT(*) FROM works")->fetchColumn();
+                $year = (int)$pdo->query("SELECT COUNT(*) FROM works WHERE release_date >= \"2025-09-05 00:00:00\"")->fetchColumn();
+                $series = (int)$pdo->query("SELECT COUNT(*) FROM series")->fetchColumn();
+                $prices = (int)$pdo->query("SELECT COUNT(*) FROM work_price_history")->fetchColumn();
+                echo "BACKFILL_RESULT works={$works} year={$year} series={$series} price_history={$prices}\n";
+              '
+            '
