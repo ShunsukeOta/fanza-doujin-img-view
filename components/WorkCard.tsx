@@ -1,4 +1,5 @@
 import {
+  type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   useCallback,
@@ -24,7 +25,6 @@ type GestureState = {
   axis: GestureAxis;
 };
 type WorkDetails = {
-  fullPageCount: number | null;
   remainingPages: number | null;
   price: string;
   affiliateUrl: string;
@@ -34,9 +34,9 @@ type Props = {
   item: FeedItem;
   index: number;
   isActive: boolean;
-  focusMode?: boolean;
   onToast: (message: string) => void;
   onDebug: (snapshot: WorkDebugSnapshot) => void;
+  onVerticalSwipe?: (direction: -1 | 1) => void;
 };
 
 function clamp(value: number, min: number, max: number) {
@@ -55,16 +55,15 @@ function formatCount(value: number) {
 }
 
 function initialDetails(item: FeedItem): WorkDetails {
-  const fullPageCount = typeof item.fullPageCount === "number" ? item.fullPageCount : null;
+  const fullPages = typeof item.fullPageCount === "number" ? item.fullPageCount : null;
   return {
-    fullPageCount,
-    remainingPages: fullPageCount === null ? null : Math.max(0, fullPageCount - item.sampleCount),
+    remainingPages: fullPages === null ? null : Math.max(0, fullPages - item.sampleCount),
     price: item.price,
     affiliateUrl: item.affiliateUrl,
   };
 }
 
-export function WorkCard({ item, index, isActive, focusMode = false, onToast, onDebug }: Props) {
+export function WorkCard({ item, index, isActive, onToast, onDebug }: Props) {
   const trackRef = useRef<HTMLDivElement | null>(null);
   const pageSettleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gestureRef = useRef<GestureState | null>(null);
@@ -86,6 +85,7 @@ export function WorkCard({ item, index, isActive, focusMode = false, onToast, on
     return track ? Math.max(0, track.scrollWidth - track.clientWidth) : 0;
   }, []);
 
+  // DOMは左から「CTA, 最終サンプル, ... , 2P, 1P」。1Pは常に右端。
   const scrollLeftForPage = useCallback((page: number) => {
     const track = trackRef.current;
     if (!track || track.clientWidth <= 0) return 0;
@@ -111,22 +111,21 @@ export function WorkCard({ item, index, isActive, focusMode = false, onToast, on
         headers: { Accept: "application/json" },
         credentials: "same-origin",
       });
-      const data = await response.json().catch(() => null) as ({
+      const data = await response.json().catch(() => null) as {
         ok?: boolean;
-        fullPageCount?: number | null;
         remainingPages?: number | null;
         price?: string;
         affiliateUrl?: string;
-      } & { error?: string }) | null;
+        error?: string;
+      } | null;
       if (!response.ok || !data?.ok) throw new Error(data?.error || "作品情報を取得できませんでした");
       setDetails({
-        fullPageCount: typeof data.fullPageCount === "number" ? data.fullPageCount : null,
         remainingPages: typeof data.remainingPages === "number" ? data.remainingPages : null,
         price: typeof data.price === "string" && data.price ? data.price : item.price,
         affiliateUrl: typeof data.affiliateUrl === "string" && data.affiliateUrl ? data.affiliateUrl : item.affiliateUrl,
       });
     } catch {
-      // CTAは既存の商品情報で表示を継続する。ページ数だけ不明扱いにする。
+      // 購入導線はDB情報で継続し、未確認のページ数は推測表示しない。
     } finally {
       setDetailsLoading(false);
     }
@@ -140,7 +139,7 @@ export function WorkCard({ item, index, isActive, focusMode = false, onToast, on
     if (next >= Math.max(0, ctaPage - 1)) void loadDetails();
     track.scrollTo({ left: scrollLeftForPage(next), behavior });
     if (pageSettleTimer.current) clearTimeout(pageSettleTimer.current);
-    pageSettleTimer.current = setTimeout(commitCurrentPage, behavior === "smooth" ? 340 : 20);
+    pageSettleTimer.current = setTimeout(commitCurrentPage, behavior === "smooth" ? 330 : 30);
   }, [commitCurrentPage, ctaPage, item.images.length, loadDetails, scrollLeftForPage]);
 
   useEffect(() => {
@@ -150,7 +149,7 @@ export function WorkCard({ item, index, isActive, focusMode = false, onToast, on
     detailsRequested.current = false;
     const frame = requestAnimationFrame(() => goToPage(0, "auto"));
     return () => cancelAnimationFrame(frame);
-  }, [item.cid, item.images, goToPage]);
+  }, [goToPage, item.cid, item.images]);
 
   useEffect(() => {
     const track = trackRef.current;
@@ -221,7 +220,7 @@ export function WorkCard({ item, index, isActive, focusMode = false, onToast, on
   const scheduleCurrentPageCommit = () => {
     if (gestureRef.current?.axis === "x") return;
     if (pageSettleTimer.current) clearTimeout(pageSettleTimer.current);
-    pageSettleTimer.current = setTimeout(commitCurrentPage, 100);
+    pageSettleTimer.current = setTimeout(commitCurrentPage, 90);
   };
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -245,17 +244,18 @@ export function WorkCard({ item, index, isActive, focusMode = false, onToast, on
 
     const dx = event.clientX - gesture.startX;
     const dy = event.clientY - gesture.startY;
-    if (gesture.axis === null && Math.max(Math.abs(dx), Math.abs(dy)) >= 9) {
-      if (Math.abs(dx) > Math.abs(dy) * 1.12) {
+    if (gesture.axis === null && Math.max(Math.abs(dx), Math.abs(dy)) >= 8) {
+      if (Math.abs(dx) > Math.abs(dy) * 1.1) {
         gesture.axis = "x";
-        try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* no-op */ }
-      } else if (Math.abs(dy) > Math.abs(dx) * 1.12) {
+        try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* unsupported */ }
+      } else if (Math.abs(dy) > Math.abs(dx) * 1.1) {
         gesture.axis = "y";
       }
     }
 
     if (gesture.axis !== "x") return;
     event.preventDefault();
+    // 指を左へ動かすとscrollLeftも左方向へ減り、次ページが右から左へ現れる。
     track.scrollLeft = clamp(gesture.startScrollLeft + dx, 0, maxScrollLeft());
   };
 
@@ -265,7 +265,7 @@ export function WorkCard({ item, index, isActive, focusMode = false, onToast, on
     if (!gesture || gesture.pointerId !== event.pointerId) return;
 
     if (gesture.axis !== "x") {
-      if (!cancelled) pageSettleTimer.current = setTimeout(commitCurrentPage, 100);
+      if (!cancelled) pageSettleTimer.current = setTimeout(commitCurrentPage, 90);
       return;
     }
 
@@ -273,7 +273,7 @@ export function WorkCard({ item, index, isActive, focusMode = false, onToast, on
     const elapsed = Math.max(1, performance.now() - gesture.startedAt);
     const velocity = Math.abs(dx) / elapsed;
     const width = trackRef.current?.clientWidth ?? 0;
-    const decisive = Math.abs(dx) >= Math.max(28, width * 0.11) || velocity >= 0.42;
+    const decisive = Math.abs(dx) >= Math.max(26, width * 0.1) || velocity >= 0.38;
     const target = cancelled
       ? pageIndexFromScroll()
       : decisive
@@ -335,12 +335,13 @@ export function WorkCard({ item, index, isActive, focusMode = false, onToast, on
   const visiblePage = Math.min(currentPage + 1, Math.max(1, item.images.length));
   const ctaUrl = details.affiliateUrl || item.affiliateUrl;
   const ctaPrice = details.price || item.price;
+  const ctaStyle = { order: 0 } satisfies CSSProperties;
 
   return (
-    <article className={`feed-item${focusMode ? " is-focus-mode" : ""}`} data-work-index={index} data-cid={item.cid} aria-label={`${index + 1}件目 ${item.title || item.cid}`}>
+    <article className="feed-item" data-work-index={index} data-cid={item.cid} aria-label={`${index + 1}件目 ${item.title || item.cid}`}>
       <div
         ref={trackRef}
-        className="preview-track manga-rtl"
+        className="preview-track manga-reader-track"
         tabIndex={0}
         onScroll={scheduleCurrentPageCommit}
         onPointerDown={handlePointerDown}
@@ -354,27 +355,7 @@ export function WorkCard({ item, index, isActive, focusMode = false, onToast, on
           }
         }}
       >
-        {item.images.map((url, pageIndex) => {
-          const shouldLoad = pageIndex === 0 || (isActive && pageIndex >= Math.max(0, currentPage - 1) && pageIndex <= currentPage + 2);
-          return (
-            <div className={`preview-page${loadStates[pageIndex] === "error" ? " is-error" : ""}`} key={`${item.cid}-${pageIndex}`}>
-              {shouldLoad ? (
-                <img
-                  src={url}
-                  alt={`${item.title} サンプル ${pageIndex + 1}`}
-                  loading={index === 0 && pageIndex === 0 ? "eager" : "lazy"}
-                  fetchPriority={isActive && pageIndex <= currentPage + 1 ? "high" : "auto"}
-                  decoding="async"
-                  draggable={false}
-                  onLoad={() => markLoad(pageIndex, "loaded")}
-                  onError={() => markLoad(pageIndex, "error")}
-                />
-              ) : <div className="preview-page-placeholder" aria-hidden="true" />}
-            </div>
-          );
-        })}
-
-        <div className="preview-page preview-cta-page" aria-label="続きを読む">
+        <div className="preview-page preview-cta-page" style={ctaStyle} aria-label="続きを読む">
           <div className="reader-cta">
             <p className="reader-cta-kicker">サンプルはここまで</p>
             {detailsLoading ? (
@@ -392,47 +373,64 @@ export function WorkCard({ item, index, isActive, focusMode = false, onToast, on
             ) : null}
           </div>
         </div>
+
+        {item.images.map((url, pageIndex) => {
+          const shouldLoad = pageIndex === 0 || (isActive && pageIndex >= Math.max(0, currentPage - 1) && pageIndex <= currentPage + 2);
+          const pageStyle = { order: ctaPage - pageIndex } satisfies CSSProperties;
+          return (
+            <div className={`preview-page${loadStates[pageIndex] === "error" ? " is-error" : ""}`} style={pageStyle} key={`${item.cid}-${pageIndex}`}>
+              {shouldLoad ? (
+                <img
+                  src={url}
+                  alt={`${item.title} サンプル ${pageIndex + 1}`}
+                  loading={index === 0 && pageIndex === 0 ? "eager" : "lazy"}
+                  fetchPriority={isActive && pageIndex <= currentPage + 1 ? "high" : "auto"}
+                  decoding="async"
+                  draggable={false}
+                  onLoad={() => markLoad(pageIndex, "loaded")}
+                  onError={() => markLoad(pageIndex, "error")}
+                />
+              ) : <div className="preview-page-placeholder" aria-hidden="true" />}
+            </div>
+          );
+        })}
       </div>
 
       <div className="page-counter" aria-live="polite"><span>{visiblePage}</span>&nbsp;/&nbsp;{item.images.length}</div>
-      {!focusMode && item.images.length > 1 && index === 0 ? <div className="swipe-hint">← 左へスワイプして読む</div> : null}
+      {item.images.length > 1 && index === 0 ? <div className="swipe-hint">← 左へスワイプして読む</div> : null}
 
-      {!focusMode ? <div className="item-gradient" /> : null}
-      {!focusMode ? (
-        <div className="item-info">
-          <div className="item-type">{item.assetLabel}</div>
-          <h2 className="item-title">{item.title || item.cid}</h2>
-          <div className="item-stats">
-            <span className="stat-chip">★<strong>{item.rating.toFixed(1)}</strong> <span>({item.reviews}件)</span></span>
-            {item.price ? <span className="stat-chip"><strong>{formatPrice(item.price)}</strong></span> : null}
-          </div>
-          {item.genres.length > 0 ? <div className="genre-line">{item.genres.slice(0, 6).join(" / ")}</div> : null}
-          {/^(https?):\/\//i.test(item.affiliateUrl) ? (
-            <a className="open-link" href={item.affiliateUrl} target="_blank" rel="noopener noreferrer sponsored" onClick={() => trackEvent({ eventType: "affiliate_click", cid: item.cid })}>
-              FANZAで続きを読む <ExternalIcon />
-            </a>
-          ) : null}
+      <div className="item-gradient" />
+      <div className="item-info">
+        <div className="item-type">{item.assetLabel}</div>
+        <h2 className="item-title">{item.title || item.cid}</h2>
+        <div className="item-stats">
+          <span className="stat-chip">★<strong>{item.rating.toFixed(1)}</strong> <span>({item.reviews}件)</span></span>
+          {item.price ? <span className="stat-chip"><strong>{formatPrice(item.price)}</strong></span> : null}
         </div>
-      ) : null}
+        {item.genres.length > 0 ? <div className="genre-line">{item.genres.slice(0, 6).join(" / ")}</div> : null}
+        {/^(https?):\/\//i.test(item.affiliateUrl) ? (
+          <a className="open-link" href={item.affiliateUrl} target="_blank" rel="noopener noreferrer sponsored" onClick={() => trackEvent({ eventType: "affiliate_click", cid: item.cid })}>
+            FANZAで続きを読む <ExternalIcon />
+          </a>
+        ) : null}
+      </div>
 
-      {!focusMode ? (
-        <div className="action-rail">
-          <button className={`action-btn${liked ? " is-active" : ""}`} type="button" disabled={reactionPending !== null} onClick={() => void toggleReaction("like")}>
-            <span className="action-icon"><HeartIcon /></span><span className="action-label">いいね</span><span className="action-count">{formatCount(likeCount)}</span>
-          </button>
-          <button className={`action-btn${saved ? " is-active" : ""}`} type="button" disabled={reactionPending !== null} onClick={() => void toggleReaction("save")}>
-            <span className="action-icon"><BookmarkIcon /></span><span className="action-label">保存</span><span className="action-count">{formatCount(saveCount)}</span>
-          </button>
-          <button className="action-btn" type="button" onClick={share}><span className="action-icon"><ShareIcon /></span><span className="action-label">共有</span></button>
-          <button
-            className="action-btn debug-action"
-            type="button"
-            onClick={() => onDebug({ item, index, currentPage: Math.min(currentPage, Math.max(0, item.images.length - 1)), loadedImages: loaded, failedImages: failed, pendingImages: pending, liked, saved, likeCount, saveCount })}
-          >
-            <span className="action-icon"><DebugIcon /></span><span className="action-label">デバッグ</span>
-          </button>
-        </div>
-      ) : null}
+      <div className="action-rail">
+        <button className={`action-btn${liked ? " is-active" : ""}`} type="button" disabled={reactionPending !== null} onClick={() => void toggleReaction("like")}>
+          <span className="action-icon"><HeartIcon /></span><span className="action-label">いいね</span><span className="action-count">{formatCount(likeCount)}</span>
+        </button>
+        <button className={`action-btn${saved ? " is-active" : ""}`} type="button" disabled={reactionPending !== null} onClick={() => void toggleReaction("save")}>
+          <span className="action-icon"><BookmarkIcon /></span><span className="action-label">保存</span><span className="action-count">{formatCount(saveCount)}</span>
+        </button>
+        <button className="action-btn" type="button" onClick={share}><span className="action-icon"><ShareIcon /></span><span className="action-label">共有</span></button>
+        <button
+          className="action-btn debug-action"
+          type="button"
+          onClick={() => onDebug({ item, index, currentPage: Math.min(currentPage, Math.max(0, item.images.length - 1)), loadedImages: loaded, failedImages: failed, pendingImages: pending, liked, saved, likeCount, saveCount })}
+        >
+          <span className="action-icon"><DebugIcon /></span><span className="action-label">デバッグ</span>
+        </button>
+      </div>
     </article>
   );
 }
