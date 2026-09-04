@@ -122,9 +122,18 @@ for ($pageIndex = 0; $pageIndex < $pages; $pageIndex++) {
     usleep(150000);
 }
 
-$retention = max(7, min(365, (int)($config['app']['event_retention_days'] ?? 60)));
-$pdo->exec('DELETE FROM events WHERE created_at < DATE_SUB(NOW(), INTERVAL ' . $retention . ' DAY)');
+$eventRetention = max(7, min(365, (int)($config['app']['event_retention_days'] ?? 60)));
+$profileRetention = max($eventRetention, min(730, max(30, (int)($config['app']['profile_retention_days'] ?? 180))));
+$pdo->exec('DELETE FROM events WHERE created_at < DATE_SUB(NOW(), INTERVAL ' . $eventRetention . ' DAY)');
+$pdo->exec('DELETE FROM anonymous_users WHERE last_seen_at < DATE_SUB(NOW(), INTERVAL ' . $profileRetention . ' DAY)');
 
-fwrite(STDOUT, sprintf("同期完了: API走査=%d / works保存=%d / genre関連=%d\n", $seen, $saved, $genreSaved));
+fwrite(STDOUT, sprintf(
+    "同期完了: API走査=%d / works保存=%d / genre関連=%d / event保持=%d日 / profile保持=%d日\n",
+    $seen,
+    $saved,
+    $genreSaved,
+    $eventRetention,
+    $profileRetention,
+));
 flock($lock, LOCK_UN);
 fclose($lock);

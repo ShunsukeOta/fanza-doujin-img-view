@@ -15,7 +15,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
 
     steps:
       - name: リポジトリを取得
@@ -102,6 +102,7 @@ jobs:
           set -euo pipefail
           for attempt in 1 2 3; do
             if rsync -az --delete \
+              --exclude='.well-known/' \
               -e "ssh -i $HOME/.ssh/id_shin -p 10022 -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15" \
               deploy/public_html/ \
               wp983575@wp983575.wpx.jp:wp983575.wpx.jp/public_html/; then
@@ -135,6 +136,74 @@ jobs:
             sleep $((attempt * 5))
           done
 
+      - name: 本番設定とDBを自動初期化
+        shell: bash
+        env:
+          SHIN_DB_NAME: ${{ secrets.SHIN_DB_NAME }}
+          SHIN_DB_USER: ${{ secrets.SHIN_DB_USER }}
+          SHIN_DB_PASSWORD: ${{ secrets.SHIN_DB_PASSWORD }}
+          DMM_API_ID: ${{ secrets.DMM_API_ID }}
+          DMM_AFFILIATE_ID: ${{ secrets.DMM_AFFILIATE_ID }}
+        run: |
+          set -euo pipefail
+
+          for name in SHIN_DB_NAME SHIN_DB_USER SHIN_DB_PASSWORD DMM_API_ID DMM_AFFILIATE_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "DB/API用GitHub Secretsが未設定のため、自動初期化はまだスキップします。"
+              exit 0
+            fi
+          done
+
+          php -r '
+            $config = [
+              "dmm" => ["api_id" => getenv("DMM_API_ID"), "affiliate_id" => getenv("DMM_AFFILIATE_ID")],
+              "db" => ["host" => "localhost", "port" => 3306, "name" => getenv("SHIN_DB_NAME"), "user" => getenv("SHIN_DB_USER"), "password" => getenv("SHIN_DB_PASSWORD"), "charset" => "utf8mb4"],
+              "app" => ["timezone" => "Asia/Tokyo", "event_retention_days" => 60, "profile_retention_days" => 180, "sync_pages" => 5],
+            ];
+            file_put_contents("/tmp/config.local.php", "<?php\nreturn " . var_export($config, true) . ";\n");
+          '
+          chmod 600 /tmp/config.local.php
+
+          for attempt in 1 2 3; do
+            if rsync -az \
+              -e "ssh -i $HOME/.ssh/id_shin -p 10022 -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15" \
+              /tmp/config.local.php \
+              wp983575@wp983575.wpx.jp:wp983575.wpx.jp/app/config.local.php; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "config.local.php の反映に3回失敗しました。" >&2
+              exit 1
+            fi
+            sleep $((attempt * 4))
+          done
+          rm -f /tmp/config.local.php
+
+          SETUP_OUTPUT="$(ssh -i "$HOME/.ssh/id_shin" -p 10022 \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
+            wp983575@wp983575.wpx.jp '
+              set -eu
+              APP="$HOME/wp983575.wpx.jp/app"
+              chmod 600 "$APP/config.local.php"
+              php "$APP/cron/setup-db.php"
+            ')"
+          printf '%s\n' "$SETUP_OUTPUT"
+          WORKS="$(printf '%s\n' "$SETUP_OUTPUT" | sed -n 's/.*works=\([0-9][0-9]*\).*/\1/p' | tail -n 1)"
+          WORKS="${WORKS:-0}"
+
+          if [ "$WORKS" -eq 0 ]; then
+            echo "初回作品DBを投入します。"
+            ssh -i "$HOME/.ssh/id_shin" -p 10022 \
+              -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
+              wp983575@wp983575.wpx.jp '
+                set -eu
+                APP="$HOME/wp983575.wpx.jp/app"
+                php "$APP/cron/fanza-sync.php" --pages=20 --sort=date
+              '
+          else
+            echo "作品DBは既に ${WORKS} 件あるため初回大量同期を省略します。"
+          fi
+
       - name: サーバー内の配置を確認
         shell: bash
         run: |
@@ -143,7 +212,7 @@ jobs:
             if ssh -i "$HOME/.ssh/id_shin" -p 10022 \
               -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
               wp983575@wp983575.wpx.jp \
-              "cd wp983575.wpx.jp && grep -F '\"commit\":\"${GITHUB_SHA}\"' public_html/version.json >/dev/null && test -f public_html/api/health.php && test -f app/cron/fanza-sync.php"; then
+              "cd wp983575.wpx.jp && grep -F '\"commit\":\"${GITHUB_SHA}\"' public_html/version.json >/dev/null && test -f public_html/api/health.php && test -f app/cron/fanza-sync.php && test -f app/cron/setup-db.php"; then
               echo "サーバー内配置確認OK: ${GITHUB_SHA}"
               exit 0
             fi
@@ -164,3 +233,25 @@ jobs:
           HEALTH="$(curl "${CURL_ARGS[@]}" "https://wp983575.wpx.jp/api/health?sha=${GITHUB_SHA}")"
           printf '%s' "$HEALTH" | grep -F '"runtime":"php"' >/dev/null
           echo "HTTPS公開確認OK: ${GITHUB_SHA}"
+
+      - name: DBとFANZA APIの本番稼働を確認
+        shell: bash
+        env:
+          SHIN_DB_NAME: ${{ secrets.SHIN_DB_NAME }}
+          SHIN_DB_USER: ${{ secrets.SHIN_DB_USER }}
+          SHIN_DB_PASSWORD: ${{ secrets.SHIN_DB_PASSWORD }}
+          DMM_API_ID: ${{ secrets.DMM_API_ID }}
+          DMM_AFFILIATE_ID: ${{ secrets.DMM_AFFILIATE_ID }}
+        run: |
+          set -euo pipefail
+          for name in SHIN_DB_NAME SHIN_DB_USER SHIN_DB_PASSWORD DMM_API_ID DMM_AFFILIATE_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "DB/API用Secrets未設定のため厳格な本番確認はまだスキップします。"
+              exit 0
+            fi
+          done
+          HEALTH="$(curl --fail --silent --show-error --retry 5 --retry-all-errors --retry-delay 2 --connect-timeout 10 --max-time 30 "https://wp983575.wpx.jp/api/health?ready=${GITHUB_SHA}")"
+          printf '%s' "$HEALTH" | grep -F '"connected":true' >/dev/null
+          printf '%s' "$HEALTH" | grep -F '"catalogReady":true' >/dev/null
+          printf '%s' "$HEALTH" | grep -F '"configured":true' >/dev/null
+          echo "DB / FANZA API / 作品カタログの本番稼働確認OK"

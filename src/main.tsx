@@ -4,7 +4,6 @@ import { createRoot } from "react-dom/client";
 import { SwipePreviewApp } from "@/components/SwipePreviewApp";
 import type { AssetType, FilterValues } from "@/lib/types";
 import "@/styles/globals.css";
-import "@/styles/feed-stats.css";
 import { startAnalytics } from "@/src/analytics";
 
 const ASSET_TYPES = new Set<AssetType>(["all", "comic", "cg", "game", "voice", "other"]);

@@ -17,8 +17,7 @@ json_response([
         'error' => $database->lastError() === null ? null : 'database connection failed',
     ],
     'dmm' => [
-        'apiId' => $fanza->configured(),
-        'affiliateId' => $fanza->configured(),
+        'configured' => $fanza->configured(),
     ],
     'time' => date(DATE_ATOM),
 ], 200, ['Cache-Control' => 'no-store']);

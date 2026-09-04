@@ -11,5 +11,5 @@ try {
         ['Cache-Control' => 'private, no-store'],
     );
 } catch (Throwable $error) {
-    json_response(['error' => $error->getMessage()], 500, ['Cache-Control' => 'no-store']);
+    json_response(['error' => public_error_message($error, 'API診断の取得に失敗しました。')], 500, ['Cache-Control' => 'no-store']);
 }

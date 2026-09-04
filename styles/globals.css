@@ -337,7 +337,7 @@ button:disabled {
 .item-stats {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
   margin-top: 8px;
   color: #d4d4d4;
@@ -345,6 +345,7 @@ button:disabled {
 }
 
 .stat-chip {
+  flex: 0 0 auto;
   height: 25px;
   padding: 0 8px;
   border-radius: 999px;
@@ -353,6 +354,12 @@ button:disabled {
   align-items: center;
   gap: 4px;
   backdrop-filter: blur(8px);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.item-stats .stat-chip:first-child {
+  font-weight: 800;
 }
 
 .stat-chip strong {
@@ -385,7 +392,7 @@ button:disabled {
   text-decoration: none;
   font-size: 12px;
   font-weight: 850;
-  box-shadow:  0 8px 24px rgba(255, 45, 85, 0.34);
+  box-shadow: 0 8px 24px rgba(255, 45, 85, 0.34);
 }
 
 .open-link svg {

@@ -37,6 +37,21 @@ function json_response(array $payload, int $status = 200, array $headers = []): 
     exit;
 }
 
+function public_error_message(Throwable $error, string $fallback): string
+{
+    if ($error instanceof PDOException) {
+        error_log('PDOException: ' . $error->getMessage());
+        return $fallback;
+    }
+    if ($error instanceof RuntimeException) {
+        $message = trim($error->getMessage());
+        return $message !== '' ? $message : $fallback;
+    }
+
+    error_log(get_class($error) . ': ' . $error->getMessage());
+    return $fallback;
+}
+
 function read_int(string $key, int $fallback, int $min, int $max): int
 {
     $raw = $_GET[$key] ?? null;
@@ -80,9 +95,12 @@ function uuid_v4(): string
 
 function anonymous_identity(): array
 {
+    global $config;
+
     $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+    $profileRetentionDays = max(30, min(730, (int)($config['app']['profile_retention_days'] ?? 180)));
     $cookieOptions = [
-        'expires' => time() + 60 * 60 * 24 * 365,
+        'expires' => time() + 60 * 60 * 24 * $profileRetentionDays,
         'path' => '/',
         'secure' => $secure,
         'httponly' => true,

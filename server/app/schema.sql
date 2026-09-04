@@ -63,9 +63,22 @@ CREATE TABLE IF NOT EXISTS events (
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_events_user_time (anonymous_user_id, created_at),
+  KEY idx_events_user_type_time (anonymous_user_id, event_type, created_at),
+  KEY idx_events_user_work_type (anonymous_user_id, work_cid, event_type),
   KEY idx_events_work_time (work_cid, created_at),
   KEY idx_events_type_time (event_type, created_at),
   CONSTRAINT fk_events_user FOREIGN KEY (anonymous_user_id) REFERENCES anonymous_users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS user_work_states (
+  anonymous_user_id CHAR(36) NOT NULL,
+  work_cid VARCHAR(128) NOT NULL,
+  liked TINYINT(1) NOT NULL DEFAULT 0,
+  saved TINYINT(1) NOT NULL DEFAULT 0,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (anonymous_user_id, work_cid),
+  KEY idx_user_work_states_updated (updated_at),
+  CONSTRAINT fk_user_work_states_user FOREIGN KEY (anonymous_user_id) REFERENCES anonymous_users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS user_genre_scores (

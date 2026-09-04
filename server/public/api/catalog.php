@@ -20,5 +20,5 @@ try {
         ['Cache-Control' => $private ? 'private, no-store' : 'public, max-age=60'],
     );
 } catch (Throwable $error) {
-    json_response(['error' => $error->getMessage()], 500, ['Cache-Control' => 'no-store']);
+    json_response(['error' => public_error_message($error, '作品取得に失敗しました。')], 500, ['Cache-Control' => 'no-store']);
 }

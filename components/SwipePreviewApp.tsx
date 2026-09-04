@@ -1,5 +1,3 @@
-"use client";
-
 import {
   type ChangeEvent,
   type FormEvent,
@@ -20,6 +18,7 @@ import type {
   MetaResponse,
   SampleStatsRow,
 } from "@/lib/types";
+import { trackEvent } from "@/src/analytics";
 
 const ASSET_LABELS: Record<AssetType, string> = {
   all: "すべて",
@@ -224,6 +223,7 @@ function WorkCard({
   const toggleLocal = (type: "like" | "save") => {
     const key = `fanza-preview:${type}:${item.cid}`;
     const current = type === "like" ? liked : saved;
+    const nextActive = !current;
     try {
       if (current) localStorage.removeItem(key);
       else localStorage.setItem(key, "1");
@@ -232,8 +232,13 @@ function WorkCard({
       return;
     }
 
-    if (type === "like") setLiked(!current);
-    else setSaved(!current);
+    if (type === "like") setLiked(nextActive);
+    else setSaved(nextActive);
+    trackEvent({
+      eventType: type === "like" ? "like_toggle" : "save_toggle",
+      cid: item.cid,
+      metadata: { active: nextActive },
+    });
     onToast(
       type === "like"
         ? current
@@ -250,8 +255,10 @@ function WorkCard({
     try {
       if (navigator.share) {
         await navigator.share({ title: item.title || "FANZA同人作品", url });
+        trackEvent({ eventType: "share", cid: item.cid });
       } else if (navigator.clipboard) {
         await navigator.clipboard.writeText(url);
+        trackEvent({ eventType: "share", cid: item.cid });
         onToast("リンクをコピーしました");
       } else {
         onToast("このブラウザでは共有できません");
@@ -303,7 +310,7 @@ function WorkCard({
         <span>{currentPage + 1}</span>&nbsp;/&nbsp;{item.images.length}
       </div>
       <div className={`load-status${failed > 0 ? " has-error" : ""}`}>
-        API {item.images.length}P · 読込 {loaded}/{item.images.length}
+        サンプル {item.images.length}P · 読込 {loaded}/{item.images.length}
         {failed > 0 ? ` · 失敗 ${failed}` : ""}
       </div>
       {item.images.length > 1 && index === 0 ? (
@@ -328,7 +335,13 @@ function WorkCard({
         </div>
         {item.genres.length > 0 ? <div className="genre-line">{item.genres.slice(0, 6).join(" / ")}</div> : null}
         {/^https?:\/\//i.test(item.affiliateUrl) ? (
-          <a className="open-link" href={item.affiliateUrl} target="_blank" rel="noopener noreferrer sponsored">
+          <a
+            className="open-link"
+            href={item.affiliateUrl}
+            target="_blank"
+            rel="noopener noreferrer sponsored"
+            onClick={() => trackEvent({ eventType: "affiliate_click", cid: item.cid })}
+          >
             FANZAで続きを読む <ExternalIcon />
           </a>
         ) : null}
@@ -628,13 +641,13 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
             <div className="empty-card loading-card">
               <div className="spinner" aria-hidden="true" />
               <h2>{loading ? "最初の作品を読み込んでいます" : "次の候補を探しています"}</h2>
-              <p>{loading ? "最初の100件だけを確認して、見つかった作品からすぐ表示します。" : "条件に合う作品を100件ずつバックグラウンドで探しています。"}</p>
+              <p>{loading ? "条件に合う作品を準備しています。" : "次の候補をバックグラウンドで準備しています。"}</p>
             </div>
           </section>
         ) : catalogError ? (
           <section className="empty-state">
             <div className="empty-card">
-              <h2>API取得に失敗しました</h2>
+              <h2>作品取得に失敗しました</h2>
               <p>{catalogError}</p>
               <button className="btn btn-primary" type="button" onClick={() => setSheetOpen(true)}>API診断を見る</button>
             </div>
@@ -643,7 +656,7 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
           <section className="empty-state">
             <div className="empty-card">
               <h2>条件に合う表示可能作品がありません</h2>
-              <p>最大800件まで段階的に確認しました。条件を緩めるかAPI診断を確認してください。</p>
+              <p>条件を緩めるかAPI診断を確認してください。</p>
               <button className="btn btn-primary" type="button" onClick={() => setSheetOpen(true)}>API診断を見る</button>
             </div>
           </section>
@@ -704,17 +717,18 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
           </div>
 
           <div className="filter-summary">
+            {lastBatch ? <>取得元: {lastBatch.source === "database" ? "MariaDBレコメンド" : "FANZA API"}<br /></> : null}
             {lastBatch?.floor ? <>
-              API: {lastBatch.floor.siteCode} / {lastBatch.floor.serviceCode} / {lastBatch.floor.floorCode} / floor_id {lastBatch.floor.floorId}<br />
+              API: {lastBatch.floor.siteCode} / {lastBatch.floor.serviceCode} / {lastBatch.floor.floorCode}{lastBatch.floor.floorId ? ` / floor_id ${lastBatch.floor.floorId}` : ""}<br />
             </> : null}
             現在: {activeConditionText} / sample_l {filters.minSamples}枚以上 / レビュー {filters.minReviews}件以上 / 評価 {filters.minRating.toFixed(1)}以上<br />
-            フィード: {items.length}作品読込済み / 100件単位で段階取得
-            {hasMore ? " / 続きあり" : " / 最終ページ到達"}
+            フィード: {items.length}作品読込済み
+            {hasMore ? " / 続きあり" : " / 最終候補まで到達"}
           </div>
 
           <div className="diag">
             <div className="diag-title">sample_l 枚数分布</div>
-            <div className="diag-sub">診断を開いた時だけ最大800件を別処理で走査します。通常フィードの初回表示は待ちません。</div>
+            <div className="diag-sub">作品DBが利用可能ならDB全体、未同期ならFANZA APIを最大800件まで診断します。通常フィードの初回表示は待ちません。</div>
             {diagnosticsLoading ? (
               <div className="diag-loading"><span className="mini-spinner" /> API診断をバックグラウンド取得中…</div>
             ) : diagnosticsError ? (
@@ -736,7 +750,7 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
                     ))}
                   </tbody>
                 </table>
-                <div className="diag-sub diag-raw">診断走査: {diagnostics.scanned}件{diagnostics.apiTotal ? ` / API該当総数 ${diagnostics.apiTotal}件` : ""}</div>
+                <div className="diag-sub diag-raw">診断走査: {diagnostics.scanned}件{diagnostics.apiTotal ? ` / 対象総数 ${diagnostics.apiTotal}件` : ""}</div>
                 {Object.keys(diagnostics.stats.rawBuckets).length > 0 ? (
                   <div className="diag-sub diag-raw">その他bucket: {Object.entries(diagnostics.stats.rawBuckets).map(([key, value]) => `${key}:${value}`).join(" / ")}</div>
                 ) : null}

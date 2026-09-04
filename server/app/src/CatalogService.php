@@ -90,15 +90,6 @@ final class CatalogService
         return $this->diagnosticsFromApi(trim($genreId));
     }
 
-    public function recommendation(array $filters, int $offset, int $limit, string $anonymousUserId): array
-    {
-        $filters = $this->normalizeFilters($filters);
-        if (!$this->database->hasUsableCatalog()) {
-            return $this->catalogFromApi($filters, max(1, $offset), max(1, min(12, $limit)));
-        }
-        return $this->catalogFromDatabase($filters, max(1, $offset), max(1, min(12, $limit)), $anonymousUserId);
-    }
-
     private function catalogFromDatabase(array $filters, int $offset, int $limit, string $anonymousUserId): array
     {
         $pdo = $this->database->connection();
@@ -327,7 +318,7 @@ final class CatalogService
         }
         try {
             $stmt = $pdo->prepare(
-                "SELECT DISTINCT work_cid FROM events WHERE anonymous_user_id = ? AND event_type = 'impression' AND created_at >= DATE_SUB(NOW(), INTERVAL 14 DAY) LIMIT 500",
+                "SELECT work_cid, MAX(created_at) AS last_seen FROM events WHERE anonymous_user_id = ? AND event_type = 'impression' AND created_at >= DATE_SUB(NOW(), INTERVAL 14 DAY) GROUP BY work_cid ORDER BY last_seen DESC LIMIT 500",
             );
             $stmt->execute([$anonymousUserId]);
             $seen = [];
@@ -375,7 +366,7 @@ final class CatalogService
         $stmt->execute($params);
         $stats = $this->emptyStats();
         $scanned = 0;
-        foreach ($stmt->fetchAll() as $row) {
+        while (($row = $stmt->fetch()) !== false) {
             $scanned++;
             $this->incrementStats($stats, (string)$row['asset_type'], (string)$row['asset_bucket'], (int)$row['sample_count']);
         }

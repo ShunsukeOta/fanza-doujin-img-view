@@ -58,6 +58,7 @@ export type CatalogResponse = {
   offset: number;
   nextOffset: number | null;
   hasMore: boolean;
+  source: "database" | "fanza-api";
 };
 
 export type DiagnosticsResponse = {

@@ -15,7 +15,7 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: SSHを設定
         shell: bash
@@ -26,20 +26,49 @@ jobs:
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SHIN_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_shin"
           chmod 600 "$HOME/.ssh/id_shin"
-          ssh-keyscan -p 10022 -H wp983575.wpx.jp >> "$HOME/.ssh/known_hosts"
+          : > "$HOME/.ssh/known_hosts"
+
+          for attempt in 1 2 3 4 5; do
+            tmp_hosts="$(mktemp)"
+            if timeout 20s ssh-keyscan -T 10 -p 10022 -H wp983575.wpx.jp > "$tmp_hosts" 2>/dev/null && [ -s "$tmp_hosts" ]; then
+              cat "$tmp_hosts" >> "$HOME/.ssh/known_hosts"
+              rm -f "$tmp_hosts"
+              break
+            fi
+            rm -f "$tmp_hosts"
+            if [ "$attempt" -eq 5 ]; then
+              echo "SSHホスト鍵を5回試行しても取得できませんでした。" >&2
+              exit 1
+            fi
+            echo "SSHホスト鍵取得に失敗。${attempt}/5 回目、再試行します。"
+            sleep $((attempt * 3))
+          done
+
           chmod 600 "$HOME/.ssh/known_hosts"
+          test -s "$HOME/.ssh/known_hosts"
 
       - name: サーバー上で作品DBを同期
         shell: bash
         run: |
           set -euo pipefail
-          ssh -i "$HOME/.ssh/id_shin" -p 10022 -o BatchMode=yes -o IdentitiesOnly=yes \
-            wp983575@wp983575.wpx.jp '
-              set -eu
-              APP="$HOME/wp983575.wpx.jp/app"
-              if [ ! -f "$APP/config.local.php" ]; then
-                echo "config.local.php が未設定なので同期をスキップします。"
-                exit 0
-              fi
-              php "$APP/cron/fanza-sync.php" --pages=5 --sort=date
-            '
+          for attempt in 1 2 3 4; do
+            if ssh -i "$HOME/.ssh/id_shin" -p 10022 \
+              -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
+              wp983575@wp983575.wpx.jp '
+                set -eu
+                APP="$HOME/wp983575.wpx.jp/app"
+                if [ ! -f "$APP/config.local.php" ]; then
+                  echo "config.local.php が未設定なので同期をスキップします。"
+                  exit 0
+                fi
+                php "$APP/cron/fanza-sync.php" --pages=5 --sort=date
+              '; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 4 ]; then
+              echo "作品DB同期のSSH実行に4回失敗しました。" >&2
+              exit 1
+            fi
+            echo "作品DB同期のSSH実行に失敗。${attempt}/4 回目、再試行します。"
+            sleep $((attempt * 5))
+          done

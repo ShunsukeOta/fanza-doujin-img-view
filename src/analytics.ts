@@ -1,10 +1,13 @@
-type EventPayload = {
+export type AnalyticsEventPayload = {
   eventType: "impression" | "view_end" | "sample_page" | "like_toggle" | "save_toggle" | "share" | "affiliate_click";
   cid: string;
   pageIndex?: number;
   maxPage?: number;
   readRatio?: number;
   dwellMs?: number;
+  metadata?: {
+    active?: boolean;
+  };
 };
 
 type ActiveView = {
@@ -19,8 +22,9 @@ const pageByTrack = new WeakMap<Element, number>();
 let activeView: ActiveView | null = null;
 let observer: IntersectionObserver | null = null;
 let mutationObserver: MutationObserver | null = null;
+let started = false;
 
-function send(payload: EventPayload) {
+export function trackEvent(payload: AnalyticsEventPayload) {
   const body = JSON.stringify(payload);
   if (document.visibilityState === "hidden" && navigator.sendBeacon) {
     navigator.sendBeacon("/api/events", new Blob([body], { type: "application/json" }));
@@ -39,7 +43,7 @@ function finishActiveView() {
   if (!activeView) return;
   const dwellMs = Math.max(0, Math.round(performance.now() - activeView.startedAt));
   const totalPages = Math.max(1, activeView.totalPages);
-  send({
+  trackEvent({
     eventType: "view_end",
     cid: activeView.cid,
     dwellMs,
@@ -55,7 +59,30 @@ function activate(item: HTMLElement) {
   finishActiveView();
   const totalPages = item.querySelectorAll(".preview-page").length || 1;
   activeView = { cid, startedAt: performance.now(), maxPage: 0, totalPages };
-  send({ eventType: "impression", cid });
+  trackEvent({ eventType: "impression", cid });
+}
+
+function resumeVisibleView() {
+  if (document.visibilityState === "hidden") return;
+  const feed = document.querySelector<HTMLElement>(".feed");
+  if (!feed) return;
+
+  const feedRect = feed.getBoundingClientRect();
+  let bestItem: HTMLElement | null = null;
+  let bestRatio = 0;
+  feed.querySelectorAll<HTMLElement>(".feed-item").forEach((item) => {
+    const rect = item.getBoundingClientRect();
+    if (rect.height <= 0) return;
+    const visibleTop = Math.max(feedRect.top, rect.top);
+    const visibleBottom = Math.min(feedRect.bottom, rect.bottom);
+    const ratio = Math.max(0, visibleBottom - visibleTop) / rect.height;
+    if (ratio > bestRatio) {
+      bestRatio = ratio;
+      bestItem = item;
+    }
+  });
+
+  if (bestItem && bestRatio >= 0.6) activate(bestItem);
 }
 
 function observeItems() {
@@ -90,39 +117,28 @@ function handleScroll(event: Event) {
   if (pageByTrack.get(track) === page) return;
   pageByTrack.set(track, page);
   if (activeView?.cid === cid) activeView.maxPage = Math.max(activeView.maxPage, page);
-  send({ eventType: "sample_page", cid, pageIndex: page, maxPage: page, readRatio: Math.min(1, (page + 1) / Math.max(1, pages)) });
-}
-
-function handleClick(event: MouseEvent) {
-  const target = event.target instanceof Element ? event.target : null;
-  const item = target?.closest<HTMLElement>(".feed-item");
-  const cid = item?.dataset.cid ?? "";
-  if (!cid) return;
-
-  if (target?.closest(".open-link")) {
-    send({ eventType: "affiliate_click", cid });
-    return;
-  }
-  const button = target?.closest<HTMLButtonElement>(".action-btn");
-  if (!button) return;
-  const label = button.querySelector(".action-label")?.textContent?.trim() ?? "";
-  if (label === "いいね") send({ eventType: "like_toggle", cid });
-  else if (label === "保存") send({ eventType: "save_toggle", cid });
-  else if (label === "共有") send({ eventType: "share", cid });
+  trackEvent({ eventType: "sample_page", cid, pageIndex: page, maxPage: page, readRatio: Math.min(1, (page + 1) / Math.max(1, pages)) });
 }
 
 export function startAnalytics() {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined" || started) return;
+  started = true;
+
   const start = () => {
     observeItems();
     mutationObserver = new MutationObserver(observeItems);
     mutationObserver.observe(document.body, { childList: true, subtree: true });
     document.addEventListener("scroll", handleScroll, true);
-    document.addEventListener("click", handleClick, true);
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "hidden") finishActiveView();
+      if (document.visibilityState === "hidden") {
+        finishActiveView();
+      } else {
+        window.requestAnimationFrame(resumeVisibleView);
+      }
     });
     window.addEventListener("pagehide", finishActiveView);
+    window.addEventListener("pageshow", () => window.requestAnimationFrame(resumeVisibleView));
+    window.requestAnimationFrame(resumeVisibleView);
   };
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true });

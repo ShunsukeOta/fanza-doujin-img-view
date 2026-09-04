@@ -25,6 +25,21 @@ jobs:
         run: npm run typecheck
       - name: PHP構文チェック
         run: npm run check:php
+      - name: 旧コードと不要ファイルの残留を確認
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e app
+          test ! -e next.config.ts
+          test ! -e next-env.d.ts
+          test ! -e .vercel
+          test ! -e vercel.json
+          test ! -e styles/feed-stats.css
+          test ! -e server/public/api/recommend.php
+          if grep -R -n -E '(^|[^A-Za-z])(server-only|NextRequest|NextResponse|"use client"|\x27use client\x27)' components src lib server --include='*.ts' --include='*.tsx' --include='*.php'; then
+            echo "旧Next.js由来のコードが残っています。" >&2
+            exit 1
+          fi
       - name: 本番成果物を作成
         env:
           GITHUB_SHA: ${{ github.sha }}
@@ -34,5 +49,7 @@ jobs:
           test -f deploy/public_html/index.html
           test -f deploy/public_html/api/catalog.php
           test -f deploy/public_html/api/events.php
+          test ! -f deploy/public_html/api/recommend.php
           test -f deploy/app/schema.sql
+          test -f deploy/app/cron/setup-db.php
           test -f deploy/app/cron/fanza-sync.php
