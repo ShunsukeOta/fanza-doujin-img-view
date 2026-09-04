@@ -84,6 +84,8 @@ function request_filters(): array
         'minSamples' => read_int('min_samples', 1, 1, 100),
         'minReviews' => read_int('min_reviews', 0, 0, 100000),
         'minRating' => read_float('min_rating', 0.0, 0.0, 5.0),
+        'minPrice' => read_int('min_price', 0, 0, 10000000),
+        'maxPrice' => read_int('max_price', 0, 0, 10000000),
         'assetType' => $assetType,
         'genreId' => trim((string)($_GET['genre_id'] ?? '')),
     ];
