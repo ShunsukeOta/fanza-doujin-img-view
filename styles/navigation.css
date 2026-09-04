@@ -1,5 +1,13 @@
 :root {
   --global-nav-h: 48px;
+  --nav-safe-bottom: env(safe-area-inset-bottom);
+}
+
+/* standaloneではSafariツールバー分の補正が不要なため、ホームジェスチャーに必要な分だけ残す。 */
+@media (display-mode: standalone) {
+  :root {
+    --nav-safe-bottom: max(0px, calc(env(safe-area-inset-bottom) - 14px));
+  }
 }
 
 .app-header {
@@ -18,12 +26,12 @@
 }
 
 .preview-page {
-  padding-bottom: calc(160px + var(--global-nav-h) + env(safe-area-inset-bottom));
+  padding-bottom: calc(160px + var(--global-nav-h) + var(--nav-safe-bottom));
 }
 
 .item-info,
 .action-rail {
-  bottom: calc(var(--global-nav-h) + 10px + env(safe-area-inset-bottom));
+  bottom: calc(var(--global-nav-h) + 10px + var(--nav-safe-bottom));
 }
 
 .item-gradient {
@@ -85,7 +93,7 @@
 
 .feed-loading-more,
 .toast {
-  bottom: calc(var(--global-nav-h) + 12px + env(safe-area-inset-bottom));
+  bottom: calc(var(--global-nav-h) + 12px + var(--nav-safe-bottom));
 }
 
 .global-nav {
@@ -94,8 +102,8 @@
   left: 0;
   right: 0;
   bottom: 0;
-  height: calc(var(--global-nav-h) + env(safe-area-inset-bottom));
-  padding: 3px 16px env(safe-area-inset-bottom);
+  height: calc(var(--global-nav-h) + var(--nav-safe-bottom));
+  padding: 3px 16px var(--nav-safe-bottom);
   display: grid;
   grid-template-columns: 1fr 58px 1fr;
   align-items: center;
@@ -182,7 +190,7 @@
 
   .item-info,
   .action-rail {
-    bottom: calc(var(--global-nav-h) + 8px + env(safe-area-inset-bottom));
+    bottom: calc(var(--global-nav-h) + 8px + var(--nav-safe-bottom));
   }
 }
 

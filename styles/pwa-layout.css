@@ -1,0 +1,55 @@
+/* サブページ末尾は固定ナビに必要な実寸だけ確保し、二重の余白を作らない。 */
+.subpage-shell {
+  padding-bottom: calc(var(--global-nav-h) + var(--nav-safe-bottom) + 8px);
+}
+
+.subpage-content {
+  padding-bottom: 4px;
+}
+
+/* CSS Gridの既定stretchでカードが不必要に縦へ伸びないようにする。 */
+.favorite-grid {
+  align-items: start;
+}
+
+.favorite-card {
+  align-self: start;
+}
+
+.favorite-body {
+  padding: 9px 10px 10px;
+}
+
+.favorite-body h2 {
+  min-height: 0;
+}
+
+.favorite-meta {
+  margin-top: 5px;
+}
+
+.favorite-genres {
+  margin-top: 5px;
+}
+
+.favorite-actions {
+  margin-top: 8px;
+}
+
+.filter-error {
+  margin-top: -3px;
+  color: #e49a9a;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.field input::placeholder {
+  color: #666;
+}
+
+@media (display-mode: standalone) {
+  .subpage-shell {
+    min-height: 100dvh;
+    height: 100dvh;
+  }
+}

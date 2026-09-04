@@ -37,6 +37,8 @@ const DEFAULT_FILTERS: FilterValues = {
   minSamples: 1,
   minReviews: 0,
   minRating: 0,
+  minPrice: 0,
+  maxPrice: 0,
 };
 
 const STAT_KEYS: AssetType[] = ["all", "comic", "cg", "game", "voice", "other"];
@@ -56,6 +58,8 @@ function buildCatalogQuery(filters: FilterValues, options?: { cid?: string; offs
     min_samples: String(filters.minSamples),
     min_reviews: String(filters.minReviews),
     min_rating: String(filters.minRating),
+    min_price: String(filters.minPrice),
+    max_price: String(filters.maxPrice),
     offset: String(options?.offset ?? 1),
     limit: String(options?.limit ?? INITIAL_LIMIT),
   });
@@ -70,6 +74,8 @@ function buildPageQuery(filters: FilterValues, cid = "") {
   if (filters.minSamples !== DEFAULT_FILTERS.minSamples) params.set("min_samples", String(filters.minSamples));
   if (filters.minReviews !== DEFAULT_FILTERS.minReviews) params.set("min_reviews", String(filters.minReviews));
   if (filters.minRating !== DEFAULT_FILTERS.minRating) params.set("min_rating", String(filters.minRating));
+  if (filters.minPrice !== DEFAULT_FILTERS.minPrice) params.set("min_price", String(filters.minPrice));
+  if (filters.maxPrice !== DEFAULT_FILTERS.maxPrice) params.set("max_price", String(filters.maxPrice));
   if (cid.trim()) params.set("cid", cid.trim());
   return params;
 }
@@ -85,6 +91,10 @@ function formatBytes(bytes: number | null) {
   if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
   if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
   return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+}
+
+function formatFilterPrice(value: number) {
+  return `¥${value.toLocaleString("ja-JP")}`;
 }
 
 function mergeUniqueItems(current: FeedItem[], incoming: FeedItem[]) {
@@ -120,7 +130,9 @@ function isDefaultFilter(filters: FilterValues) {
     && filters.genreId === ""
     && filters.minSamples === 1
     && filters.minReviews === 0
-    && filters.minRating === 0;
+    && filters.minRating === 0
+    && filters.minPrice === 0
+    && filters.maxPrice === 0;
 }
 
 export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
@@ -331,9 +343,17 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
   const activeGenreName = useMemo(() => meta?.genres.find((genre) => genre.id === filters.genreId)?.name ?? "", [filters.genreId, meta?.genres]);
   const activeAssetLabel = meta?.assetTypes.find((definition) => definition.key === filters.assetType)?.label ?? ASSET_LABELS[filters.assetType];
   const filtered = !isDefaultFilter(filters);
+  const priceCondition = filters.minPrice > 0 && filters.maxPrice > 0
+    ? `${formatFilterPrice(filters.minPrice)}〜${formatFilterPrice(filters.maxPrice)}`
+    : filters.minPrice > 0
+      ? `${formatFilterPrice(filters.minPrice)}以上`
+      : filters.maxPrice > 0
+        ? `${formatFilterPrice(filters.maxPrice)}以下`
+        : "";
   const activeConditionText = filtered
-    ? `${activeAssetLabel} · ${activeGenreName || "全ジャンル"} · sample ${filters.minSamples}+ · review ${filters.minReviews}+ · rating ${filters.minRating.toFixed(1)}+`
+    ? `${activeAssetLabel} · ${activeGenreName || "全ジャンル"} · sample ${filters.minSamples}+ · review ${filters.minReviews}+ · rating ${filters.minRating.toFixed(1)}+${priceCondition ? ` · ${priceCondition}` : ""}`
     : "絞り込みなし（サンプル画像あり）";
+  const priceRangeInvalid = draftFilters.maxPrice > 0 && draftFilters.minPrice > draftFilters.maxPrice;
 
   const replaceUrl = (nextFilters: FilterValues, nextCid = "") => {
     const query = buildPageQuery(nextFilters, nextCid).toString();
@@ -342,6 +362,7 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
 
   const applyFilters = async (event: FormEvent) => {
     event.preventDefault();
+    if (priceRangeInvalid) return;
     const next = { ...draftFilters };
     setFilters(next);
     setCid("");
@@ -366,7 +387,11 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
     setDraftFilters((previous) => ({ ...previous, [key]: key === "assetType" ? value as AssetType : value }));
   };
 
-  const updateDraftNumber = (key: "minSamples" | "minReviews" | "minRating") => (event: ChangeEvent<HTMLInputElement>) => {
+  const updateDraftNumber = (key: "minSamples" | "minReviews" | "minRating" | "minPrice" | "maxPrice") => (event: ChangeEvent<HTMLInputElement>) => {
+    if ((key === "minPrice" || key === "maxPrice") && event.target.value.trim() === "") {
+      setDraftFilters((previous) => ({ ...previous, [key]: 0 }));
+      return;
+    }
     const value = key === "minRating" ? Number.parseFloat(event.target.value) : Number.parseInt(event.target.value, 10);
     if (!Number.isFinite(value)) return;
     setDraftFilters((previous) => ({ ...previous, [key]: value }));
@@ -466,12 +491,15 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
           <div className="filters">
             <div className="field"><label htmlFor="asset_type">作品タイプ</label><select id="asset_type" value={draftFilters.assetType} onChange={updateDraftSelect("assetType")}>{(meta?.assetTypes ?? Object.entries(ASSET_LABELS).map(([key, label]) => ({ key: key as AssetType, label }))).map((definition) => <option value={definition.key} key={definition.key}>{definition.label}</option>)}</select></div>
             <div className="field"><label htmlFor="genre_id">ジャンル</label><select id="genre_id" value={draftFilters.genreId} onChange={updateDraftSelect("genreId")}><option value="">すべて</option>{meta?.genres.map((genre) => <option value={genre.id} key={genre.id}>{genre.name}</option>)}</select>{metaError ? <div className="genre-note">ジャンル情報を取得できませんでした</div> : null}</div>
+            <div className="field"><label htmlFor="min_price">価格下限</label><input id="min_price" type="number" inputMode="numeric" min="0" max="10000000" step="1" placeholder="指定なし" value={draftFilters.minPrice || ""} onChange={updateDraftNumber("minPrice")} /></div>
+            <div className="field"><label htmlFor="max_price">価格上限</label><input id="max_price" type="number" inputMode="numeric" min="0" max="10000000" step="1" placeholder="指定なし" value={draftFilters.maxPrice || ""} onChange={updateDraftNumber("maxPrice")} /></div>
+            {priceRangeInvalid ? <div className="filter-error field--full">価格上限は価格下限以上にしてください。</div> : null}
             <div className="field"><label htmlFor="min_samples">最低サンプル枚数</label><input id="min_samples" type="number" min="1" max="100" value={draftFilters.minSamples} onChange={updateDraftNumber("minSamples")} /></div>
             <div className="field"><label htmlFor="min_reviews">最低レビュー件数</label><input id="min_reviews" type="number" min="0" max="100000" value={draftFilters.minReviews} onChange={updateDraftNumber("minReviews")} /></div>
             <div className="field field--full"><label htmlFor="min_rating">最低平均評価</label><input id="min_rating" type="number" min="0" max="5" step="0.1" value={draftFilters.minRating} onChange={updateDraftNumber("minRating")} /></div>
           </div>
           <div className="filter-summary">現在: {activeConditionText}</div>
-          <div className="sheet-actions"><button className="btn btn-secondary" type="button" onClick={() => setDraftFilters(DEFAULT_FILTERS)}>絞り込み解除</button><button className="btn btn-primary" type="submit" disabled={loading}>{loading ? "取得中…" : "この条件で見る"}</button></div>
+          <div className="sheet-actions"><button className="btn btn-secondary" type="button" onClick={() => setDraftFilters(DEFAULT_FILTERS)}>絞り込み解除</button><button className="btn btn-primary" type="submit" disabled={loading || priceRangeInvalid}>{loading ? "取得中…" : "この条件で見る"}</button></div>
         </form>
       </aside>
 

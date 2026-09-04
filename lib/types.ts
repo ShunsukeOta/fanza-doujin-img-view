@@ -153,4 +153,6 @@ export type FilterValues = {
   minSamples: number;
   minReviews: number;
   minRating: number;
+  minPrice: number;
+  maxPrice: number;
 };

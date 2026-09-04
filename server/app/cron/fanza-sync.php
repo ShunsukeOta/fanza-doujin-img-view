@@ -30,6 +30,15 @@ if ($lock === false || !flock($lock, LOCK_EX | LOCK_NB)) {
     exit(0);
 }
 
+function sync_numeric_price(string $price): ?int
+{
+    if (preg_match('/[0-9][0-9,]*/', $price, $match) !== 1) {
+        return null;
+    }
+    $digits = str_replace(',', '', $match[0]);
+    return $digits !== '' && ctype_digit($digits) ? (int)$digits : null;
+}
+
 $floor = $fanza->resolveDoujinFloor();
 $seen = 0;
 $saved = 0;
@@ -37,10 +46,10 @@ $genreSaved = 0;
 
 $upsertWork = $pdo->prepare(
     'INSERT INTO works '
-    . '(cid, title, affiliate_url, sample_images_json, sample_count, full_page_count, volume, review_count, rating, price, asset_bucket, asset_type, release_date, maker, is_active, first_seen_at, last_seen_at) '
-    . 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW()) '
+    . '(cid, title, affiliate_url, sample_images_json, sample_count, full_page_count, volume, review_count, rating, price, price_value, asset_bucket, asset_type, release_date, maker, is_active, first_seen_at, last_seen_at) '
+    . 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW()) '
     . 'ON DUPLICATE KEY UPDATE title=VALUES(title), affiliate_url=VALUES(affiliate_url), sample_images_json=VALUES(sample_images_json), '
-    . 'sample_count=VALUES(sample_count), full_page_count=VALUES(full_page_count), volume=VALUES(volume), review_count=VALUES(review_count), rating=VALUES(rating), price=VALUES(price), '
+    . 'sample_count=VALUES(sample_count), full_page_count=VALUES(full_page_count), volume=VALUES(volume), review_count=VALUES(review_count), rating=VALUES(rating), price=VALUES(price), price_value=VALUES(price_value), '
     . 'asset_bucket=VALUES(asset_bucket), asset_type=VALUES(asset_type), release_date=VALUES(release_date), maker=VALUES(maker), '
     . 'is_active=1, last_seen_at=NOW()'
 );
@@ -79,6 +88,7 @@ for ($pageIndex = 0; $pageIndex < $pages; $pageIndex++) {
                     $releaseDate = date('Y-m-d H:i:s', $timestamp);
                 }
             }
+            $price = (string)$item['price'];
             $upsertWork->execute([
                 $cid,
                 (string)$item['title'],
@@ -89,7 +99,8 @@ for ($pageIndex = 0; $pageIndex < $pages; $pageIndex++) {
                 (string)($item['volume'] ?? ''),
                 (int)$item['reviews'],
                 (float)$item['rating'],
-                (string)$item['price'],
+                $price,
+                sync_numeric_price($price),
                 (string)$item['assetBucket'],
                 (string)$item['assetType'],
                 $releaseDate,
