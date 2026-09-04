@@ -67,6 +67,54 @@ export type DiagnosticsResponse = {
   stats: SampleStats;
 };
 
+export type DebugDatabaseCounts = {
+  works: number;
+  activeWorks: number;
+  worksWithSamples: number;
+  defaultEligibleWorks: number;
+  genres: number;
+  workGenres: number;
+  anonymousUsers: number;
+  events: number;
+  userWorkStates: number;
+  userGenreScores: number;
+};
+
+export type DebugServerResponse = {
+  ok: boolean;
+  generatedAt: string;
+  runtime: {
+    php: string;
+    sapi: string;
+  };
+  database: {
+    configured: boolean;
+    connected: boolean;
+    catalogReady: boolean;
+    driver: string | null;
+    serverVersion: string | null;
+    sizeBytes: number | null;
+    counts: DebugDatabaseCounts;
+    latest: {
+      workUpdatedAt: string | null;
+      eventAt: string | null;
+      userSeenAt: string | null;
+    };
+    assetCounts: Record<string, number>;
+    eventCounts24h: Record<string, number>;
+  };
+  dmm: {
+    configured: boolean;
+  };
+  retention: {
+    eventDays: number;
+    profileDays: number;
+    syncPages: number;
+  };
+  diagnostics: DiagnosticsResponse | null;
+  diagnosticsError: string | null;
+};
+
 export type MetaResponse = {
   floor: FloorInfo;
   genres: Genre[];

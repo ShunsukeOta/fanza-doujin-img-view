@@ -12,7 +12,7 @@ import {
 import type {
   AssetType,
   CatalogResponse,
-  DiagnosticsResponse,
+  DebugServerResponse,
   FeedItem,
   FilterValues,
   MetaResponse,
@@ -48,6 +48,17 @@ type Props = {
 };
 
 type LoadState = "pending" | "loaded" | "error";
+
+type WorkDebugSnapshot = {
+  item: FeedItem;
+  index: number;
+  currentPage: number;
+  loadedImages: number;
+  failedImages: number;
+  pendingImages: number;
+  liked: boolean;
+  saved: boolean;
+};
 
 function buildCatalogQuery(filters: FilterValues, options?: { cid?: string; offset?: number; limit?: number }) {
   const params = new URLSearchParams({
@@ -91,6 +102,14 @@ function formatPrice(price: string) {
   if (!digits) return price;
   const value = Number.parseInt(digits, 10);
   return Number.isFinite(value) ? `¥${value.toLocaleString("ja-JP")}` : price;
+}
+
+function formatBytes(bytes: number | null) {
+  if (bytes === null || !Number.isFinite(bytes)) return "-";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
 }
 
 function mergeUniqueItems(current: FeedItem[], incoming: FeedItem[]) {
@@ -139,6 +158,14 @@ function ShareIcon() {
   );
 }
 
+function DebugIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M8 9h8v8H8zM9 5v4M15 5v4M9 17v3M15 17v3M5 10h3M16 10h3M5 16h3M16 16h3" />
+    </svg>
+  );
+}
+
 function ExternalIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -147,16 +174,40 @@ function ExternalIcon() {
   );
 }
 
+function DebugRow({ label, value, status }: { label: string; value: string | number; status?: "good" | "bad" | "neutral" }) {
+  return (
+    <div className="debug-row">
+      <span>{label}</span>
+      <strong className={status ? `is-${status}` : undefined}>{value}</strong>
+    </div>
+  );
+}
+
+function DiagnosticRow({ label, stats, active }: { label: string; stats: SampleStatsRow; active: boolean }) {
+  return (
+    <tr className={active ? "is-active" : undefined}>
+      <td>{label}</td>
+      <td>{stats.total}</td>
+      <td>{stats.zero}</td>
+      <td>{stats.oneToFour}</td>
+      <td>{stats.fiveToNine}</td>
+      <td>{stats.tenPlus}</td>
+    </tr>
+  );
+}
+
 function WorkCard({
   item,
   index,
   totalWorks,
   onToast,
+  onDebug,
 }: {
   item: FeedItem;
   index: number;
   totalWorks: number;
   onToast: (message: string) => void;
+  onDebug: (snapshot: WorkDebugSnapshot) => void;
 }) {
   const trackRef = useRef<HTMLDivElement | null>(null);
   const scrollRaf = useRef<number | null>(null);
@@ -197,6 +248,7 @@ function WorkCard({
 
   const loaded = loadStates.filter((state) => state === "loaded").length;
   const failed = loadStates.filter((state) => state === "error").length;
+  const pending = Math.max(0, item.images.length - loaded - failed);
 
   const pageIndexFromScroll = useCallback(() => {
     const track = trackRef.current;
@@ -309,19 +361,11 @@ function WorkCard({
       <div className="page-counter">
         <span>{currentPage + 1}</span>&nbsp;/&nbsp;{item.images.length}
       </div>
-      <div className={`load-status${failed > 0 ? " has-error" : ""}`}>
-        サンプル {item.images.length}P · 読込 {loaded}/{item.images.length}
-        {failed > 0 ? ` · 失敗 ${failed}` : ""}
-      </div>
-      {item.images.length > 1 && index === 0 ? (
-        <div className="swipe-hint">← 横にスワイプして読む →</div>
-      ) : null}
+      {item.images.length > 1 && index === 0 ? <div className="swipe-hint">← 横にスワイプして読む →</div> : null}
 
       <div className="item-gradient" />
       <div className="item-info">
-        <div className="item-type">
-          {item.assetLabel} · API素材 {item.assetBucket}
-        </div>
+        <div className="item-type">{item.assetLabel}</div>
         <h2 className="item-title">{item.title || item.cid}</h2>
         <div className="item-stats">
           <span className="stat-chip">
@@ -360,22 +404,17 @@ function WorkCard({
           <span className="action-icon"><ShareIcon /></span>
           <span className="action-label">共有</span>
         </button>
+        <button
+          className="action-btn debug-action"
+          type="button"
+          onClick={() => onDebug({ item, index, currentPage, loadedImages: loaded, failedImages: failed, pendingImages: pending, liked, saved })}
+        >
+          <span className="action-icon"><DebugIcon /></span>
+          <span className="action-label">デバッグ</span>
+        </button>
       </div>
       {index < totalWorks - 1 ? <div className="next-hint">SWIPE UP</div> : null}
     </article>
-  );
-}
-
-function DiagnosticRow({ label, stats, active }: { label: string; stats: SampleStatsRow; active: boolean }) {
-  return (
-    <tr className={active ? "is-active" : undefined}>
-      <td>{label}</td>
-      <td>{stats.total}</td>
-      <td>{stats.zero}</td>
-      <td>{stats.oneToFour}</td>
-      <td>{stats.fiveToNine}</td>
-      <td>{stats.tenPlus}</td>
-    </tr>
   );
 }
 
@@ -395,12 +434,13 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
   const [catalogError, setCatalogError] = useState("");
   const [metaError, setMetaError] = useState("");
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [debugOpen, setDebugOpen] = useState(false);
+  const [debugContext, setDebugContext] = useState<WorkDebugSnapshot | null>(null);
+  const [debugData, setDebugData] = useState<DebugServerResponse | null>(null);
+  const [debugLoading, setDebugLoading] = useState(false);
+  const [debugError, setDebugError] = useState("");
   const [activeWork, setActiveWork] = useState(0);
   const [toast, setToast] = useState("");
-  const [diagnostics, setDiagnostics] = useState<DiagnosticsResponse | null>(null);
-  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
-  const [diagnosticsError, setDiagnosticsError] = useState("");
-  const [diagnosticsGenreId, setDiagnosticsGenreId] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadMoreInFlight = useRef(false);
   const generation = useRef(0);
@@ -488,24 +528,31 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
     }
   }, [filters, hasMore, nextOffset, showToast]);
 
-  const loadDiagnostics = useCallback(async (genreId: string) => {
-    if (diagnosticsGenreId === genreId && (diagnostics || diagnosticsLoading)) return;
-    setDiagnosticsLoading(true);
-    setDiagnosticsError("");
-    setDiagnosticsGenreId(genreId);
-    setDiagnostics(null);
+  const loadDebug = useCallback(async () => {
+    setDebugLoading(true);
+    setDebugError("");
     try {
-      const query = new URLSearchParams({ genre_id: genreId });
-      const response = await fetch(`/api/diagnostics?${query.toString()}`, { headers: { Accept: "application/json" } });
+      const query = new URLSearchParams({ genre_id: filters.genreId });
+      const response = await fetch(`/api/debug?${query.toString()}`, {
+        headers: { Accept: "application/json", "Cache-Control": "no-cache" },
+        cache: "no-store",
+      });
       const data: unknown = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(normalizeApiError(data, `API診断の取得に失敗しました (${response.status})`));
-      setDiagnostics(data as DiagnosticsResponse);
+      if (!response.ok) throw new Error(normalizeApiError(data, `デバッグ情報の取得に失敗しました (${response.status})`));
+      setDebugData(data as DebugServerResponse);
     } catch (requestError) {
-      setDiagnosticsError(requestError instanceof Error ? requestError.message : "API診断の取得に失敗しました。");
+      setDebugError(requestError instanceof Error ? requestError.message : "デバッグ情報の取得に失敗しました。");
     } finally {
-      setDiagnosticsLoading(false);
+      setDebugLoading(false);
     }
-  }, [diagnostics, diagnosticsGenreId, diagnosticsLoading]);
+  }, [filters.genreId]);
+
+  const openDebug = useCallback((snapshot: WorkDebugSnapshot | null = null) => {
+    setDebugContext(snapshot);
+    setSheetOpen(false);
+    setDebugOpen(true);
+    void loadDebug();
+  }, [loadDebug]);
 
   useEffect(() => {
     if (booted.current) return;
@@ -513,13 +560,6 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
     void loadInitial(initialFilters, initialCid);
     void loadMeta();
   }, [initialCid, initialFilters, loadInitial, loadMeta]);
-
-  useEffect(() => {
-    if (!sheetOpen) return;
-    document.body.classList.add("sheet-open");
-    void loadDiagnostics(filters.genreId);
-    return () => document.body.classList.remove("sheet-open");
-  }, [filters.genreId, loadDiagnostics, sheetOpen]);
 
   useEffect(() => {
     const feed = feedRef.current;
@@ -582,10 +622,6 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
     setCid("");
     setCidDraft("");
     setSheetOpen(false);
-    if (diagnosticsGenreId !== next.genreId) {
-      setDiagnostics(null);
-      setDiagnosticsGenreId(null);
-    }
     replaceUrl(next);
     await loadInitial(next);
   };
@@ -595,7 +631,7 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
     const nextCid = cidDraft.trim();
     if (!nextCid) return;
     setCid(nextCid);
-    setSheetOpen(false);
+    setDebugOpen(false);
     replaceUrl(filters, nextCid);
     await loadInitial(filters, nextCid);
   };
@@ -612,6 +648,38 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
     };
 
   const noItemsButSearching = !loading && items.length === 0 && loadingMore;
+  const currentItem = items[activeWork] ?? null;
+  const browserDebug = debugOpen
+    ? {
+        url: window.location.href,
+        viewport: `${window.innerWidth}×${window.innerHeight}`,
+        devicePixelRatio: window.devicePixelRatio,
+        online: navigator.onLine,
+        visibility: document.visibilityState,
+        userAgent: navigator.userAgent,
+      }
+    : null;
+  const clientDebug = {
+    feed: {
+      loadedItems: items.length,
+      activeIndex: items.length > 0 ? activeWork + 1 : 0,
+      hasMore,
+      nextOffset,
+      loading,
+      loadingMore,
+      source: lastBatch?.source ?? null,
+      lastBatchScanned: lastBatch?.scanned ?? 0,
+      targetTotal: lastBatch?.apiTotal ?? 0,
+      effectiveMinSamples: lastBatch?.effectiveMinSamples ?? filters.minSamples,
+      queryError: lastBatch?.queryError || null,
+      catalogError: catalogError || null,
+      metaError: metaError || null,
+    },
+    filters,
+    directCid: cid || null,
+    currentWork: debugContext ?? (currentItem ? { item: currentItem, index: activeWork } : null),
+    browser: browserDebug,
+  };
 
   return (
     <>
@@ -627,13 +695,11 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
           <div className="feed-count">
             <span>{items.length > 0 ? activeWork + 1 : 0}</span> / {items.length}{hasMore ? "+" : ""}
           </div>
-          <button className="icon-btn" type="button" onClick={() => setSheetOpen(true)}>
+          <button className="icon-btn" type="button" onClick={() => { setDebugOpen(false); setSheetOpen(true); }}>
             <FilterIcon /> 絞り込み
           </button>
         </div>
       </header>
-
-      {lastBatch?.queryError ? <div className="error-banner">CID取得エラー: {lastBatch.queryError}</div> : null}
 
       <main ref={feedRef} className="feed" id="feed" aria-label="作品フィード">
         {loading || noItemsButSearching ? (
@@ -647,22 +713,35 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
         ) : catalogError ? (
           <section className="empty-state">
             <div className="empty-card">
-              <h2>作品取得に失敗しました</h2>
-              <p>{catalogError}</p>
-              <button className="btn btn-primary" type="button" onClick={() => setSheetOpen(true)}>API診断を見る</button>
+              <h2>作品を取得できませんでした</h2>
+              <p>条件を変更するか、デバッグ画面で取得状態を確認してください。</p>
+              <div className="empty-actions">
+                <button className="btn btn-secondary" type="button" onClick={() => setSheetOpen(true)}>絞り込み</button>
+                <button className="btn btn-primary" type="button" onClick={() => openDebug(null)}>デバッグ</button>
+              </div>
             </div>
           </section>
         ) : items.length === 0 ? (
           <section className="empty-state">
             <div className="empty-card">
-              <h2>条件に合う表示可能作品がありません</h2>
-              <p>条件を緩めるかAPI診断を確認してください。</p>
-              <button className="btn btn-primary" type="button" onClick={() => setSheetOpen(true)}>API診断を見る</button>
+              <h2>条件に合う作品がありません</h2>
+              <p>条件を緩めるか、デバッグ画面でDB・取得件数を確認してください。</p>
+              <div className="empty-actions">
+                <button className="btn btn-secondary" type="button" onClick={() => setSheetOpen(true)}>絞り込み</button>
+                <button className="btn btn-primary" type="button" onClick={() => openDebug(null)}>デバッグ</button>
+              </div>
             </div>
           </section>
         ) : (
           items.map((item, index) => (
-            <WorkCard key={item.cid} item={item} index={index} totalWorks={items.length} onToast={showToast} />
+            <WorkCard
+              key={item.cid}
+              item={item}
+              index={index}
+              totalWorks={items.length}
+              onToast={showToast}
+              onDebug={openDebug}
+            />
           ))
         )}
       </main>
@@ -673,21 +752,23 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
         </div>
       ) : null}
 
-      <div className="sheet-backdrop" onClick={() => setSheetOpen(false)} aria-hidden="true" />
-      <aside className="sheet" id="filterSheet" aria-hidden={!sheetOpen}>
+      <div
+        className={`sheet-backdrop${sheetOpen || debugOpen ? " is-open" : ""}`}
+        onClick={() => { setSheetOpen(false); setDebugOpen(false); }}
+        aria-hidden="true"
+      />
+
+      <aside className={`sheet${sheetOpen ? " is-open" : ""}`} id="filterSheet" aria-hidden={!sheetOpen}>
         <div className="sheet-handle" />
         <div className="sheet-head">
-          <div className="sheet-title">作品を絞り込む / API診断</div>
+          <div className="sheet-title">作品を絞り込む</div>
           <button className="close-btn" type="button" onClick={() => setSheetOpen(false)} aria-label="閉じる">×</button>
-        </div>
-        <div className="api-note">
-          <strong>重要:</strong> ItemListの <code>iteminfo.genre</code> はジャンルタグです。APIが返す <code>imageURL / sampleImageURL</code> の <code>/digital/comic|cg|game|voice/</code> を「API素材タイプ」として別軸で判定します。
         </div>
 
         <form onSubmit={applyFilters}>
           <div className="filters">
             <div className="field">
-              <label htmlFor="asset_type">API素材タイプ</label>
+              <label htmlFor="asset_type">作品タイプ</label>
               <select id="asset_type" value={draftFilters.assetType} onChange={updateDraftSelect("assetType")}>
                 {(meta?.assetTypes ?? Object.entries(ASSET_LABELS).map(([key, label]) => ({ key: key as AssetType, label }))).map((definition) => (
                   <option value={definition.key} key={definition.key}>{definition.label}</option>
@@ -700,10 +781,10 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
                 <option value="">すべて</option>
                 {meta?.genres.map((genre) => <option value={genre.id} key={genre.id}>{genre.name}</option>)}
               </select>
-              {metaError ? <div className="genre-note">GenreSearch: {metaError}</div> : null}
+              {metaError ? <div className="genre-note">ジャンル情報を取得できませんでした</div> : null}
             </div>
             <div className="field">
-              <label htmlFor="min_samples">最低sample_l枚数</label>
+              <label htmlFor="min_samples">最低サンプル枚数</label>
               <input id="min_samples" type="number" min="0" max="100" value={draftFilters.minSamples} onChange={updateDraftNumber("minSamples")} />
             </div>
             <div className="field">
@@ -717,45 +798,8 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
           </div>
 
           <div className="filter-summary">
-            {lastBatch ? <>取得元: {lastBatch.source === "database" ? "MariaDBレコメンド" : "FANZA API"}<br /></> : null}
-            {lastBatch?.floor ? <>
-              API: {lastBatch.floor.siteCode} / {lastBatch.floor.serviceCode} / {lastBatch.floor.floorCode}{lastBatch.floor.floorId ? ` / floor_id ${lastBatch.floor.floorId}` : ""}<br />
-            </> : null}
-            現在: {activeConditionText} / sample_l {filters.minSamples}枚以上 / レビュー {filters.minReviews}件以上 / 評価 {filters.minRating.toFixed(1)}以上<br />
-            フィード: {items.length}作品読込済み
-            {hasMore ? " / 続きあり" : " / 最終候補まで到達"}
-          </div>
-
-          <div className="diag">
-            <div className="diag-title">sample_l 枚数分布</div>
-            <div className="diag-sub">作品DBが利用可能ならDB全体、未同期ならFANZA APIを最大800件まで診断します。通常フィードの初回表示は待ちません。</div>
-            {diagnosticsLoading ? (
-              <div className="diag-loading"><span className="mini-spinner" /> API診断をバックグラウンド取得中…</div>
-            ) : diagnosticsError ? (
-              <div className="genre-note">{diagnosticsError}</div>
-            ) : diagnostics ? (
-              <>
-                <table className="diag-table">
-                  <thead>
-                    <tr><th>API素材</th><th>総数</th><th>0P</th><th>1–4P</th><th>5–9P</th><th>10P+</th></tr>
-                  </thead>
-                  <tbody>
-                    {STAT_KEYS.map((key) => (
-                      <DiagnosticRow
-                        key={key}
-                        label={meta?.assetTypes.find((definition) => definition.key === key)?.label ?? ASSET_LABELS[key]}
-                        stats={diagnostics.stats[key]}
-                        active={filters.assetType === key}
-                      />
-                    ))}
-                  </tbody>
-                </table>
-                <div className="diag-sub diag-raw">診断走査: {diagnostics.scanned}件{diagnostics.apiTotal ? ` / 対象総数 ${diagnostics.apiTotal}件` : ""}</div>
-                {Object.keys(diagnostics.stats.rawBuckets).length > 0 ? (
-                  <div className="diag-sub diag-raw">その他bucket: {Object.entries(diagnostics.stats.rawBuckets).map(([key, value]) => `${key}:${value}`).join(" / ")}</div>
-                ) : null}
-              </>
-            ) : null}
+            現在: {activeConditionText}<br />
+            サンプル {filters.minSamples}枚以上 / レビュー {filters.minReviews}件以上 / 評価 {filters.minRating.toFixed(1)}以上
           </div>
 
           <div className="sheet-actions">
@@ -763,12 +807,185 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
             <button className="btn btn-primary" type="submit" disabled={loading}>{loading ? "取得中…" : "この条件で見る"}</button>
           </div>
         </form>
+      </aside>
 
-        <form className="cid-test" onSubmit={openCid}>
-          <input value={cidDraft} onChange={(event: ChangeEvent<HTMLInputElement>) => setCidDraft(event.target.value)} placeholder="CID / FANZA商品URLで直接テスト" autoComplete="off" />
-          <button type="submit" disabled={loading || !cidDraft.trim()}>開く</button>
-        </form>
-        {cid ? <div className="cid-active">直接表示中: {cid}</div> : null}
+      <aside className={`sheet debug-sheet${debugOpen ? " is-open" : ""}`} aria-hidden={!debugOpen}>
+        <div className="sheet-handle" />
+        <div className="sheet-head debug-sheet-head">
+          <div>
+            <div className="sheet-title">デバッグ</div>
+            <div className="debug-caption">表示用UIと分離した開発情報</div>
+          </div>
+          <div className="debug-head-actions">
+            <button className="debug-refresh" type="button" onClick={() => void loadDebug()} disabled={debugLoading}>再取得</button>
+            <button className="close-btn" type="button" onClick={() => setDebugOpen(false)} aria-label="閉じる">×</button>
+          </div>
+        </div>
+
+        {debugLoading && !debugData ? (
+          <div className="diag-loading"><span className="mini-spinner" /> DB・API状態を取得中…</div>
+        ) : null}
+        {debugError ? <div className="debug-error">{debugError}</div> : null}
+
+        <section className="debug-section">
+          <h3>現在のフィード</h3>
+          <div className="debug-grid">
+            <DebugRow label="表示位置" value={`${items.length > 0 ? activeWork + 1 : 0} / ${items.length}`} />
+            <DebugRow label="取得元" value={lastBatch?.source === "database" ? "MariaDB" : lastBatch?.source === "fanza-api" ? "FANZA API" : "-"} />
+            <DebugRow label="直近走査件数" value={lastBatch?.scanned ?? 0} />
+            <DebugRow label="対象総数" value={lastBatch?.apiTotal ?? 0} />
+            <DebugRow label="nextOffset" value={nextOffset ?? "null"} />
+            <DebugRow label="続き" value={hasMore ? "あり" : "なし"} status={hasMore ? "good" : "neutral"} />
+            <DebugRow label="初期読込" value={loading ? "中" : "完了"} status={loading ? "neutral" : "good"} />
+            <DebugRow label="追加読込" value={loadingMore ? "中" : "停止"} />
+          </div>
+          <div className="debug-note">{activeConditionText} / sample {filters.minSamples}+ / review {filters.minReviews}+ / rating {filters.minRating.toFixed(1)}+</div>
+          {lastBatch?.queryError ? <div className="debug-error">CID: {lastBatch.queryError}</div> : null}
+          {catalogError ? <div className="debug-error">Catalog: {catalogError}</div> : null}
+          {metaError ? <div className="debug-error">Meta: {metaError}</div> : null}
+        </section>
+
+        <section className="debug-section">
+          <h3>表示中作品</h3>
+          {debugContext ? (
+            <>
+              <div className="debug-grid">
+                <DebugRow label="index" value={debugContext.index + 1} />
+                <DebugRow label="CID" value={debugContext.item.cid} />
+                <DebugRow label="ページ" value={`${debugContext.currentPage + 1} / ${debugContext.item.images.length}`} />
+                <DebugRow label="sampleCount" value={debugContext.item.sampleCount} />
+                <DebugRow label="画像読込" value={`${debugContext.loadedImages} 成功 / ${debugContext.pendingImages} 待機 / ${debugContext.failedImages} 失敗`} status={debugContext.failedImages > 0 ? "bad" : "good"} />
+                <DebugRow label="assetType" value={debugContext.item.assetType} />
+                <DebugRow label="assetBucket" value={debugContext.item.assetBucket || "-"} />
+                <DebugRow label="評価" value={debugContext.item.rating.toFixed(1)} />
+                <DebugRow label="レビュー" value={debugContext.item.reviews} />
+                <DebugRow label="価格" value={debugContext.item.price || "-"} />
+                <DebugRow label="いいね" value={debugContext.liked ? "ON" : "OFF"} />
+                <DebugRow label="保存" value={debugContext.saved ? "ON" : "OFF"} />
+              </div>
+              <div className="debug-note debug-break">{debugContext.item.title}</div>
+              <div className="debug-note debug-break">genres: {debugContext.item.genres.join(" / ") || "-"}</div>
+            </>
+          ) : currentItem ? (
+            <div className="debug-note">現在のCID: {currentItem.cid}。カード右側のデバッグボタンから開くと画像読込状態まで取得できます。</div>
+          ) : (
+            <div className="debug-note">表示中の作品はありません。</div>
+          )}
+        </section>
+
+        <section className="debug-section">
+          <h3>MariaDB / サーバー</h3>
+          {debugData ? (
+            <>
+              <div className="debug-grid">
+                <DebugRow label="DB設定" value={debugData.database.configured ? "済" : "未設定"} status={debugData.database.configured ? "good" : "bad"} />
+                <DebugRow label="DB接続" value={debugData.database.connected ? "OK" : "NG"} status={debugData.database.connected ? "good" : "bad"} />
+                <DebugRow label="catalogReady" value={debugData.database.catalogReady ? "true" : "false"} status={debugData.database.catalogReady ? "good" : "bad"} />
+                <DebugRow label="DB driver" value={debugData.database.driver ?? "-"} />
+                <DebugRow label="MariaDB/MySQL" value={debugData.database.serverVersion ?? "-"} />
+                <DebugRow label="DB容量" value={formatBytes(debugData.database.sizeBytes)} />
+                <DebugRow label="PHP" value={`${debugData.runtime.php} / ${debugData.runtime.sapi}`} />
+                <DebugRow label="FANZA API" value={debugData.dmm.configured ? "設定済" : "未設定"} status={debugData.dmm.configured ? "good" : "bad"} />
+              </div>
+              <div className="debug-subtitle">テーブル件数</div>
+              <div className="debug-grid">
+                <DebugRow label="works" value={debugData.database.counts.works} />
+                <DebugRow label="active works" value={debugData.database.counts.activeWorks} />
+                <DebugRow label="sampleあり" value={debugData.database.counts.worksWithSamples} />
+                <DebugRow label="初期条件対象" value={debugData.database.counts.defaultEligibleWorks} />
+                <DebugRow label="genres" value={debugData.database.counts.genres} />
+                <DebugRow label="work_genres" value={debugData.database.counts.workGenres} />
+                <DebugRow label="anonymous_users" value={debugData.database.counts.anonymousUsers} />
+                <DebugRow label="events" value={debugData.database.counts.events} />
+                <DebugRow label="user_work_states" value={debugData.database.counts.userWorkStates} />
+                <DebugRow label="user_genre_scores" value={debugData.database.counts.userGenreScores} />
+              </div>
+              <div className="debug-subtitle">更新時刻</div>
+              <div className="debug-grid">
+                <DebugRow label="作品最終更新" value={debugData.database.latest.workUpdatedAt ?? "-"} />
+                <DebugRow label="イベント最終記録" value={debugData.database.latest.eventAt ?? "-"} />
+                <DebugRow label="ユーザー最終行動" value={debugData.database.latest.userSeenAt ?? "-"} />
+                <DebugRow label="診断生成" value={debugData.generatedAt} />
+              </div>
+              <div className="debug-note">保持期間: events {debugData.retention.eventDays}日 / profile {debugData.retention.profileDays}日 / 定期同期 {debugData.retention.syncPages}ページ</div>
+            </>
+          ) : (
+            <div className="debug-note">サーバー情報はまだ取得していません。</div>
+          )}
+        </section>
+
+        <section className="debug-section">
+          <h3>作品タイプ件数</h3>
+          {debugData && Object.keys(debugData.database.assetCounts).length > 0 ? (
+            <div className="debug-grid">
+              {Object.entries(debugData.database.assetCounts).map(([key, value]) => <DebugRow key={key} label={key} value={value} />)}
+            </div>
+          ) : <div className="debug-note">データなし</div>}
+        </section>
+
+        <section className="debug-section">
+          <h3>直近24時間イベント</h3>
+          {debugData && Object.keys(debugData.database.eventCounts24h).length > 0 ? (
+            <div className="debug-grid">
+              {Object.entries(debugData.database.eventCounts24h).map(([key, value]) => <DebugRow key={key} label={key} value={value} />)}
+            </div>
+          ) : <div className="debug-note">まだイベントはありません。</div>}
+        </section>
+
+        <section className="debug-section">
+          <h3>sample_l 枚数分布</h3>
+          {debugData?.diagnostics ? (
+            <>
+              <table className="diag-table">
+                <thead>
+                  <tr><th>素材</th><th>総数</th><th>0P</th><th>1–4P</th><th>5–9P</th><th>10P+</th></tr>
+                </thead>
+                <tbody>
+                  {STAT_KEYS.map((key) => (
+                    <DiagnosticRow
+                      key={key}
+                      label={meta?.assetTypes.find((definition) => definition.key === key)?.label ?? ASSET_LABELS[key]}
+                      stats={debugData.diagnostics!.stats[key]}
+                      active={filters.assetType === key}
+                    />
+                  ))}
+                </tbody>
+              </table>
+              <div className="debug-note">診断走査 {debugData.diagnostics.scanned}件 / 対象総数 {debugData.diagnostics.apiTotal}件</div>
+              {Object.keys(debugData.diagnostics.stats.rawBuckets).length > 0 ? (
+                <div className="debug-note debug-break">rawBuckets: {Object.entries(debugData.diagnostics.stats.rawBuckets).map(([key, value]) => `${key}:${value}`).join(" / ")}</div>
+              ) : null}
+            </>
+          ) : <div className="debug-note">{debugData?.diagnosticsError ?? "データなし"}</div>}
+        </section>
+
+        <section className="debug-section">
+          <h3>ブラウザ</h3>
+          {browserDebug ? (
+            <div className="debug-grid">
+              <DebugRow label="viewport" value={browserDebug.viewport} />
+              <DebugRow label="DPR" value={browserDebug.devicePixelRatio} />
+              <DebugRow label="online" value={browserDebug.online ? "true" : "false"} status={browserDebug.online ? "good" : "bad"} />
+              <DebugRow label="visibility" value={browserDebug.visibility} />
+              <div className="debug-row debug-row--full"><span>URL</span><strong>{browserDebug.url}</strong></div>
+              <div className="debug-row debug-row--full"><span>User-Agent</span><strong>{browserDebug.userAgent}</strong></div>
+            </div>
+          ) : null}
+        </section>
+
+        <section className="debug-section">
+          <h3>CID直接テスト</h3>
+          <form className="cid-test debug-cid-test" onSubmit={openCid}>
+            <input value={cidDraft} onChange={(event: ChangeEvent<HTMLInputElement>) => setCidDraft(event.target.value)} placeholder="CID / FANZA商品URL" autoComplete="off" />
+            <button type="submit" disabled={loading || !cidDraft.trim()}>開く</button>
+          </form>
+          {cid ? <div className="cid-active">直接表示中: {cid}</div> : null}
+        </section>
+
+        <details className="debug-raw">
+          <summary>生データを表示</summary>
+          <pre>{JSON.stringify({ client: clientDebug, server: debugData }, null, 2)}</pre>
+        </details>
       </aside>
 
       <div className={`toast${toast ? " is-show" : ""}`}>{toast}</div>

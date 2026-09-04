@@ -49,6 +49,7 @@ jobs:
           test -f deploy/public_html/index.html
           test -f deploy/public_html/api/catalog.php
           test -f deploy/public_html/api/events.php
+          test -f deploy/public_html/api/debug.php
           test ! -f deploy/public_html/api/recommend.php
           test -f deploy/app/schema.sql
           test -f deploy/app/cron/setup-db.php
