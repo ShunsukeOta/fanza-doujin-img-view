@@ -2,11 +2,13 @@ const MAIN_RETURN_KEY = "swipe-preview:main-return-v1";
 const RESUME_REQUEST_KEY = "swipe-preview:resume-request-v1";
 const MAX_STATE_AGE_MS = 12 * 60 * 60 * 1000;
 
+type SubpagePath = "/saved" | "/mypage";
+
 type MainReturnState = {
   resumeUrl: string;
   cid: string;
   page: number;
-  subpage: "/saved" | "/mypage";
+  subpage: SubpagePath;
   savedAt: number;
 };
 
@@ -75,7 +77,7 @@ function activeWorkSnapshot(): { cid: string; page: number } | null {
   };
 }
 
-export function rememberMainBeforeSubpage(subpage: "/saved" | "/mypage"): void {
+export function rememberMainBeforeSubpage(subpage: SubpagePath): void {
   const snapshot = activeWorkSnapshot();
   if (!snapshot) return;
 
@@ -93,6 +95,12 @@ export function rememberMainBeforeSubpage(subpage: "/saved" | "/mypage"): void {
   };
   safeSessionSet(MAIN_RETURN_KEY, JSON.stringify(state));
   safeSessionRemove(RESUME_REQUEST_KEY);
+}
+
+export function continueSubpageNavigation(subpage: SubpagePath): void {
+  const state = readState();
+  if (!state) return;
+  safeSessionSet(MAIN_RETURN_KEY, JSON.stringify({ ...state, subpage, savedAt: Date.now() } satisfies MainReturnState));
 }
 
 export function resumeMainFromSubpage(): void {
@@ -138,6 +146,14 @@ export function prepareMainResumeFallback(): void {
   }
 }
 
+function findWorkByCid(cid: string): HTMLElement | null {
+  const works = document.querySelectorAll<HTMLElement>(".feed-item[data-cid]");
+  for (const work of works) {
+    if (work.dataset.cid === cid) return work;
+  }
+  return null;
+}
+
 function restoreSavedPosition(): void {
   if (safeSessionGet(RESUME_REQUEST_KEY) !== "1") return;
   const state = readState();
@@ -149,7 +165,7 @@ function restoreSavedPosition(): void {
   const startedAt = performance.now();
   const attempt = () => {
     const feed = document.getElementById("feed");
-    const item = document.querySelector<HTMLElement>(`.feed-item[data-cid="${CSS.escape(state.cid)}"]`);
+    const item = findWorkByCid(state.cid);
     const track = item?.querySelector<HTMLElement>(".preview-track");
 
     if (feed instanceof HTMLElement && item && track) {
