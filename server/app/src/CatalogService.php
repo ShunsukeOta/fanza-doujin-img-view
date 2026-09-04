@@ -108,7 +108,7 @@ final class CatalogService
         $recentLimit = (int)ceil($candidateTarget * 0.30);
         $exploreLimit = max(1, $candidateTarget - $popularLimit - $recentLimit);
         $select = 'SELECT w.cid, w.title, w.affiliate_url, w.sample_images_json, w.sample_count, '
-            . 'w.review_count, w.rating, w.price, w.asset_bucket, w.asset_type, w.release_date, w.updated_at '
+            . 'w.review_count, w.rating, w.price, w.price_value, w.asset_bucket, w.asset_type, w.release_date, w.updated_at '
             . 'FROM works w WHERE ' . implode(' AND ', $where);
         $worksByCid = [];
         $pools = [
@@ -236,7 +236,7 @@ final class CatalogService
             return null;
         }
         try {
-            $stmt = $pdo->prepare('SELECT w.cid, w.title, w.affiliate_url, w.sample_images_json, w.sample_count, w.review_count, w.rating, w.price, w.asset_bucket, w.asset_type, w.release_date, w.updated_at FROM works w WHERE w.cid = ? LIMIT 1');
+            $stmt = $pdo->prepare('SELECT w.cid, w.title, w.affiliate_url, w.sample_images_json, w.sample_count, w.review_count, w.rating, w.price, w.price_value, w.asset_bucket, w.asset_type, w.release_date, w.updated_at FROM works w WHERE w.cid = ? LIMIT 1');
             $stmt->execute([$cid]);
             $work = $stmt->fetch();
             if (!is_array($work)) {
@@ -339,6 +339,14 @@ final class CatalogService
             ':min_reviews' => (int)$filters['minReviews'],
             ':min_rating' => (float)$filters['minRating'],
         ];
+        if ($filters['minPrice'] > 0) {
+            $where[] = 'w.price_value >= :min_price';
+            $params[':min_price'] = (int)$filters['minPrice'];
+        }
+        if ($filters['maxPrice'] > 0) {
+            $where[] = 'w.price_value <= :max_price';
+            $params[':max_price'] = (int)$filters['maxPrice'];
+        }
         if ($filters['assetType'] !== 'all') {
             $where[] = 'w.asset_type = :asset_type';
             $params[':asset_type'] = $filters['assetType'];
@@ -447,10 +455,17 @@ final class CatalogService
     {
         $assetTypes = ['all', 'comic', 'cg', 'game', 'voice', 'other'];
         $assetType = (string)($filters['assetType'] ?? 'all');
+        $minPrice = max(0, min(10000000, (int)($filters['minPrice'] ?? 0)));
+        $maxPrice = max(0, min(10000000, (int)($filters['maxPrice'] ?? 0)));
+        if ($maxPrice > 0 && $minPrice > $maxPrice) {
+            [$minPrice, $maxPrice] = [$maxPrice, $minPrice];
+        }
         return [
             'minSamples' => max(0, min(100, (int)($filters['minSamples'] ?? 10))),
             'minReviews' => max(0, min(100000, (int)($filters['minReviews'] ?? 10))),
             'minRating' => max(0.0, min(5.0, (float)($filters['minRating'] ?? 4.5))),
+            'minPrice' => $minPrice,
+            'maxPrice' => $maxPrice,
             'assetType' => in_array($assetType, $assetTypes, true) ? $assetType : 'all',
             'genreId' => trim((string)($filters['genreId'] ?? '')),
         ];
@@ -467,7 +482,28 @@ final class CatalogService
         if (($item['rating'] ?? 0.0) < $filters['minRating']) {
             return false;
         }
+        if ($filters['minPrice'] > 0 || $filters['maxPrice'] > 0) {
+            $priceValue = $this->priceValue((string)($item['price'] ?? ''));
+            if ($priceValue === null) {
+                return false;
+            }
+            if ($filters['minPrice'] > 0 && $priceValue < $filters['minPrice']) {
+                return false;
+            }
+            if ($filters['maxPrice'] > 0 && $priceValue > $filters['maxPrice']) {
+                return false;
+            }
+        }
         return $filters['assetType'] === 'all' || ($item['assetType'] ?? '') === $filters['assetType'];
+    }
+
+    private function priceValue(string $price): ?int
+    {
+        if (preg_match('/[0-9][0-9,]*/', $price, $match) !== 1) {
+            return null;
+        }
+        $digits = str_replace(',', '', $match[0]);
+        return $digits !== '' && ctype_digit($digits) ? (int)$digits : null;
     }
 
     private function stripInternalFields(array $item): array
