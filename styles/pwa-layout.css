@@ -1,10 +1,42 @@
-/* サブページ末尾は固定ナビに必要な実寸だけ確保し、二重の余白を作らない。 */
+/* サブページ末尾は固定ナビ本体ぶんだけ確保する。PWA下端延長ぶんは画面外側を埋めるため加算しない。 */
 .subpage-shell {
-  padding-bottom: calc(var(--global-nav-h) + var(--nav-safe-bottom) + 8px);
+  padding-bottom: calc(var(--global-nav-h) + var(--nav-safe-bottom) + 6px);
 }
 
 .subpage-content {
-  padding-bottom: 4px;
+  padding-bottom: 2px;
+}
+
+.subpage-header {
+  padding-bottom: 10px;
+}
+
+/* 保存件数はカード化せず、12pxの補助情報として右寄せする。 */
+.subpage-summary {
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  text-align: right;
+}
+
+.subpage-summary span {
+  color: #858585;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.subpage-summary strong {
+  margin: 0 2px 0 4px;
+  color: #f1f1f1;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: inherit;
+  font-variant-numeric: tabular-nums;
 }
 
 /* CSS Gridの既定stretchでカードが不必要に縦へ伸びないようにする。 */
