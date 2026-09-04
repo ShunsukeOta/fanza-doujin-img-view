@@ -42,23 +42,36 @@ jobs:
           printf '%s' "$REACTIONS" | grep -F '"likeCount":' >/dev/null
           printf '%s' "$REACTIONS" | grep -F '"saveCount":' >/dev/null
 
-          FAVORITES="$("${CURL[@]}" 'https://wp983575.wpx.jp/api/favorites?limit=1')"
-          printf '%s' "$FAVORITES" | grep -F '"ok":true' >/dev/null
-          printf '%s' "$FAVORITES" | grep -F '"items":' >/dev/null
-          printf '%s' "$FAVORITES" | grep -F '"total":' >/dev/null
+          SAVED="$("${CURL[@]}" 'https://wp983575.wpx.jp/api/saved?limit=1')"
+          printf '%s' "$SAVED" | grep -F '"ok":true' >/dev/null
+          printf '%s' "$SAVED" | grep -F '"items":' >/dev/null
+          printf '%s' "$SAVED" | grep -F '"total":' >/dev/null
 
           ME="$("${CURL[@]}" 'https://wp983575.wpx.jp/api/me')"
           printf '%s' "$ME" | grep -F '"ok":true' >/dev/null
-          printf '%s' "$ME" | grep -F '"anonymousId":' >/dev/null
           printf '%s' "$ME" | grep -F '"stats":' >/dev/null
+          printf '%s' "$ME" | grep -F '"topGenres":' >/dev/null
+          if printf '%s' "$ME" | grep -F '"anonymousId":' >/dev/null; then
+            echo 'マイページAPIに内部IDが露出しています。' >&2
+            exit 1
+          fi
 
-          FAVORITES_PAGE="$("${CURL[@]}" 'https://wp983575.wpx.jp/favorites')"
+          DETAILS="$("${CURL[@]}" "https://wp983575.wpx.jp/api/work-details?cid=${CID}")"
+          printf '%s' "$DETAILS" | grep -F '"ok":true' >/dev/null
+          printf '%s' "$DETAILS" | grep -F '"remainingPages":' >/dev/null
+          printf '%s' "$DETAILS" | grep -F '"price":' >/dev/null
+          printf '%s' "$DETAILS" | grep -F '"affiliateUrl":' >/dev/null
+
+          SAVED_PAGE="$("${CURL[@]}" 'https://wp983575.wpx.jp/saved')"
           MYPAGE_PAGE="$("${CURL[@]}" 'https://wp983575.wpx.jp/mypage')"
-          printf '%s' "$FAVORITES_PAGE" | grep -F 'id="root"' >/dev/null
+          printf '%s' "$SAVED_PAGE" | grep -F 'id="root"' >/dev/null
           printf '%s' "$MYPAGE_PAGE" | grep -F 'id="root"' >/dev/null
+
+          OLD_FAVORITES_API_STATUS="$(curl --silent --output /dev/null --write-out '%{http_code}' 'https://wp983575.wpx.jp/api/favorites')"
+          test "$OLD_FAVORITES_API_STATUS" = '404'
 
           DEBUG="$("${CURL[@]}" "https://wp983575.wpx.jp/api/debug?verify=${DEPLOYED_SHA}")"
           printf '%s' "$DEBUG" | grep -F '"connected":true' >/dev/null
           printf '%s' "$DEBUG" | grep -F '"works":' >/dev/null
 
-          echo "本番公開API・サブページ確認OK: ${DEPLOYED_SHA} / CID=${CID}"
+          echo "本番公開API・保存済み・CTA確認OK: ${DEPLOYED_SHA} / CID=${CID}"
