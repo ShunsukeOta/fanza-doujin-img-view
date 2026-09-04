@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { GlobalNav } from "@/components/GlobalNav";
-import { BookmarkIcon, ExternalIcon } from "@/components/icons";
+import { BookmarkIcon } from "@/components/icons";
 import type { FeedItem } from "@/lib/types";
+import { openWorkInMain } from "@/src/navigationState";
 import { updateReaction } from "@/src/reactions";
 
 type SavedItem = FeedItem & { savedAt?: string };
@@ -93,7 +94,7 @@ export function SavedPage() {
             <span className="subpage-state-icon"><BookmarkIcon /></span>
             <strong>まだ保存した作品がありません</strong>
             <p>メインページで「保存」を押した作品がここに並びます。</p>
-            <button type="button" onClick={() => window.location.assign("/")}>作品を探す</button>
+            <button type="button" onClick={() => openWorkInMain("") || window.location.assign("/")}>作品を探す</button>
           </div>
         ) : (
           <div className="favorite-grid">
@@ -102,6 +103,16 @@ export function SavedPage() {
                 <div className="favorite-thumb">
                   {item.images[0] ? <img src={item.images[0]} alt="" loading="lazy" decoding="async" /> : <div className="favorite-noimage">NO IMAGE</div>}
                   <span className="favorite-type">{item.assetLabel}</span>
+                  <button
+                    className="favorite-save-toggle"
+                    type="button"
+                    disabled={pendingCid === item.cid}
+                    onClick={() => void removeSaved(item)}
+                    aria-label={`${item.title || item.cid}の保存を解除`}
+                    title="保存を解除"
+                  >
+                    <BookmarkIcon />
+                  </button>
                 </div>
                 <div className="favorite-body">
                   <h2>{item.title || item.cid}</h2>
@@ -110,10 +121,8 @@ export function SavedPage() {
                     {item.price ? <span>{formatPrice(item.price)}</span> : null}
                   </div>
                   {item.genres.length > 0 ? <p className="favorite-genres">{item.genres.slice(0, 4).join(" / ")}</p> : null}
-                  <div className="favorite-reactions"><span>いいね {item.likeCount.toLocaleString("ja-JP")}</span><span>保存 {item.saveCount.toLocaleString("ja-JP")}</span></div>
-                  <div className="favorite-actions">
-                    <button className="favorite-remove" type="button" disabled={pendingCid === item.cid} onClick={() => void removeSaved(item)}><BookmarkIcon /> 保存解除</button>
-                    {/^https?:\/\//i.test(item.affiliateUrl) ? <a href={item.affiliateUrl} target="_blank" rel="noopener noreferrer sponsored">FANZA <ExternalIcon /></a> : null}
+                  <div className="favorite-actions favorite-actions--sample">
+                    <button className="favorite-sample" type="button" onClick={() => openWorkInMain(item.cid)}>サンプルを見る</button>
                   </div>
                 </div>
               </article>
