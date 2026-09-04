@@ -1,10 +1,13 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
+import { FavoritesPage } from "@/components/FavoritesPage";
+import { MyPage } from "@/components/MyPage";
 import { SwipePreviewApp } from "@/components/SwipePreviewApp";
 import type { AssetType, FilterValues } from "@/lib/types";
 import "@/styles/globals.css";
 import "@/styles/navigation.css";
+import "@/styles/pages.css";
 import { startAnalytics } from "@/src/analytics";
 
 const ASSET_TYPES = new Set<AssetType>(["all", "comic", "cg", "game", "voice", "other"]);
@@ -29,13 +32,19 @@ const initialFilters: FilterValues = {
   minRating: boundedFloat(params, "min_rating", 0, 0, 5),
 };
 
+const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
 const root = document.getElementById("root");
 if (!root) throw new Error("#root が見つかりません。");
 
-createRoot(root).render(
-  <StrictMode>
-    <SwipePreviewApp initialFilters={initialFilters} initialCid={params.get("cid") ?? ""} />
-  </StrictMode>,
-);
+let app: React.ReactNode;
+if (pathname === "/favorites") {
+  app = <FavoritesPage />;
+} else if (pathname === "/mypage") {
+  app = <MyPage />;
+} else {
+  app = <SwipePreviewApp initialFilters={initialFilters} initialCid={params.get("cid") ?? ""} />;
+}
 
-startAnalytics();
+createRoot(root).render(<StrictMode>{app}</StrictMode>);
+
+if (pathname !== "/favorites" && pathname !== "/mypage") startAnalytics();
