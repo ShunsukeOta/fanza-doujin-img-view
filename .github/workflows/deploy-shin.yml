@@ -1,0 +1,64 @@
+name: シンレンタルサーバーへデプロイ
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shin-production-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: リポジトリを取得
+        uses: actions/checkout@v4
+
+      - name: Node.jsを準備
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 依存関係をインストール
+        run: npm install --no-audit --no-fund
+
+      - name: 型チェック
+        run: npm run typecheck --if-present
+
+      - name: シンレンタルサーバー用成果物を作成
+        run: npm run build:shin --if-present
+
+      - name: デプロイ成果物を確認
+        id: artifact
+        shell: bash
+        run: |
+          if [ -d "deploy" ] && [ -n "$(find deploy -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "deploy/ を公開します。"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "deploy/ がまだ生成されていないため、今回はデプロイをスキップします。"
+            echo "React/Vite + PHP への移行時に build:shin で deploy/ を生成すると自動デプロイが有効になります。"
+          fi
+
+      - name: FTPSでpublic_htmlへ同期
+        if: steps.artifact.outputs.ready == 'true'
+        uses: SamKirkland/FTP-Deploy-Action@v4.4.0
+        with:
+          server: ${{ secrets.SHIN_FTP_SERVER }}
+          username: wp983575
+          password: ${{ secrets.SHIN_FTP_PASSWORD }}
+          protocol: ftps
+          port: 21
+          local-dir: ./deploy/
+          server-dir: ./wp983575.wpx.jp/public_html/
+          security: strict
+          timeout: 60000
+          log-level: standard
