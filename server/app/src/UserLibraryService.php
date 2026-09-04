@@ -13,11 +13,11 @@ final class UserLibraryService
     {
     }
 
-    public function favorites(string $anonymousUserId, int $limit = 60): array
+    public function saved(string $anonymousUserId, int $limit = 60): array
     {
         $pdo = $this->database->connection();
         if (!$pdo) {
-            throw new RuntimeException('お気に入りDBが利用できません。');
+            throw new RuntimeException('保存済み作品DBが利用できません。');
         }
 
         $this->ensureUser($pdo, $anonymousUserId);
@@ -33,7 +33,7 @@ final class UserLibraryService
 
         $stmt = $pdo->prepare(
             'SELECT w.cid, w.title, w.affiliate_url, w.sample_images_json, w.sample_count, '
-            . 'w.review_count, w.rating, w.price, w.asset_bucket, w.asset_type, s.updated_at AS saved_at '
+            . 'w.review_count, w.rating, w.price, w.asset_bucket, w.asset_type, w.full_page_count, s.updated_at AS saved_at '
             . 'FROM user_work_states s JOIN works w ON w.cid = s.work_cid '
             . 'WHERE s.anonymous_user_id = ? AND s.saved = 1 AND w.is_active = 1 AND w.sample_count > 0 '
             . 'ORDER BY s.updated_at DESC LIMIT ' . $safeLimit,
@@ -60,6 +60,7 @@ final class UserLibraryService
                 'affiliateUrl' => (string)$row['affiliate_url'],
                 'images' => $images,
                 'sampleCount' => (int)$row['sample_count'],
+                'fullPageCount' => isset($row['full_page_count']) ? (int)$row['full_page_count'] : null,
                 'reviews' => (int)$row['review_count'],
                 'rating' => (float)$row['rating'],
                 'genres' => $genreMap[$cid] ?? [],
@@ -95,8 +96,7 @@ final class UserLibraryService
         $stateRow = $state->fetch() ?: [];
 
         $events = $pdo->prepare(
-            "SELECT COUNT(*) AS events, COUNT(DISTINCT CASE WHEN event_type = 'impression' THEN work_cid END) AS viewed, "
-            . "SUM(event_type = 'affiliate_click') AS affiliate_clicks, SUM(event_type = 'share') AS shares "
+            "SELECT COUNT(DISTINCT CASE WHEN event_type = 'impression' THEN work_cid END) AS viewed "
             . 'FROM events WHERE anonymous_user_id = ?',
         );
         $events->execute([$anonymousUserId]);
@@ -119,16 +119,10 @@ final class UserLibraryService
         );
 
         return [
-            'anonymousId' => $anonymousUserId,
             'createdAt' => $userRow['created_at'] ?? null,
-            'lastSeenAt' => $userRow['last_seen_at'] ?? null,
             'stats' => [
-                'liked' => (int)($stateRow['liked'] ?? 0),
                 'saved' => (int)($stateRow['saved'] ?? 0),
                 'viewed' => (int)($eventRow['viewed'] ?? 0),
-                'events' => (int)($eventRow['events'] ?? 0),
-                'affiliateClicks' => (int)($eventRow['affiliate_clicks'] ?? 0),
-                'shares' => (int)($eventRow['shares'] ?? 0),
             ],
             'topGenres' => $topGenres,
         ];
