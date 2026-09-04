@@ -1,6 +1,7 @@
 import { StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 
+import { FocusModeToggle } from "@/components/FocusModeToggle";
 import { MyPage } from "@/components/MyPage";
 import { SavedPage } from "@/components/SavedPage";
 import { SwipePreviewApp } from "@/components/SwipePreviewApp";
@@ -46,7 +47,12 @@ if (pathname === "/favorites") {
   } else if (pathname === "/mypage") {
     app = <MyPage />;
   } else {
-    app = <SwipePreviewApp initialFilters={initialFilters} initialCid={params.get("cid") ?? ""} />;
+    app = (
+      <>
+        <SwipePreviewApp initialFilters={initialFilters} initialCid={params.get("cid") ?? ""} />
+        <FocusModeToggle />
+      </>
+    );
   }
 
   createRoot(root).render(<StrictMode>{app}</StrictMode>);
