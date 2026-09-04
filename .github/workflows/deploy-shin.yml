@@ -86,11 +86,21 @@ jobs:
             deploy/app/ \
             wp983575@wp983575.wpx.jp:wp983575.wpx.jp/app/
 
-      - name: デプロイ内容を確認
+      - name: サーバー内の配置を確認
         shell: bash
         run: |
           set -euo pipefail
           ssh -i "$HOME/.ssh/id_shin" -p 10022 -o BatchMode=yes -o IdentitiesOnly=yes \
             wp983575@wp983575.wpx.jp \
             "cd wp983575.wpx.jp && grep -F '\"commit\":\"${GITHUB_SHA}\"' public_html/version.json >/dev/null && test -f public_html/api/health.php && test -f app/cron/fanza-sync.php"
-          echo "デプロイ確認OK: ${GITHUB_SHA}"
+          echo "サーバー内配置確認OK: ${GITHUB_SHA}"
+
+      - name: HTTPS公開を確認
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(curl --fail --silent --show-error --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 30 -H 'Cache-Control: no-cache' "https://wp983575.wpx.jp/version.json?sha=${GITHUB_SHA}")"
+          printf '%s' "$VERSION" | grep -F "\"commit\":\"${GITHUB_SHA}\"" >/dev/null
+          HEALTH="$(curl --fail --silent --show-error --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 30 -H 'Cache-Control: no-cache' "https://wp983575.wpx.jp/api/health?sha=${GITHUB_SHA}")"
+          printf '%s' "$HEALTH" | grep -F '"runtime":"php"' >/dev/null
+          echo "HTTPS公開確認OK: ${GITHUB_SHA}"
