@@ -51,6 +51,42 @@ jobs:
           grep -F '続きを読む' components/WorkCard.tsx >/dev/null
           grep -F 'reader-focus' components/FocusModeToggle.tsx >/dev/null
           grep -F '保存済み' components/GlobalNav.tsx >/dev/null
+      - name: PWAと画面復帰を確認
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f public/manifest.webmanifest
+          test -f public/sw.js
+          test -f public/icons/app-icon.svg
+          grep -F 'apple-mobile-web-app-capable' index.html >/dev/null
+          grep -F 'rel="manifest"' index.html >/dev/null
+          python3 - <<'PY'
+          import json
+          with open('public/manifest.webmanifest', encoding='utf-8') as f:
+              manifest = json.load(f)
+          assert manifest['display'] == 'standalone'
+          assert manifest['start_url'] == '/'
+          assert manifest['scope'] == '/'
+          PY
+          grep -F 'rememberMainBeforeSubpage' components/GlobalNav.tsx >/dev/null
+          grep -F 'resumeMainFromSubpage' components/GlobalNav.tsx >/dev/null
+          grep -F 'history.go(-state.historySteps)' src/navigationState.ts >/dev/null
+          grep -F 'prepareMainResumeFallback' src/main.tsx >/dev/null
+      - name: 保存済みUIを確認
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F 'favorite-save-toggle' components/SavedPage.tsx >/dev/null
+          grep -F 'サンプルを見る' components/SavedPage.tsx >/dev/null
+          grep -F 'openWorkInMain(item.cid)' components/SavedPage.tsx >/dev/null
+          if grep -F 'favorite-reactions' components/SavedPage.tsx >/dev/null; then
+            echo "保存済みカードにリアクション件数表示が残っています。" >&2
+            exit 1
+          fi
+          if grep -F '>FANZA' components/SavedPage.tsx >/dev/null; then
+            echo "保存済みカードに旧FANZAボタンが残っています。" >&2
+            exit 1
+          fi
       - name: 本番成果物を作成
         env:
           GITHUB_SHA: ${{ github.sha }}
@@ -58,6 +94,9 @@ jobs:
       - name: 成果物を確認
         run: |
           test -f deploy/public_html/index.html
+          test -f deploy/public_html/manifest.webmanifest
+          test -f deploy/public_html/sw.js
+          test -f deploy/public_html/icons/app-icon.svg
           test -f deploy/public_html/api/catalog.php
           test -f deploy/public_html/api/events.php
           test -f deploy/public_html/api/reactions.php

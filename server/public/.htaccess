@@ -1,6 +1,8 @@
 Options -Indexes
 DirectoryIndex index.html
 
+AddType application/manifest+json .webmanifest
+
 <IfModule mod_rewrite.c>
   RewriteEngine On
 
@@ -28,3 +30,9 @@ DirectoryIndex index.html
     Header set Cache-Control "no-store, max-age=0"
   </IfModule>
 </Files>
+
+<FilesMatch "^(manifest\.webmanifest|sw\.js)$">
+  <IfModule mod_headers.c>
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+  </IfModule>
+</FilesMatch>
