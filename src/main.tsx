@@ -1,4 +1,4 @@
-import { StrictMode } from "react";
+import { StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { FavoritesPage } from "@/components/FavoritesPage";
@@ -8,6 +8,7 @@ import type { AssetType, FilterValues } from "@/lib/types";
 import "@/styles/globals.css";
 import "@/styles/navigation.css";
 import "@/styles/pages.css";
+import "@/styles/page-scroll.css";
 import { startAnalytics } from "@/src/analytics";
 
 const ASSET_TYPES = new Set<AssetType>(["all", "comic", "cg", "game", "voice", "other"]);
@@ -36,7 +37,7 @@ const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
 const root = document.getElementById("root");
 if (!root) throw new Error("#root が見つかりません。");
 
-let app: React.ReactNode;
+let app: ReactNode;
 if (pathname === "/favorites") {
   app = <FavoritesPage />;
 } else if (pathname === "/mypage") {
