@@ -69,27 +69,28 @@ jobs:
           ssh -i "$HOME/.ssh/id_shin" -p 10022 \
             -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
             -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
-            wp983575@wp983575.wpx.jp '
-              set -eu
-              APP="$HOME/wp983575.wpx.jp/app"
-              PHP_CLI=/usr/bin/php8.3
-              test -f "$APP/config.local.php"
-              "$PHP_CLI" "$APP/cron/setup-db.php"
-              UNTIL="$(date +%Y-%m-%dT%H:%M:%S)"
-              echo "バックフィル開始: 2025-09-05T00:00:00 - ${UNTIL}"
-              "$PHP_CLI" "$APP/cron/fanza-sync.php" \
-                --pages=500 \
-                --sort=date \
-                --since=2025-09-05T00:00:00 \
-                --until="${UNTIL}"
-              "$PHP_CLI" -r '
-                $config = require getenv("HOME") . "/wp983575.wpx.jp/app/config.local.php";
-                $dsn = sprintf("mysql:host=%s;port=%d;dbname=%s;charset=%s", $config["db"]["host"], $config["db"]["port"], $config["db"]["name"], $config["db"]["charset"]);
-                $pdo = new PDO($dsn, $config["db"]["user"], $config["db"]["password"], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
-                $works = (int)$pdo->query("SELECT COUNT(*) FROM works")->fetchColumn();
-                $year = (int)$pdo->query("SELECT COUNT(*) FROM works WHERE release_date >= \"2025-09-05 00:00:00\"")->fetchColumn();
-                $series = (int)$pdo->query("SELECT COUNT(*) FROM series")->fetchColumn();
-                $prices = (int)$pdo->query("SELECT COUNT(*) FROM work_price_history")->fetchColumn();
-                echo "BACKFILL_RESULT works={$works} year={$year} series={$series} price_history={$prices}\n";
-              '
-            '
+            wp983575@wp983575.wpx.jp 'bash -s' <<'REMOTE'
+          set -eu
+          APP="$HOME/wp983575.wpx.jp/app"
+          PHP_CLI=/usr/bin/php8.3
+          test -f "$APP/config.local.php"
+          "$PHP_CLI" "$APP/cron/setup-db.php"
+          UNTIL="$(date +%Y-%m-%dT%H:%M:%S)"
+          echo "バックフィル開始: 2025-09-05T00:00:00 - ${UNTIL}"
+          "$PHP_CLI" "$APP/cron/fanza-sync.php" \
+            --pages=500 \
+            --sort=date \
+            --since=2025-09-05T00:00:00 \
+            --until="${UNTIL}"
+
+          "$PHP_CLI" -r '
+          $config = require getenv("HOME") . "/wp983575.wpx.jp/app/config.local.php";
+          $dsn = sprintf("mysql:host=%s;port=%d;dbname=%s;charset=%s", $config["db"]["host"], $config["db"]["port"], $config["db"]["name"], $config["db"]["charset"]);
+          $pdo = new PDO($dsn, $config["db"]["user"], $config["db"]["password"], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+          $works = (int)$pdo->query("SELECT COUNT(*) FROM works")->fetchColumn();
+          $year = (int)$pdo->query("SELECT COUNT(*) FROM works WHERE release_date >= \"2025-09-05 00:00:00\"")->fetchColumn();
+          $series = (int)$pdo->query("SELECT COUNT(*) FROM series")->fetchColumn();
+          $prices = (int)$pdo->query("SELECT COUNT(*) FROM work_price_history")->fetchColumn();
+          echo "BACKFILL_RESULT works={$works} year={$year} series={$series} price_history={$prices}\n";
+          '
+          REMOTE
