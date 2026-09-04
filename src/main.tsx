@@ -10,6 +10,7 @@ import "@/styles/globals.css";
 import "@/styles/navigation.css";
 import "@/styles/pages.css";
 import "@/styles/page-scroll.css";
+import "@/styles/reader.css";
 import { startAnalytics } from "@/src/analytics";
 
 const ASSET_TYPES = new Set<AssetType>(["all", "comic", "cg", "game", "voice", "other"]);
