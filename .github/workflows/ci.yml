@@ -72,6 +72,30 @@ jobs:
           grep -F 'resumeMainFromSubpage' components/GlobalNav.tsx >/dev/null
           grep -F 'history.go(-state.historySteps)' src/navigationState.ts >/dev/null
           grep -F 'prepareMainResumeFallback' src/main.tsx >/dev/null
+      - name: PWA余白の回帰を確認
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f styles/pwa-layout.css
+          grep -F -- '--nav-safe-bottom' styles/navigation.css >/dev/null
+          grep -F 'display-mode: standalone' styles/navigation.css >/dev/null
+          grep -F 'align-items: start' styles/pwa-layout.css >/dev/null
+          grep -F 'padding-bottom: calc(var(--global-nav-h) + var(--nav-safe-bottom) + 8px)' styles/pwa-layout.css >/dev/null
+      - name: 価格範囲フィルターを確認
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F '価格下限' components/SwipePreviewApp.tsx >/dev/null
+          grep -F '価格上限' components/SwipePreviewApp.tsx >/dev/null
+          grep -F 'min_price' components/SwipePreviewApp.tsx >/dev/null
+          grep -F 'max_price' components/SwipePreviewApp.tsx >/dev/null
+          grep -F "'minPrice' => read_int('min_price'" server/app/bootstrap.php >/dev/null
+          grep -F "'maxPrice' => read_int('max_price'" server/app/bootstrap.php >/dev/null
+          grep -F 'w.price_value >= :min_price' server/app/src/CatalogService.php >/dev/null
+          grep -F 'w.price_value <= :max_price' server/app/src/CatalogService.php >/dev/null
+          grep -F 'price_value INT UNSIGNED NULL' server/app/schema.sql >/dev/null
+          grep -F "ensure_column(\$pdo, 'works', 'price_value'" server/app/cron/setup-db.php >/dev/null
+          grep -F 'price_value=VALUES(price_value)' server/app/cron/fanza-sync.php >/dev/null
       - name: 保存済みUIを確認
         shell: bash
         run: |
