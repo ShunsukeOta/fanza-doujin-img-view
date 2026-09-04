@@ -1,4 +1,4 @@
-/* サブページ末尾は固定ナビ本体ぶんだけ確保する。PWA下端延長ぶんは画面外側を埋めるため加算しない。 */
+/* サブページ末尾は固定ナビ本体ぶんだけ確保する。 */
 .subpage-shell {
   padding-bottom: calc(var(--global-nav-h) + var(--nav-safe-bottom) + 6px);
 }
@@ -77,11 +77,4 @@
 
 .field input::placeholder {
   color: #666;
-}
-
-@media (display-mode: standalone) {
-  .subpage-shell {
-    min-height: 100dvh;
-    height: 100dvh;
-  }
 }
