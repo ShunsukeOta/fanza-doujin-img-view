@@ -39,8 +39,8 @@ try {
     if (!is_array($payload)) {
         throw new RuntimeException('JSONリクエストが不正です。');
     }
-    $eventService->record($anonymousUserId, $sessionId, $payload);
-    json_response(['ok' => true], 201, ['Cache-Control' => 'no-store']);
+    $reaction = $eventService->record($anonymousUserId, $sessionId, $payload);
+    json_response(['ok' => true, 'reaction' => $reaction], 201, ['Cache-Control' => 'no-store']);
 } catch (Throwable $error) {
     $status = 500;
     if ($error instanceof RuntimeException && !($error instanceof PDOException)) {

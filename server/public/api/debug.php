@@ -53,7 +53,7 @@ if ($pdo) {
             'works' => 'SELECT COUNT(*) FROM works',
             'activeWorks' => 'SELECT COUNT(*) FROM works WHERE is_active = 1',
             'worksWithSamples' => 'SELECT COUNT(*) FROM works WHERE is_active = 1 AND sample_count > 0',
-            'defaultEligibleWorks' => 'SELECT COUNT(*) FROM works WHERE is_active = 1 AND sample_count >= 10 AND review_count >= 10 AND rating >= 4.5',
+            'defaultEligibleWorks' => 'SELECT COUNT(*) FROM works WHERE is_active = 1 AND sample_count >= 1',
             'genres' => 'SELECT COUNT(*) FROM genres',
             'workGenres' => 'SELECT COUNT(*) FROM work_genres',
             'anonymousUsers' => 'SELECT COUNT(*) FROM anonymous_users',

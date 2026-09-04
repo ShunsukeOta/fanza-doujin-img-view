@@ -21,6 +21,14 @@ export type AssetTypeDefinition = {
   label: string;
 };
 
+export type ReactionSummary = {
+  cid: string;
+  likeCount: number;
+  saveCount: number;
+  viewerLiked: boolean;
+  viewerSaved: boolean;
+};
+
 export type FeedItem = {
   cid: string;
   title: string;
@@ -34,6 +42,23 @@ export type FeedItem = {
   assetBucket: string;
   assetType: Exclude<AssetType, "all">;
   assetLabel: string;
+  likeCount: number;
+  saveCount: number;
+  viewerLiked: boolean;
+  viewerSaved: boolean;
+};
+
+export type WorkDebugSnapshot = {
+  item: FeedItem;
+  index: number;
+  currentPage: number;
+  loadedImages: number;
+  failedImages: number;
+  pendingImages: number;
+  liked: boolean;
+  saved: boolean;
+  likeCount: number;
+  saveCount: number;
 };
 
 export type SampleStatsRow = {

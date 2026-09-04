@@ -77,9 +77,10 @@ function request_filters(): array
         $assetType = 'all';
     }
     return [
-        'minSamples' => read_int('min_samples', 10, 0, 100),
-        'minReviews' => read_int('min_reviews', 10, 0, 100000),
-        'minRating' => read_float('min_rating', 4.5, 0.0, 5.0),
+        // 初期状態は絞り込みなし。表示に必要なsample_lが1枚以上あることだけを必須にする。
+        'minSamples' => read_int('min_samples', 1, 1, 100),
+        'minReviews' => read_int('min_reviews', 0, 0, 100000),
+        'minRating' => read_float('min_rating', 0.0, 0.0, 5.0),
         'assetType' => $assetType,
         'genreId' => trim((string)($_GET['genre_id'] ?? '')),
     ];

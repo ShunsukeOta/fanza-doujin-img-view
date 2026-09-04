@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { SwipePreviewApp } from "@/components/SwipePreviewApp";
 import type { AssetType, FilterValues } from "@/lib/types";
 import "@/styles/globals.css";
+import "@/styles/navigation.css";
 import { startAnalytics } from "@/src/analytics";
 
 const ASSET_TYPES = new Set<AssetType>(["all", "comic", "cg", "game", "voice", "other"]);
@@ -23,9 +24,9 @@ const rawAssetType = (params.get("asset_type") ?? params.get("category") ?? "all
 const initialFilters: FilterValues = {
   assetType: ASSET_TYPES.has(rawAssetType) ? rawAssetType : "all",
   genreId: params.get("genre_id") ?? "",
-  minSamples: boundedInt(params, "min_samples", 10, 0, 100),
-  minReviews: boundedInt(params, "min_reviews", 10, 0, 100_000),
-  minRating: boundedFloat(params, "min_rating", 4.5, 0, 5),
+  minSamples: boundedInt(params, "min_samples", 1, 1, 100),
+  minReviews: boundedInt(params, "min_reviews", 0, 0, 100_000),
+  minRating: boundedFloat(params, "min_rating", 0, 0, 5),
 };
 
 const root = document.getElementById("root");

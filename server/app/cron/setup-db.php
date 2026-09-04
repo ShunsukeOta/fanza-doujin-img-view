@@ -51,6 +51,7 @@ function ensure_index(PDO $pdo, string $table, string $index, string $definition
 
 ensure_index($pdo, 'events', 'idx_events_user_type_time', '(anonymous_user_id, event_type, created_at)');
 ensure_index($pdo, 'events', 'idx_events_user_work_type', '(anonymous_user_id, work_cid, event_type)');
+ensure_index($pdo, 'user_work_states', 'idx_user_work_states_work_reactions', '(work_cid, liked, saved)');
 
 $works = (int)$pdo->query('SELECT COUNT(*) FROM works')->fetchColumn();
 fwrite(STDOUT, "DB初期化OK works={$works}\n");

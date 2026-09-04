@@ -24,7 +24,7 @@ final class EventService
     {
     }
 
-    public function record(string $anonymousUserId, string $sessionId, array $payload): void
+    public function record(string $anonymousUserId, string $sessionId, array $payload): ?array
     {
         $pdo = $this->database->connection();
         if (!$pdo) {
@@ -80,13 +80,104 @@ final class EventService
             if (abs($delta) > 0.00001) {
                 $this->applyGenreAffinity($pdo, $anonymousUserId, $cid, $delta);
             }
+
+            $reaction = null;
+            if ($eventType === 'like_toggle' || $eventType === 'save_toggle') {
+                $reaction = $this->reactionSummariesWithPdo($pdo, $anonymousUserId, [$cid])[$cid] ?? null;
+            }
             $pdo->commit();
+            return $reaction;
         } catch (Throwable $error) {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
             }
             throw $error;
         }
+    }
+
+    public function reactionSummaries(string $anonymousUserId, array $cids): array
+    {
+        $normalized = $this->normalizeCids($cids);
+        if ($normalized === []) {
+            return [];
+        }
+        $pdo = $this->database->connection();
+        if (!$pdo) {
+            return $this->emptyReactionSummaries($normalized);
+        }
+        return $this->reactionSummariesWithPdo($pdo, $anonymousUserId, $normalized);
+    }
+
+    private function reactionSummariesWithPdo(PDO $pdo, string $anonymousUserId, array $cids): array
+    {
+        $cids = $this->normalizeCids($cids);
+        $summaries = $this->emptyReactionSummaries($cids);
+        if ($cids === []) {
+            return $summaries;
+        }
+
+        $placeholders = implode(',', array_fill(0, count($cids), '?'));
+        $aggregate = $pdo->prepare(
+            'SELECT work_cid, COALESCE(SUM(liked), 0) AS like_count, COALESCE(SUM(saved), 0) AS save_count '
+            . 'FROM user_work_states WHERE work_cid IN (' . $placeholders . ') GROUP BY work_cid',
+        );
+        $aggregate->execute($cids);
+        foreach ($aggregate->fetchAll() as $row) {
+            $cid = (string)$row['work_cid'];
+            if (!isset($summaries[$cid])) {
+                continue;
+            }
+            $summaries[$cid]['likeCount'] = (int)$row['like_count'];
+            $summaries[$cid]['saveCount'] = (int)$row['save_count'];
+        }
+
+        if ($anonymousUserId !== '') {
+            $viewer = $pdo->prepare(
+                'SELECT work_cid, liked, saved FROM user_work_states WHERE anonymous_user_id = ? AND work_cid IN (' . $placeholders . ')',
+            );
+            $viewer->execute([$anonymousUserId, ...$cids]);
+            foreach ($viewer->fetchAll() as $row) {
+                $cid = (string)$row['work_cid'];
+                if (!isset($summaries[$cid])) {
+                    continue;
+                }
+                $summaries[$cid]['viewerLiked'] = (bool)$row['liked'];
+                $summaries[$cid]['viewerSaved'] = (bool)$row['saved'];
+            }
+        }
+
+        return $summaries;
+    }
+
+    private function emptyReactionSummaries(array $cids): array
+    {
+        $summaries = [];
+        foreach ($cids as $cid) {
+            $summaries[$cid] = [
+                'cid' => $cid,
+                'likeCount' => 0,
+                'saveCount' => 0,
+                'viewerLiked' => false,
+                'viewerSaved' => false,
+            ];
+        }
+        return $summaries;
+    }
+
+    private function normalizeCids(array $cids): array
+    {
+        $normalized = [];
+        foreach ($cids as $cid) {
+            $value = trim((string)$cid);
+            if ($value === '' || preg_match('/^[A-Za-z0-9_-]+$/', $value) !== 1) {
+                continue;
+            }
+            $normalized[$value] = true;
+            if (count($normalized) >= 50) {
+                break;
+            }
+        }
+        return array_keys($normalized);
     }
 
     private function ensureAnonymousUser(PDO $pdo, string $anonymousUserId): void
