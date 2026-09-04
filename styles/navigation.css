@@ -108,7 +108,7 @@ html[data-pwa-standalone="true"] {
   right: 0;
   bottom: calc(-1 * var(--pwa-bottom-extension));
   height: calc(var(--global-nav-h) + var(--nav-safe-bottom) + var(--pwa-bottom-extension));
-  padding: 3px 16px calc(var(--nav-safe-bottom) + var(--pwa-bottom-extension));
+  padding: 3px 16px var(--nav-safe-bottom);
   display: grid;
   grid-template-columns: 1fr 58px 1fr;
   align-items: center;
