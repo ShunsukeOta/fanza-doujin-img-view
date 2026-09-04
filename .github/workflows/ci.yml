@@ -146,7 +146,21 @@ jobs:
           grep -F 'w.price_value <= :max_price' server/app/src/CatalogService.php >/dev/null
           grep -F 'price_value INT UNSIGNED NULL' server/app/schema.sql >/dev/null
           grep -F "ensure_column(\$pdo, 'works', 'price_value'" server/app/cron/setup-db.php >/dev/null
-          grep -F 'price_value=VALUES(price_value)' server/app/cron/fanza-sync.php >/dev/null
+          grep -F 'price_value=COALESCE(VALUES(price_value), price_value)' server/app/cron/fanza-sync.php >/dev/null
+      - name: 作品メタデータ同期を確認
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F 'description LONGTEXT NULL' server/app/schema.sql >/dev/null
+          grep -F 'CREATE TABLE IF NOT EXISTS series' server/app/schema.sql >/dev/null
+          grep -F 'CREATE TABLE IF NOT EXISTS work_series' server/app/schema.sql >/dev/null
+          grep -F 'CREATE TABLE IF NOT EXISTS work_price_history' server/app/schema.sql >/dev/null
+          grep -F "'seriesRows' => \$series" server/app/src/FanzaClient.php >/dev/null
+          grep -F "\$params['gte_date']" server/app/src/FanzaClient.php >/dev/null
+          grep -F "\$params['lte_date']" server/app/src/FanzaClient.php >/dev/null
+          grep -F "['pages::', 'sort::', 'since::', 'until::']" server/app/cron/fanza-sync.php >/dev/null
+          grep -F 'work_price_history' server/public/api/work-details.php >/dev/null
+          test -f .github/workflows/backfill-2025-09-05.yml
       - name: 保存済みUIを確認
         shell: bash
         run: |

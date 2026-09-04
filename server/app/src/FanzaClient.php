@@ -97,10 +97,19 @@ final class FanzaClient
         return $items[0];
     }
 
-    public function fetchItemPage(array $floor, int $offset, string $genreId = '', string $sort = 'review', int $hits = 100): array
-    {
+    public function fetchItemPage(
+        array $floor,
+        int $offset,
+        string $genreId = '',
+        string $sort = 'review',
+        int $hits = 100,
+        string $gteDate = '',
+        string $lteDate = '',
+    ): array {
         $params = ['hits'=>max(1,min(100,$hits)),'offset'=>max(1,$offset),'sort'=>$sort];
         if ($genreId !== '') { $params['article']='genre'; $params['article_id']=$genreId; }
+        if ($gteDate !== '') $params['gte_date'] = $gteDate;
+        if ($lteDate !== '') $params['lte_date'] = $lteDate;
         $root = $this->itemList($floor, $params);
         $result = $this->record($root['result'] ?? null);
         return ['items'=>$this->rows($result['items'] ?? null),'total'=>(int)($result['total_count'] ?? 0),'resultCount'=>(int)($result['result_count'] ?? 0)];
@@ -125,12 +134,16 @@ final class FanzaClient
         $review = $this->record($item['review'] ?? null);
         $prices = $this->record($item['prices'] ?? null);
         $genres = $this->itemGenres($item);
+        $series = $this->itemSeries($item);
         $volume = trim($this->string($item['volume'] ?? null));
 
         return [
             'cid' => $this->string($item['content_id'] ?? null),
             'title' => $this->string($item['title'] ?? null),
+            'productUrl' => $this->string($item['URL'] ?? null),
             'affiliateUrl' => $this->string($item['affiliateURL'] ?? null),
+            // ItemListは通常説明文を返さないが、将来/フロア差で返る場合はそのまま保存できる受け口を持つ。
+            'description' => $this->itemDescription($item),
             'images' => $images,
             'sampleCount' => count($images),
             'fullPageCount' => $this->pageCountFromVolume($volume),
@@ -139,6 +152,7 @@ final class FanzaClient
             'rating' => (float)($review['average'] ?? 0),
             'genres' => array_values(array_map(static fn(array $genre): string => $genre['name'], $genres)),
             'genreRows' => $genres,
+            'seriesRows' => $series,
             'price' => $this->string($prices['price'] ?? null),
             'assetBucket' => $bucket,
             'assetType' => $assetType,
@@ -205,9 +219,35 @@ final class FanzaClient
 
     private function itemGenres(array $item): array
     {
-        $itemInfo=$this->record($item['iteminfo']??null); $genres=[];
-        foreach($this->rows($itemInfo['genre']??null) as $row){$name=trim($this->string($row['name']??null)); if($name==='')continue; $genres[]=['id'=>$this->string($row['id']??null)?:$this->string($row['genre_id']??null),'name'=>$name,'ruby'=>$this->string($row['ruby']??null)];}
-        return $genres;
+        return $this->itemInfoRows($item, 'genre', 'genre_id');
+    }
+
+    private function itemSeries(array $item): array
+    {
+        return $this->itemInfoRows($item, 'series', 'series_id');
+    }
+
+    private function itemInfoRows(array $item, string $key, string $fallbackIdKey): array
+    {
+        $itemInfo = $this->record($item['iteminfo'] ?? null);
+        $values = [];
+        foreach ($this->rows($itemInfo[$key] ?? null) as $row) {
+            $name = trim($this->string($row['name'] ?? null));
+            if ($name === '') continue;
+            $id = $this->string($row['id'] ?? null) ?: $this->string($row[$fallbackIdKey] ?? null);
+            if ($id === '') continue;
+            $values[$id] = ['id'=>$id,'name'=>$name,'ruby'=>$this->string($row['ruby'] ?? null)];
+        }
+        return array_values($values);
+    }
+
+    private function itemDescription(array $item): string
+    {
+        foreach (['description', 'comment', 'summary', 'introduction'] as $key) {
+            $value = trim($this->string($item[$key] ?? null));
+            if ($value !== '') return $value;
+        }
+        return '';
     }
 
     private function makerName(array $item): string

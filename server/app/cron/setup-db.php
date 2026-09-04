@@ -74,6 +74,8 @@ function numeric_price(string $price): ?int
     return (int)$digits;
 }
 
+ensure_column($pdo, 'works', 'product_url', 'TEXT NULL AFTER title');
+ensure_column($pdo, 'works', 'description', 'LONGTEXT NULL AFTER affiliate_url');
 ensure_column($pdo, 'works', 'full_page_count', 'INT UNSIGNED NULL AFTER sample_count');
 ensure_column($pdo, 'works', 'volume', "VARCHAR(128) NOT NULL DEFAULT '' AFTER full_page_count");
 ensure_column($pdo, 'works', 'price_value', 'INT UNSIGNED NULL AFTER price');
@@ -90,5 +92,14 @@ if (is_array($priceRows) && $priceRows !== []) {
     }
 }
 
+// 既存作品にも現在価格を初回観測値として1件だけ作り、以降の変更差分を追えるようにする。
+$pdo->exec(
+    'INSERT INTO work_price_history (work_cid, price, price_value, observed_at) '
+    . 'SELECT w.cid, w.price, w.price_value, COALESCE(w.last_seen_at, w.updated_at, NOW()) '
+    . 'FROM works w LEFT JOIN work_price_history h ON h.work_cid = w.cid '
+    . "WHERE h.work_cid IS NULL AND (w.price <> '' OR w.price_value IS NOT NULL)"
+);
+
 $works = (int)$pdo->query('SELECT COUNT(*) FROM works')->fetchColumn();
-fwrite(STDOUT, "DB初期化OK works={$works}\n");
+$priceHistory = (int)$pdo->query('SELECT COUNT(*) FROM work_price_history')->fetchColumn();
+fwrite(STDOUT, "DB初期化OK works={$works} price_history={$priceHistory}\n");
