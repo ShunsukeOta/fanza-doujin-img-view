@@ -5,6 +5,8 @@ type NavKey = "saved" | "main" | "mypage";
 type Props = {
   active?: NavKey;
   onMain?: () => void;
+  onFavorites?: () => void;
+  onMyPage?: () => void;
 };
 
 function currentNav(): NavKey {
