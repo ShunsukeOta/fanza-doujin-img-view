@@ -6,11 +6,13 @@ use SwipePreview\CatalogService;
 use SwipePreview\Database;
 use SwipePreview\EventService;
 use SwipePreview\FanzaClient;
+use SwipePreview\UserLibraryService;
 
 require_once __DIR__ . '/src/Database.php';
 require_once __DIR__ . '/src/FanzaClient.php';
 require_once __DIR__ . '/src/CatalogService.php';
 require_once __DIR__ . '/src/EventService.php';
+require_once __DIR__ . '/src/UserLibraryService.php';
 
 $configPath = __DIR__ . '/config.local.php';
 $config = is_file($configPath) ? require $configPath : require __DIR__ . '/config.example.php';
@@ -24,6 +26,7 @@ $database = new Database((array)($config['db'] ?? []));
 $fanza = new FanzaClient((array)($config['dmm'] ?? []));
 $catalogService = new CatalogService($database, $fanza);
 $eventService = new EventService($database);
+$userLibraryService = new UserLibraryService($database);
 
 function json_response(array $payload, int $status = 200, array $headers = []): never
 {
