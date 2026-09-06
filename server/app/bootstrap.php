@@ -7,9 +7,12 @@ use SwipePreview\Database;
 use SwipePreview\EventService;
 use SwipePreview\FanzaClient;
 use SwipePreview\UserLibraryService;
+use SwipePreview\WorkRepository;
 
 require_once __DIR__ . '/src/Database.php';
+require_once __DIR__ . '/src/PriceParser.php';
 require_once __DIR__ . '/src/FanzaClient.php';
+require_once __DIR__ . '/src/WorkRepository.php';
 require_once __DIR__ . '/src/CatalogService.php';
 require_once __DIR__ . '/src/EventService.php';
 require_once __DIR__ . '/src/UserLibraryService.php';
@@ -24,9 +27,10 @@ date_default_timezone_set((string)($config['app']['timezone'] ?? 'Asia/Tokyo'));
 
 $database = new Database((array)($config['db'] ?? []));
 $fanza = new FanzaClient((array)($config['dmm'] ?? []));
-$catalogService = new CatalogService($database, $fanza);
+$workRepository = new WorkRepository($database, $fanza);
+$catalogService = new CatalogService($database, $fanza, $workRepository);
 $eventService = new EventService($database);
-$userLibraryService = new UserLibraryService($database);
+$userLibraryService = new UserLibraryService($database, $workRepository);
 
 function json_response(array $payload, int $status = 200, array $headers = []): never
 {
@@ -50,7 +54,6 @@ function public_error_message(Throwable $error, string $fallback): string
         $message = trim($error->getMessage());
         return $message !== '' ? $message : $fallback;
     }
-
     error_log(get_class($error) . ': ' . $error->getMessage());
     return $fallback;
 }
@@ -58,36 +61,31 @@ function public_error_message(Throwable $error, string $fallback): string
 function read_int(string $key, int $fallback, int $min, int $max): int
 {
     $raw = $_GET[$key] ?? null;
-    if ($raw === null || $raw === '' || filter_var($raw, FILTER_VALIDATE_INT) === false) {
-        return $fallback;
-    }
+    if ($raw === null || $raw === '' || filter_var($raw, FILTER_VALIDATE_INT) === false) return $fallback;
     return max($min, min($max, (int)$raw));
 }
 
 function read_float(string $key, float $fallback, float $min, float $max): float
 {
     $raw = $_GET[$key] ?? null;
-    if ($raw === null || $raw === '' || !is_numeric($raw)) {
-        return $fallback;
-    }
+    if ($raw === null || $raw === '' || !is_numeric($raw)) return $fallback;
     return max($min, min($max, (float)$raw));
 }
 
 function request_filters(): array
 {
     $assetType = trim((string)($_GET['asset_type'] ?? $_GET['category'] ?? 'all'));
-    if (!in_array($assetType, ['all', 'comic', 'cg', 'game', 'voice', 'other'], true)) {
-        $assetType = 'all';
-    }
+    if (!in_array($assetType, ['all', 'comic', 'cg', 'game', 'voice', 'other'], true)) $assetType = 'all';
+    $query = mb_substr(trim((string)($_GET['q'] ?? '')), 0, 100);
     return [
-        // 初期状態は絞り込みなし。表示に必要なsample_lが1枚以上あることだけを必須にする。
         'minSamples' => read_int('min_samples', 1, 1, 100),
         'minReviews' => read_int('min_reviews', 0, 0, 100000),
         'minRating' => read_float('min_rating', 0.0, 0.0, 5.0),
         'minPrice' => read_int('min_price', 0, 0, 10000000),
         'maxPrice' => read_int('max_price', 0, 0, 10000000),
         'assetType' => $assetType,
-        'genreId' => trim((string)($_GET['genre_id'] ?? '')),
+        'genreId' => mb_substr(trim((string)($_GET['genre_id'] ?? '')), 0, 64),
+        'query' => $query,
     ];
 }
 
@@ -102,11 +100,10 @@ function uuid_v4(): string
 function anonymous_identity(): array
 {
     global $config;
-
     $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
     $profileRetentionDays = max(30, min(730, (int)($config['app']['profile_retention_days'] ?? 180)));
     $cookieOptions = [
-        'expires' => time() + 60 * 60 * 24 * $profileRetentionDays,
+        'expires' => time() + 86400 * $profileRetentionDays,
         'path' => '/',
         'secure' => $secure,
         'httponly' => true,
@@ -114,19 +111,27 @@ function anonymous_identity(): array
     ];
 
     $userId = (string)($_COOKIE['fp_uid'] ?? '');
-    if (preg_match('/^[a-f0-9-]{36}$/i', $userId) !== 1) {
-        $userId = uuid_v4();
-        setcookie('fp_uid', $userId, $cookieOptions);
-    }
+    if (preg_match('/^[a-f0-9-]{36}$/i', $userId) !== 1) $userId = uuid_v4();
+    // 継続利用中は期限を毎回延長し、発行日から固定180日で別ユーザー化しない。
+    setcookie('fp_uid', $userId, $cookieOptions);
 
     $sessionId = (string)($_COOKIE['fp_sid'] ?? '');
-    if (preg_match('/^[a-f0-9-]{36}$/i', $sessionId) !== 1) {
-        $sessionId = uuid_v4();
-    }
-    setcookie('fp_sid', $sessionId, [
-        ...$cookieOptions,
-        'expires' => time() + 60 * 60 * 8,
-    ]);
-
+    if (preg_match('/^[a-f0-9-]{36}$/i', $sessionId) !== 1) $sessionId = uuid_v4();
+    setcookie('fp_sid', $sessionId, [...$cookieOptions, 'expires' => time() + 60 * 60 * 8]);
     return [$userId, $sessionId];
+}
+
+function admin_request_authorized(): bool
+{
+    global $config;
+    $expected = trim((string)($config['app']['admin_token'] ?? ''));
+    if ($expected === '') return false;
+    $provided = trim((string)($_SERVER['HTTP_X_ADMIN_TOKEN'] ?? ''));
+    return $provided !== '' && hash_equals($expected, $provided);
+}
+
+function enforce_json_body_limit(int $maxBytes = 65536): void
+{
+    $length = (int)($_SERVER['CONTENT_LENGTH'] ?? 0);
+    if ($length > $maxBytes) json_response(['error' => 'リクエストが大きすぎます。'], 413, ['Cache-Control' => 'no-store']);
 }
