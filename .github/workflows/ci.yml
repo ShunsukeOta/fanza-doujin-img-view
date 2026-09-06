@@ -14,6 +14,7 @@ concurrency:
 
 jobs:
   build:
+    if: ${{ github.event_name == 'workflow_dispatch' || !contains(github.event.pull_request.title, '[skip ci]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     services:
@@ -50,6 +51,14 @@ jobs:
 
       - name: 依存関係をインストール
         run: npm install --no-audit --no-fund
+
+      - name: 依存lockfileを成果物として保存
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-lock
+          path: package-lock.json
+          if-no-files-found: error
+          retention-days: 1
 
       - name: TypeScript・PHP・ロジックを検証
         run: |
@@ -125,6 +134,7 @@ jobs:
           grep -F 'event_id' server/app/schema.sql >/dev/null
           grep -F 'recordBatch' server/app/src/EventService.php >/dev/null
           grep -F 'saved_at' server/app/schema.sql >/dev/null
+          grep -F 'priceDropValue' server/app/src/UserLibraryService.php >/dev/null
           grep -F 'refresh-catalog.php' .github/workflows/sync-shin.yml >/dev/null
           grep -F 'retention.php' .github/workflows/sync-shin.yml >/dev/null
           grep -F 'admin_request_authorized' server/public/api/debug.php >/dev/null
@@ -133,6 +143,7 @@ jobs:
           grep -F 'cancel-in-progress: false' .github/workflows/deploy-shin.yml >/dev/null
           grep -F 'navigateToSubpage' src/navigationState.ts >/dev/null
           grep -F 'readerPage' src/navigationState.ts >/dev/null
+          grep -F 'touch-action: pinch-zoom' styles/accessibility.css >/dev/null
           if grep -F 'Math.round(track.scrollLeft / track.clientWidth)' -n src/analytics.ts components/WorkCard.tsx; then
             echo '旧RTLページ計測が残っています。' >&2
             exit 1
