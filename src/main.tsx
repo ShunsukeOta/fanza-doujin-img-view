@@ -13,6 +13,7 @@ import "@/styles/page-scroll.css";
 import "@/styles/reader.css";
 import "@/styles/saved-enhancements.css";
 import "@/styles/pwa-layout.css";
+import "@/styles/accessibility.css";
 import { startAnalytics } from "@/src/analytics";
 import { installMainResumeLifecycle, prepareMainResumeFallback } from "@/src/navigationState";
 
