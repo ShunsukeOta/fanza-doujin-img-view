@@ -17,20 +17,83 @@ import { startAnalytics } from "@/src/analytics";
 import { installMainResumeLifecycle, prepareMainResumeFallback } from "@/src/navigationState";
 
 const ASSET_TYPES = new Set<AssetType>(["all", "comic", "cg", "game", "voice", "other"]);
-function boundedInt(params: URLSearchParams,key:string,fallback:number,min:number,max:number){const parsed=Number.parseInt(params.get(key)??"",10);return Number.isFinite(parsed)?Math.max(min,Math.min(max,parsed)):fallback;}
-function boundedFloat(params: URLSearchParams,key:string,fallback:number,min:number,max:number){const parsed=Number.parseFloat(params.get(key)??"");return Number.isFinite(parsed)?Math.max(min,Math.min(max,parsed)):fallback;}
 
-const pathname=window.location.pathname.replace(/\/+$/,"")||"/";
-if(pathname!=="/saved"&&pathname!=="/mypage"&&pathname!=="/favorites")prepareMainResumeFallback();
-const params=new URLSearchParams(window.location.search);const rawAsset=(params.get("asset_type")??params.get("category")??"all") as AssetType;
-const initialFilters:FilterValues={assetType:ASSET_TYPES.has(rawAsset)?rawAsset:"all",genreId:(params.get("genre_id")??"").slice(0,64),minSamples:boundedInt(params,"min_samples",1,1,100),minReviews:boundedInt(params,"min_reviews",0,0,100000),minRating:boundedFloat(params,"min_rating",0,0,5),minPrice:boundedInt(params,"min_price",0,0,10000000),maxPrice:boundedInt(params,"max_price",0,0,10000000),query:(params.get("q")??"").slice(0,100)};
+function boundedInt(
+  params: URLSearchParams,
+  key: string,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  const parsed = Number.parseInt(params.get(key) ?? "", 10);
+  return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback;
+}
 
-const root=document.getElementById("root");if(!root)throw new Error("#root が見つかりません。");
+function boundedFloat(
+  params: URLSearchParams,
+  key: string,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  const parsed = Number.parseFloat(params.get(key) ?? "");
+  return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback;
+}
+
+function registerServiceWorker(): void {
+  if (!("serviceWorker" in navigator)) {
+    return;
+  }
+  window.addEventListener("load", () => {
+    void navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => undefined);
+  }, { once: true });
+}
+
+const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+if (pathname !== "/saved" && pathname !== "/mypage" && pathname !== "/favorites") {
+  prepareMainResumeFallback();
+}
+
+const params = new URLSearchParams(window.location.search);
+const rawAsset = (params.get("asset_type") ?? params.get("category") ?? "all") as AssetType;
+const initialFilters: FilterValues = {
+  assetType: ASSET_TYPES.has(rawAsset) ? rawAsset : "all",
+  genreId: (params.get("genre_id") ?? "").slice(0, 64),
+  minSamples: boundedInt(params, "min_samples", 1, 1, 100),
+  minReviews: boundedInt(params, "min_reviews", 0, 0, 100_000),
+  minRating: boundedFloat(params, "min_rating", 0, 0, 5),
+  minPrice: boundedInt(params, "min_price", 0, 0, 10_000_000),
+  maxPrice: boundedInt(params, "max_price", 0, 0, 10_000_000),
+  query: (params.get("q") ?? "").slice(0, 100),
+};
+
+const root = document.getElementById("root");
+if (!root) {
+  throw new Error("#root が見つかりません。");
+}
+
+registerServiceWorker();
 startAnalytics();
-if(pathname==="/favorites")window.location.replace("/saved");
-else{
-  let app:ReactNode;
-  if(pathname==="/saved")app=<SavedPage />;else if(pathname==="/mypage")app=<MyPage />;else app=<><SwipePreviewApp initialFilters={initialFilters} initialCid={params.get("cid")??""} /><FocusModeToggle /></>;
+
+if (pathname === "/favorites") {
+  window.location.replace("/saved");
+} else {
+  let app: ReactNode;
+  if (pathname === "/saved") {
+    app = <SavedPage />;
+  } else if (pathname === "/mypage") {
+    app = <MyPage />;
+  } else {
+    app = (
+      <>
+        <SwipePreviewApp initialFilters={initialFilters} initialCid={params.get("cid") ?? ""} />
+        <FocusModeToggle />
+      </>
+    );
+  }
+
   createRoot(root).render(<StrictMode>{app}</StrictMode>);
-  if(pathname!=="/saved"&&pathname!=="/mypage")installMainResumeLifecycle();
+  if (pathname !== "/saved" && pathname !== "/mypage") {
+    installMainResumeLifecycle();
+  }
 }
