@@ -36,15 +36,35 @@
   grid-template-columns: 1fr;
 }
 
-.favorite-actions .favorite-sample {
+.favorite-actions--buy {
+  grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr);
+}
+
+.favorite-actions .favorite-sample,
+.favorite-actions .favorite-buy {
   width: 100%;
   min-height: 38px;
-  border: 0;
-  background: #f2f2f2;
-  color: #090909;
   font-size: 11px;
   font-weight: 850;
   cursor: pointer;
+}
+
+.favorite-actions .favorite-sample {
+  border: 1px solid #303030;
+  background: #181818;
+  color: #d8d8d8;
+}
+
+.favorite-actions .favorite-buy {
+  padding: 0 8px;
+  border: 0;
+  background: #f2f2f2;
+  color: #090909;
+  text-decoration: none;
+}
+
+.favorite-card.is-unavailable {
+  opacity: .72;
 }
 
 @media (max-width: 380px) {
@@ -53,5 +73,9 @@
     right: 7px;
     width: 36px;
     height: 36px;
+  }
+
+  .favorite-actions--buy {
+    grid-template-columns: 1fr;
   }
 }
