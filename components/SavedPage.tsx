@@ -9,7 +9,12 @@ import { openWorkInMain } from "@/src/navigationState";
 import { formatPrice } from "@/src/price";
 import { updateReaction } from "@/src/reactions";
 
-type SavedItem = FeedItem & { savedAt?: string };
+type SavedItem = FeedItem & {
+  savedAt?: string;
+  savedPriceValue?: number | null;
+  priceDropValue?: number | null;
+};
+
 type SavedResponse = {
   ok: boolean;
   items: SavedItem[];
@@ -125,6 +130,9 @@ export function SavedPage() {
             <div className="favorite-grid">
               {items.map((item) => {
                 const canBuy = item.available !== false && validAffiliateUrl(item.affiliateUrl);
+                const priceDrop = typeof item.priceDropValue === "number" && item.priceDropValue > 0
+                  ? item.priceDropValue
+                  : null;
                 return (
                   <article className={`favorite-card${item.available === false ? " is-unavailable" : ""}`} key={item.cid}>
                     <div className="favorite-thumb">
@@ -138,6 +146,7 @@ export function SavedPage() {
                         <span>★ {item.rating.toFixed(1)} <small>({item.reviews}件)</small></span>
                         {item.price ? <span>{formatPrice(item.price, item.priceValue ?? null)}</span> : null}
                       </div>
+                      {priceDrop !== null ? <p className="favorite-price-drop">保存時より {formatPrice("", priceDrop)} 値下げ</p> : null}
                       {item.genres.length > 0 ? <p className="favorite-genres">{item.genres.slice(0, 4).join(" / ")}</p> : null}
                       <div className={`favorite-actions${canBuy ? " favorite-actions--buy" : " favorite-actions--sample"}`}>
                         <button className="favorite-sample" type="button" onClick={() => openWorkInMain(item.cid)}>サンプル</button>
