@@ -1,146 +1,115 @@
+export type AnalyticsEventType =
+  | "session_start"
+  | "work_impression"
+  | "first_sample_loaded"
+  | "sample_page_view"
+  | "sample_complete"
+  | "cta_view"
+  | "view_end"
+  | "like_toggle"
+  | "save_toggle"
+  | "share"
+  | "affiliate_click";
+
 export type AnalyticsEventPayload = {
-  eventType: "impression" | "view_end" | "sample_page" | "like_toggle" | "save_toggle" | "share" | "affiliate_click";
-  cid: string;
+  eventType: AnalyticsEventType;
+  cid?: string;
+  viewId?: string;
+  feedId?: string | null;
+  rank?: number;
   pageIndex?: number;
   maxPage?: number;
   readRatio?: number;
   dwellMs?: number;
-  metadata?: {
-    active?: boolean;
-  };
+  placement?: string;
+  landingPath?: string;
+  sourceDomain?: string;
+  campaign?: string;
+  metadata?: Record<string, string | number | boolean | null>;
 };
 
-type ActiveView = {
-  cid: string;
-  startedAt: number;
-  maxPage: number;
-  totalPages: number;
-};
-
-const observed = new WeakSet<Element>();
-const pageByTrack = new WeakMap<Element, number>();
-let activeView: ActiveView | null = null;
-let observer: IntersectionObserver | null = null;
-let mutationObserver: MutationObserver | null = null;
+type QueuedEvent = AnalyticsEventPayload & { eventId: string; eventVersion: 3 };
+const queue: QueuedEvent[] = [];
+let timer: number | null = null;
 let started = false;
+let flushing = false;
 
-export function trackEvent(payload: AnalyticsEventPayload) {
-  const body = JSON.stringify(payload);
-  if (document.visibilityState === "hidden" && navigator.sendBeacon) {
-    navigator.sendBeacon("/api/events", new Blob([body], { type: "application/json" }));
+export function createEventId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (char) => {
+    const value = Math.floor(Math.random() * 16);
+    return (char === "x" ? value : (value & 0x3) | 0x8).toString(16);
+  });
+}
+
+export function createViewId(): string { return createEventId(); }
+
+export function trackEvent(payload: AnalyticsEventPayload, flushSoon = false): void {
+  queue.push({ ...payload, eventId: createEventId(), eventVersion: 3 });
+  if (queue.length >= 10 || flushSoon) {
+    void flushAnalytics();
     return;
   }
-  void fetch("/api/events", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body,
-    keepalive: true,
-    credentials: "same-origin",
-  }).catch(() => undefined);
+  scheduleFlush();
 }
 
-function finishActiveView() {
-  if (!activeView) return;
-  const dwellMs = Math.max(0, Math.round(performance.now() - activeView.startedAt));
-  const totalPages = Math.max(1, activeView.totalPages);
-  trackEvent({
-    eventType: "view_end",
-    cid: activeView.cid,
-    dwellMs,
-    maxPage: activeView.maxPage,
-    readRatio: Math.min(1, (activeView.maxPage + 1) / totalPages),
-  });
-  activeView = null;
+function scheduleFlush(): void {
+  if (timer !== null) return;
+  timer = window.setTimeout(() => {
+    timer = null;
+    void flushAnalytics();
+  }, 5_000);
 }
 
-function activate(item: HTMLElement) {
-  const cid = item.dataset.cid ?? "";
-  if (!cid || activeView?.cid === cid) return;
-  finishActiveView();
-  const totalPages = item.querySelectorAll(".preview-page").length || 1;
-  activeView = { cid, startedAt: performance.now(), maxPage: 0, totalPages };
-  trackEvent({ eventType: "impression", cid });
-}
-
-function resumeVisibleView() {
-  if (document.visibilityState === "hidden") return;
-  const feed = document.querySelector<HTMLElement>(".feed");
-  if (!feed) return;
-
-  const feedRect = feed.getBoundingClientRect();
-  let bestItem: HTMLElement | null = null;
-  let bestRatio = 0;
-  feed.querySelectorAll<HTMLElement>(".feed-item").forEach((item) => {
-    const rect = item.getBoundingClientRect();
-    if (rect.height <= 0) return;
-    const visibleTop = Math.max(feedRect.top, rect.top);
-    const visibleBottom = Math.min(feedRect.bottom, rect.bottom);
-    const ratio = Math.max(0, visibleBottom - visibleTop) / rect.height;
-    if (ratio > bestRatio) {
-      bestRatio = ratio;
-      bestItem = item;
-    }
-  });
-
-  if (bestItem && bestRatio >= 0.6) activate(bestItem);
-}
-
-function observeItems() {
-  const feed = document.querySelector<HTMLElement>(".feed");
-  if (!feed) return;
-  if (!observer) {
-    observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((entry) => entry.isIntersecting && entry.intersectionRatio >= 0.6)
-          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-        if (visible?.target instanceof HTMLElement) activate(visible.target);
-      },
-      { root: feed, threshold: [0.6, 0.75, 0.9] },
-    );
+export async function flushAnalytics(useBeacon = false): Promise<void> {
+  if (flushing || queue.length === 0) return;
+  const events = queue.splice(0, 25);
+  const body = JSON.stringify({ events });
+  if (useBeacon && navigator.sendBeacon) {
+    const accepted = navigator.sendBeacon("/api/events", new Blob([body], { type: "application/json" }));
+    if (!accepted) queue.unshift(...events);
+    return;
   }
-  feed.querySelectorAll<HTMLElement>(".feed-item").forEach((item) => {
-    if (observed.has(item)) return;
-    observed.add(item);
-    observer?.observe(item);
-  });
+  flushing = true;
+  try {
+    const response = await fetch("/api/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body,
+      keepalive: true,
+      credentials: "same-origin",
+    });
+    if (!response.ok && response.status >= 500) queue.unshift(...events);
+  } catch {
+    queue.unshift(...events);
+  } finally {
+    flushing = false;
+    if (queue.length > 0) scheduleFlush();
+  }
 }
 
-function handleScroll(event: Event) {
-  const track = event.target;
-  if (!(track instanceof HTMLElement) || !track.classList.contains("preview-track") || track.clientWidth <= 0) return;
-  const item = track.closest<HTMLElement>(".feed-item");
-  const cid = item?.dataset.cid ?? "";
-  if (!cid) return;
-  const pages = item?.querySelectorAll(".preview-page").length ?? 1;
-  const page = Math.max(0, Math.min(pages - 1, Math.round(track.scrollLeft / track.clientWidth)));
-  if (pageByTrack.get(track) === page) return;
-  pageByTrack.set(track, page);
-  if (activeView?.cid === cid) activeView.maxPage = Math.max(activeView.maxPage, page);
-  trackEvent({ eventType: "sample_page", cid, pageIndex: page, maxPage: page, readRatio: Math.min(1, (page + 1) / Math.max(1, pages)) });
+function attribution(): Pick<AnalyticsEventPayload, "landingPath" | "sourceDomain" | "campaign"> {
+  let sourceDomain = "";
+  try { sourceDomain = document.referrer ? new URL(document.referrer).hostname : ""; } catch { sourceDomain = ""; }
+  const params = new URLSearchParams(window.location.search);
+  return {
+    landingPath: `${window.location.pathname}${window.location.search}`.slice(0, 512),
+    sourceDomain: sourceDomain.slice(0, 255),
+    campaign: (params.get("utm_campaign") ?? "").slice(0, 128),
+  };
 }
 
-export function startAnalytics() {
+export function startAnalytics(): void {
   if (typeof window === "undefined" || started) return;
   started = true;
-
-  const start = () => {
-    observeItems();
-    mutationObserver = new MutationObserver(observeItems);
-    mutationObserver.observe(document.body, { childList: true, subtree: true });
-    document.addEventListener("scroll", handleScroll, true);
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "hidden") {
-        finishActiveView();
-      } else {
-        window.requestAnimationFrame(resumeVisibleView);
-      }
-    });
-    window.addEventListener("pagehide", finishActiveView);
-    window.addEventListener("pageshow", () => window.requestAnimationFrame(resumeVisibleView));
-    window.requestAnimationFrame(resumeVisibleView);
-  };
-
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true });
-  else start();
+  let sent = false;
+  try {
+    sent = sessionStorage.getItem("swipe-preview:session-start-v3") === "1";
+    if (!sent) sessionStorage.setItem("swipe-preview:session-start-v3", "1");
+  } catch { /* sessionStorageが使えなくても1回送る */ }
+  if (!sent) trackEvent({ eventType: "session_start", ...attribution() }, true);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") void flushAnalytics(true);
+  });
+  window.addEventListener("pagehide", () => { void flushAnalytics(true); });
 }

@@ -1,6 +1,6 @@
 {
   "name": "fanza-doujin-img-view",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,8 @@
     "build": "vite build",
     "build:shin": "npm run build && node scripts/build-shin.mjs",
     "typecheck": "tsc --noEmit",
-    "check:php": "find server -name '*.php' -print0 | xargs -0 -n1 php -l"
+    "check:php": "find server -name '*.php' -print0 | xargs -0 -n1 php -l",
+    "test:logic": "rm -rf .tmp-test && tsc src/readerMath.ts src/price.ts --target ES2022 --module NodeNext --moduleResolution NodeNext --outDir .tmp-test --skipLibCheck && node scripts/test-logic.mjs && rm -rf .tmp-test"
   },
   "engines": {
     "node": ">=20.19.0"

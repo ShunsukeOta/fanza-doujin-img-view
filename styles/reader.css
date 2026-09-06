@@ -3,16 +3,11 @@ html {
   text-size-adjust: 100%;
 }
 
-/*
- * Shorts型操作: ブラウザの慣性スクロールへ渡さず、WorkCardで縦横を一度だけ軸ロックする。
- * 縦は1ジェスチャー最大1作品、横は最大1ページだけ移動する。
- */
 .feed {
-  overflow-y: hidden !important;
-  overflow-x: hidden !important;
+  overflow: hidden !important;
   scroll-snap-type: none !important;
   overscroll-behavior: none !important;
-  touch-action: none !important;
+  touch-action: pinch-zoom !important;
 }
 
 .feed-item {
@@ -20,38 +15,34 @@ html {
   scroll-snap-stop: normal !important;
 }
 
+.feed-item-virtual {
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  background: #080808;
+}
+
 .manga-reader-track {
-  overflow-x: hidden;
-  overflow-y: hidden;
+  overflow: hidden;
   scroll-snap-type: none;
   scroll-behavior: auto;
-  touch-action: none;
+  touch-action: pinch-zoom;
   overscroll-behavior: none;
   user-select: none;
   -webkit-user-select: none;
   cursor: grab;
 }
 
-.manga-reader-track:active {
-  cursor: grabbing;
-}
-
-.preview-page-placeholder {
-  width: 100%;
-  height: 100%;
-  background: #0b0b0b;
-}
+.manga-reader-track:active { cursor: grabbing; }
+.preview-page-placeholder { width: 100%; height: 100%; background: #0b0b0b; }
 
 .preview-cta-page {
   z-index: 2;
-  padding-left: 24px;
-  padding-right: 24px;
+  padding-inline: 24px;
 }
 
 .preview-cta-page::before {
-  background:
-    radial-gradient(circle at 50% 38%, rgba(255, 255, 255, .075), transparent 34%),
-    linear-gradient(180deg, #121212, #080808);
+  background: radial-gradient(circle at 50% 38%, rgba(255,255,255,.075), transparent 34%), linear-gradient(180deg,#121212,#080808);
 }
 
 .reader-cta {
@@ -59,54 +50,56 @@ html {
   z-index: 3;
   width: min(340px, 100%);
   padding: 24px 20px;
-  border: 1px solid rgba(255, 255, 255, .12);
+  border: 1px solid rgba(255,255,255,.12);
   border-radius: 20px;
-  background: rgba(12, 12, 12, .9);
-  box-shadow: 0 18px 50px rgba(0, 0, 0, .34);
+  background: rgba(12,12,12,.92);
+  box-shadow: 0 18px 50px rgba(0,0,0,.34);
   text-align: center;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
 }
 
-.reader-cta-kicker {
-  margin: 0 0 10px;
-  color: #8f8f8f;
-  font-size: 11px;
-  font-weight: 750;
-  letter-spacing: .08em;
+.reader-cta-kicker { margin: 0 0 10px; color: #8f8f8f; font-size: 11px; font-weight: 750; letter-spacing: .08em; }
+.reader-cta-remaining { margin: 0; color: #f4f4f4; font-size: 15px; font-weight: 720; line-height: 1.5; }
+.reader-cta-remaining strong { font-size: 20px; font-variant-numeric: tabular-nums; }
+.reader-cta-remaining.is-loading { color: #aaa; font-size: 12px; }
+.reader-cta-price { margin: 12px 0 0; color: #fff; font-size: 22px; font-weight: 850; font-variant-numeric: tabular-nums; }
+.reader-cta-unavailable { margin: 14px 0 0; color: #8d8d8d; font-size: 12px; }
+
+.reader-cta-link {
+  min-height: 48px;
+  margin-top: 16px;
+  padding: 0 18px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  background: linear-gradient(135deg,#ff315f,#f01852);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+  box-shadow: 0 10px 28px rgba(240,24,82,.24);
 }
 
-.reader-cta-remaining {
-  margin: 0;
-  color: #f4f4f4;
-  font-size: 15px;
-  font-weight: 720;
-  line-height: 1.5;
-}
+.reader-cta-link svg { width: 14px; height: 14px; }
 
-.reader-cta-remaining strong {
-  font-size: 20px;
-  font-variant-numeric: tabular-nums;
-}
-
-.reader-cta-remaining.is-loading {
-  color: #aaa;
+.reader-image-retry {
+  position: absolute;
+  z-index: 4;
+  inset: 50% auto auto 50%;
+  transform: translate(-50%,-50%);
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid #ffffff30;
+  border-radius: 999px;
+  background: #101010e8;
+  color: #fff;
   font-size: 12px;
 }
 
-.reader-cta-price {
-  margin: 12px 0 0;
-  color: #fff;
-  font-size: 22px;
-  font-weight: 850;
-  font-variant-numeric: tabular-nums;
-}
-
-/* フィルターの右隣に独立した集中モードボタンを置く。 */
-.header-actions {
-  margin-right: 47px;
-}
-
+.header-actions { margin-right: 47px; }
 .focus-mode-toggle {
   position: fixed;
   z-index: 56;
@@ -125,259 +118,47 @@ html {
   -webkit-backdrop-filter: blur(12px);
   cursor: pointer;
 }
+.focus-mode-toggle svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.focus-mode-toggle.is-active { background: #f4f4f4; color: #080808; border-color: #f4f4f4; }
 
-.focus-mode-toggle svg {
-  width: 19px;
-  height: 19px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
+.item-gradient,.item-info,.action-rail,.swipe-hint,.feed-count,.feed-loading-more,.feed-load-error,.toast { transition: opacity 160ms ease, visibility 160ms ease; }
+.reader-focus .feed-count,.reader-focus .item-gradient,.reader-focus .item-info,.reader-focus .action-rail,.reader-focus .swipe-hint,.reader-focus .feed-loading-more,.reader-focus .feed-load-error,.reader-focus .toast { opacity: 0; visibility: hidden; pointer-events: none !important; }
+.reader-focus .item-info *,.reader-focus .action-rail * { pointer-events: none !important; }
+/* 読了ページの購入導線は集中モードでも消さない。 */
+.reader-focus .reader-cta,.reader-focus .reader-cta-link { opacity: 1; visibility: visible; pointer-events: auto; }
 
-.focus-mode-toggle.is-active {
-  background: #f4f4f4;
-  color: #080808;
-  border-color: #f4f4f4;
-}
+.icon-btn { font-size: 12px; }
+.feed-count { font-size: 11px; }
+.page-counter { min-height: 28px; padding: 0 11px; font-size: 12px; font-weight: 700; }
+.swipe-hint { font-size: 11px; }
+.item-title { font-size: 12px; line-height: 1.45; }
+.item-stats { font-size: 10px; }
+.stat-chip { height: 24px; padding: 0 8px; }
+.open-link { min-height: 40px; padding: 0 15px; font-size: 11px; }
+.open-link svg { width: 13px; height: 13px; }
+.action-label,.action-count { font-size: 9px; }
+.subpage-header h1 { font-size: 25px; }
+.subpage-refresh { min-width: 66px; height: 36px; font-size: 11px; }
+.subpage-summary span { font-size: 12px; }
+.subpage-summary strong { font-size: inherit; font-weight: 800; }
+.subpage-state strong { font-size: 16px; }
+.subpage-state p,.subpage-state button { font-size: 12px; }
+.favorite-body h2 { min-height: 0; font-size: 13px; line-height: 1.5; }
+.favorite-type { font-size: 9px; }
+.favorite-meta { font-size: 11px; }
+.favorite-genres { font-size: 10px; }
+.favorite-actions button,.favorite-actions a { min-height: 36px; font-size: 11px; }
+.profile-copy strong { font-size: 14px; }
+.profile-copy span { font-size: 11px; }
+.profile-stats--two { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.profile-stats--two > div,.profile-stats--two > button { min-width: 0; padding: 14px 11px; border: 1px solid #202020; border-radius: 14px; display: grid; gap: 6px; background: #111; color: #f2f2f2; text-align: center; }
+.profile-stats--two > button { cursor: pointer; }
+.profile-stats--two span { display: flex; align-items: center; justify-content: center; gap: 5px; color: #8d8d8d; font-size: 11px; }
+.profile-stats--two span svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.profile-stats--two strong { font-size: 20px; }
+.profile-section-head h2 { font-size: 14px; }
+.profile-tags span { padding: 6px 9px; font-size: 11px; }
+.profile-empty { font-size: 11px; line-height: 1.7; }
+.profile-date { margin: 0; color: #e4e4e4; font-size: 14px; font-weight: 700; }
 
-/*
- * 集中モードでは画像とページカウンター、集中モード解除ボタン、グローバルナビだけを残す。
- * 半透明に残すとstat-chip等が「残骸」に見えるため、補助UIは完全に消す。
- */
-.item-gradient,
-.item-info,
-.action-rail,
-.swipe-hint,
-.feed-count,
-.feed-loading-more,
-.toast {
-  transition: opacity 160ms ease, visibility 160ms ease;
-}
-
-.reader-focus .feed-count,
-.reader-focus .item-gradient,
-.reader-focus .item-info,
-.reader-focus .action-rail,
-.reader-focus .swipe-hint,
-.reader-focus .feed-loading-more,
-.reader-focus .toast {
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none !important;
-}
-
-.reader-focus .item-info *,
-.reader-focus .action-rail * {
-  pointer-events: none !important;
-}
-
-/* 公開UIの文字密度をさらに一段コンパクトにする。 */
-.icon-btn {
-  font-size: 12px;
-}
-
-.feed-count {
-  font-size: 11px;
-}
-
-.page-counter {
-  min-height: 28px;
-  padding: 0 11px;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.swipe-hint {
-  font-size: 11px;
-}
-
-.item-title {
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.item-stats {
-  font-size: 10px;
-}
-
-.stat-chip {
-  height: 24px;
-  padding: 0 8px;
-}
-
-.open-link {
-  min-height: 40px;
-  padding: 0 15px;
-  font-size: 11px;
-}
-
-.open-link svg {
-  width: 13px;
-  height: 13px;
-}
-
-.action-label {
-  font-size: 9px;
-}
-
-.action-count {
-  font-size: 9px;
-}
-
-/* 保存済み・マイページは現状の読みやすさを維持。 */
-.subpage-eyebrow {
-  font-size: 10px;
-}
-
-.subpage-header h1 {
-  font-size: 25px;
-}
-
-.subpage-description {
-  font-size: 13px;
-  line-height: 1.65;
-}
-
-.subpage-refresh {
-  min-width: 66px;
-  height: 36px;
-  font-size: 11px;
-}
-
-.subpage-summary span {
-  font-size: 12px;
-}
-
-.subpage-summary strong {
-  font-size: 27px;
-}
-
-.subpage-summary small {
-  font-size: 11px;
-}
-
-.subpage-state strong {
-  font-size: 16px;
-}
-
-.subpage-state p,
-.subpage-state button {
-  font-size: 12px;
-}
-
-.favorite-body h2 {
-  min-height: 3em;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.favorite-type {
-  font-size: 9px;
-}
-
-.favorite-meta,
-.favorite-reactions {
-  font-size: 11px;
-}
-
-.favorite-genres {
-  font-size: 10px;
-}
-
-.favorite-actions button,
-.favorite-actions a {
-  min-height: 36px;
-  font-size: 11px;
-}
-
-.profile-copy strong {
-  font-size: 14px;
-}
-
-.profile-copy span {
-  font-size: 11px;
-}
-
-.profile-stats--two {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.profile-stats--two > div,
-.profile-stats--two > button {
-  min-width: 0;
-  padding: 14px 11px;
-  border: 1px solid #202020;
-  border-radius: 14px;
-  display: grid;
-  gap: 6px;
-  background: #111;
-  color: #f2f2f2;
-  text-align: center;
-}
-
-.profile-stats--two > button {
-  cursor: pointer;
-}
-
-.profile-stats--two span {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  color: #8d8d8d;
-  font-size: 11px;
-}
-
-.profile-stats--two span svg {
-  width: 14px;
-  height: 14px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-}
-
-.profile-stats--two strong {
-  font-size: 20px;
-}
-
-.profile-section-head h2 {
-  font-size: 14px;
-}
-
-.profile-tags span {
-  padding: 6px 9px;
-  font-size: 11px;
-}
-
-.profile-empty,
-.profile-footnote {
-  font-size: 11px;
-  line-height: 1.7;
-}
-
-.profile-date {
-  margin: 0;
-  color: #e4e4e4;
-  font-size: 14px;
-  font-weight: 700;
-}
-
-@media (max-width: 380px) {
-  .header-actions {
-    margin-right: 45px;
-  }
-
-  .focus-mode-toggle {
-    right: 10px;
-  }
-
-  .item-title {
-    font-size: 12px;
-  }
-
-  .item-stats {
-    font-size: 10px;
-  }
-}
+@media(max-width:380px){.header-actions{margin-right:45px}.focus-mode-toggle{right:10px}.item-title{font-size:12px}.item-stats{font-size:10px}}

@@ -10,16 +10,8 @@ export type FloorInfo = {
   floorId: string;
 };
 
-export type Genre = {
-  id: string;
-  name: string;
-  ruby: string;
-};
-
-export type AssetTypeDefinition = {
-  key: AssetType;
-  label: string;
-};
+export type Genre = { id: string; name: string; ruby: string };
+export type AssetTypeDefinition = { key: AssetType; label: string };
 
 export type ReactionSummary = {
   cid: string;
@@ -39,39 +31,23 @@ export type FeedItem = {
   reviews: number;
   rating: number;
   genres: string[];
+  series?: string[];
+  maker?: string;
+  makerId?: string;
   price: string;
+  priceValue?: number | null;
   assetBucket: string;
   assetType: Exclude<AssetType, "all">;
   assetLabel: string;
+  available?: boolean;
+  availabilityStatus?: string;
+  feedId?: string | null;
+  rank?: number;
+  recommendationSource?: string;
   likeCount: number;
   saveCount: number;
   viewerLiked: boolean;
   viewerSaved: boolean;
-};
-
-export type WorkDebugSnapshot = {
-  item: FeedItem;
-  index: number;
-  currentPage: number;
-  loadedImages: number;
-  failedImages: number;
-  pendingImages: number;
-  liked: boolean;
-  saved: boolean;
-  likeCount: number;
-  saveCount: number;
-};
-
-export type SampleStatsRow = {
-  total: number;
-  zero: number;
-  oneToFour: number;
-  fiveToNine: number;
-  tenPlus: number;
-};
-
-export type SampleStats = Record<AssetType, SampleStatsRow> & {
-  rawBuckets: Record<string, number>;
 };
 
 export type CatalogResponse = {
@@ -81,70 +57,19 @@ export type CatalogResponse = {
   effectiveMinSamples: number;
   floor: FloorInfo;
   queryError: string;
-  offset: number;
-  nextOffset: number | null;
+  feedId: string | null;
+  cursor: number;
+  nextCursor: number | null;
   hasMore: boolean;
   source: "database" | "fanza-api";
-};
-
-export type DiagnosticsResponse = {
-  scanned: number;
-  apiTotal: number;
-  stats: SampleStats;
-};
-
-export type DebugDatabaseCounts = {
-  works: number;
-  activeWorks: number;
-  worksWithSamples: number;
-  defaultEligibleWorks: number;
-  genres: number;
-  workGenres: number;
-  anonymousUsers: number;
-  events: number;
-  userWorkStates: number;
-  userGenreScores: number;
-};
-
-export type DebugServerResponse = {
-  ok: boolean;
-  generatedAt: string;
-  runtime: {
-    php: string;
-    sapi: string;
-  };
-  database: {
-    configured: boolean;
-    connected: boolean;
-    catalogReady: boolean;
-    driver: string | null;
-    serverVersion: string | null;
-    sizeBytes: number | null;
-    counts: DebugDatabaseCounts;
-    latest: {
-      workUpdatedAt: string | null;
-      eventAt: string | null;
-      userSeenAt: string | null;
-    };
-    assetCounts: Record<string, number>;
-    eventCounts24h: Record<string, number>;
-  };
-  dmm: {
-    configured: boolean;
-  };
-  retention: {
-    eventDays: number;
-    profileDays: number;
-    syncPages: number;
-  };
-  diagnostics: DiagnosticsResponse | null;
-  diagnosticsError: string | null;
+  recommenderVersion: string;
 };
 
 export type MetaResponse = {
   floor: FloorInfo;
   genres: Genre[];
   assetTypes: AssetTypeDefinition[];
+  recommenderVersion?: string;
 };
 
 export type FilterValues = {
@@ -155,4 +80,5 @@ export type FilterValues = {
   minRating: number;
   minPrice: number;
   maxPrice: number;
+  query: string;
 };
