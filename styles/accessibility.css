@@ -1,0 +1,33 @@
+/*
+ * 1本指の縦横移動はWorkCardのPointer Eventsで制御し、2本指のピンチ拡大は
+ * ブラウザ標準へ委譲する。reader.cssのtouch-action:noneを最終段で上書きする。
+ */
+.feed,
+.manga-reader-track {
+  touch-action: pinch-zoom !important;
+}
+
+.feed:focus-visible,
+.manga-reader-track:focus-visible,
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.feed-item-virtual {
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
