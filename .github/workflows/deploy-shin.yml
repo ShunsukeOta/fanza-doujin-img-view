@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: read
+  actions: read
+  pull-requests: read
 
 concurrency:
   group: shin-production-deploy
@@ -18,8 +20,28 @@ jobs:
     timeout-minutes: 25
     env:
       BASE_URL: https://wp983575.wpx.jp
+      GH_TOKEN: ${{ github.token }}
 
     steps:
+      - name: push時は成功済みPR CIを必須にする
+        if: ${{ github.event_name == 'push' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRS="$(gh api -H 'Accept: application/vnd.github+json' "/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls")"
+          PR_NUMBER="$(printf '%s' "$PRS" | jq -r '[.[] | select(.merged_at != null)] | first | .number // empty')"
+          PR_HEAD="$(printf '%s' "$PRS" | jq -r '[.[] | select(.merged_at != null)] | first | .head.sha // empty')"
+          if [ -z "$PR_NUMBER" ] || [ -z "$PR_HEAD" ]; then
+            echo "mainへの直接pushは本番デプロイしません。成功済みPR経由が必要です。" >&2
+            exit 1
+          fi
+          RUNS="$(gh api "/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?event=pull_request&head_sha=${PR_HEAD}&status=completed&per_page=20")"
+          if ! printf '%s' "$RUNS" | jq -e '.workflow_runs | any(.conclusion == "success")' >/dev/null; then
+            echo "PR #${PR_NUMBER} head=${PR_HEAD} の成功済みCIが見つかりません。" >&2
+            exit 1
+          fi
+          echo "PR #${PR_NUMBER} の成功済みCIを確認しました。"
+
       - name: リポジトリを取得
         uses: actions/checkout@v4
 
