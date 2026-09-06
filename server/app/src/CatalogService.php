@@ -11,537 +11,146 @@ use Throwable;
 final class CatalogService
 {
     private const LIVE_HITS = 100;
-    private const DIAGNOSTIC_MAX_PAGES = 8;
+    private const FEED_TTL_HOURS = 12;
+    private const BLOCK_SIZE = 120;
+    private const RECOMMENDER_VERSION = 'rules-v3';
 
     public function __construct(
         private readonly Database $database,
         private readonly FanzaClient $fanza,
-    ) {
-    }
+        private readonly WorkRepository $works,
+    ) {}
 
-    public function catalog(array $filters, int $offset, int $limit, string $cidInput, string $anonymousUserId): array
+    public function catalog(array $filters, string $feedId, int $cursor, int $limit, string $cidInput, string $anonymousUserId): array
     {
-        $safeOffset = max(1, min(50000, $offset));
-        $safeLimit = max(1, min(12, $limit));
-        $filters = $this->normalizeFilters($filters);
-
-        if ($this->database->hasUsableCatalog()) {
-            $result = $this->catalogFromDatabase($filters, $safeOffset, $safeLimit, $anonymousUserId);
-        } else {
-            $result = $this->catalogFromApi($filters, $safeOffset, $safeLimit);
-        }
-
-        $queryError = '';
-        if (trim($cidInput) !== '' && $safeOffset === 1) {
-            try {
-                $cid = $this->fanza->normalizeCid($cidInput);
-                $direct = $this->findDatabaseItem($cid);
-                if ($direct === null) {
-                    $floor = $this->safeFloor();
-                    $direct = $this->stripInternalFields($this->fanza->feedItem($this->fanza->fetchItem($cid, $floor)));
-                }
-                if (($direct['sampleCount'] ?? 0) < 1) {
-                    throw new RuntimeException('指定した作品には sampleImageURL.sample_l.image がありません。');
-                }
-                $result['items'] = [
-                    $direct,
-                    ...array_values(array_filter(
-                        $result['items'],
-                        static fn(array $item): bool => ($item['cid'] ?? '') !== $cid,
-                    )),
-                ];
-            } catch (Throwable $error) {
-                $queryError = $error->getMessage();
-            }
-        }
-
-        $result['floor'] = $this->safeFloor();
-        $result['queryError'] = $queryError;
-        return $result;
+        $safeCursor=max(0,min(200000,$cursor));$safeLimit=max(1,min(12,$limit));$filters=$this->normalizeFilters($filters);
+        if($this->database->hasUsableCatalog()) return $this->catalogFromDatabase($filters,$feedId,$safeCursor,$safeLimit,$cidInput,$anonymousUserId);
+        return $this->catalogFromApi($filters,$safeCursor,$safeLimit,$cidInput);
     }
 
     public function meta(): array
     {
-        $floor = $this->safeFloor();
-        $genres = [];
-        $pdo = $this->database->connection();
-        if ($pdo) {
-            try {
-                $genres = $pdo->query('SELECT id, name, ruby FROM genres ORDER BY COALESCE(NULLIF(ruby, \'\'), name), name')->fetchAll();
-            } catch (Throwable) {
-                $genres = [];
-            }
-        }
-        if ($genres === [] && $this->fanza->configured() && ($floor['floorId'] ?? '') !== '') {
-            $genres = $this->fanza->fetchGenres((string)$floor['floorId']);
-        }
-        return [
-            'floor' => $floor,
-            'genres' => $genres,
-            'assetTypes' => FanzaClient::assetDefinitions(),
-        ];
+        $floor=$this->safeFloor();$genres=[];$pdo=$this->database->connection();
+        if($pdo){try{$genres=$pdo->query("SELECT id,name,ruby FROM genres ORDER BY COALESCE(NULLIF(ruby,''),name),name")->fetchAll();}catch(Throwable){$genres=[];}}
+        if($genres===[]&&$this->fanza->configured()&&($floor['floorId']??'')!=='')$genres=$this->fanza->fetchGenres((string)$floor['floorId']);
+        return ['floor'=>$floor,'genres'=>$genres,'assetTypes'=>FanzaClient::assetDefinitions(),'recommenderVersion'=>self::RECOMMENDER_VERSION];
     }
 
     public function diagnostics(string $genreId): array
     {
-        if ($this->database->hasUsableCatalog()) {
-            return $this->diagnosticsFromDatabase(trim($genreId));
-        }
-        return $this->diagnosticsFromApi(trim($genreId));
+        $pdo=$this->database->connection();if(!$pdo)throw new RuntimeException('DBが利用できません。');
+        $where=['w.is_active=1'];$params=[];
+        if($genreId!==''){$where[]='EXISTS (SELECT 1 FROM work_genres wg WHERE wg.work_cid=w.cid AND wg.genre_id=:genre)';$params[':genre']=$genreId;}
+        $sql='SELECT COUNT(*) total,SUM(sample_count=0) zero,SUM(sample_count BETWEEN 1 AND 4) one_to_four,SUM(sample_count BETWEEN 5 AND 9) five_to_nine,SUM(sample_count>=10) ten_plus FROM works w WHERE '.implode(' AND ',$where);
+        $s=$pdo->prepare($sql);$s->execute($params);$row=$s->fetch()?:[];
+        $stats=['total'=>(int)($row['total']??0),'zero'=>(int)($row['zero']??0),'oneToFour'=>(int)($row['one_to_four']??0),'fiveToNine'=>(int)($row['five_to_nine']??0),'tenPlus'=>(int)($row['ten_plus']??0)];
+        return ['scanned'=>$stats['total'],'apiTotal'=>$stats['total'],'stats'=>['all'=>$stats,'comic'=>$stats,'cg'=>$stats,'game'=>$stats,'voice'=>$stats,'other'=>$stats,'rawBuckets'=>[]]];
     }
 
-    private function catalogFromDatabase(array $filters, int $offset, int $limit, string $anonymousUserId): array
+    private function catalogFromDatabase(array $filters,string $requestedFeedId,int $cursor,int $limit,string $cidInput,string $userId): array
     {
-        $pdo = $this->database->connection();
-        if (!$pdo) {
-            throw new RuntimeException('データベースへ接続できません。');
-        }
-
-        [$where, $params] = $this->databaseWhere($filters);
-        $countSql = 'SELECT COUNT(*) FROM works w WHERE ' . implode(' AND ', $where);
-        $countStmt = $pdo->prepare($countSql);
-        $countStmt->execute($params);
-        $apiTotal = (int)$countStmt->fetchColumn();
-
-        $candidateTarget = min(1500, max(600, $offset + $limit + 250));
-        $popularLimit = (int)ceil($candidateTarget * 0.50);
-        $recentLimit = (int)ceil($candidateTarget * 0.30);
-        $exploreLimit = max(1, $candidateTarget - $popularLimit - $recentLimit);
-        $select = 'SELECT w.cid, w.title, w.affiliate_url, w.sample_images_json, w.sample_count, '
-            . 'w.review_count, w.rating, w.price, w.price_value, w.asset_bucket, w.asset_type, w.release_date, w.updated_at '
-            . 'FROM works w WHERE ' . implode(' AND ', $where);
-        $worksByCid = [];
-        $pools = [
-            [$select . ' ORDER BY w.review_count DESC, w.rating DESC LIMIT ' . $popularLimit, $params],
-            [$select . ' ORDER BY COALESCE(w.release_date, w.updated_at) DESC LIMIT ' . $recentLimit, $params],
-            [$select . ' ORDER BY CRC32(CONCAT(w.cid, :candidate_seed)) ASC LIMIT ' . $exploreLimit, [...$params, ':candidate_seed' => gmdate('Y-m-d') . '|' . $anonymousUserId]],
-        ];
-        foreach ($pools as [$sql, $poolParams]) {
-            $stmt = $pdo->prepare($sql);
-            $stmt->execute($poolParams);
-            foreach ($stmt->fetchAll() as $work) {
-                $worksByCid[(string)$work['cid']] = $work;
+        $pdo=$this->requirePdo();$this->ensureUser($pdo,$userId);$filterJson=json_encode($filters,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);$filterHash=hash('sha256',(string)$filterJson);
+        $session=$this->loadSession($pdo,$requestedFeedId,$userId,$filterHash);
+        $queryError='';
+        if(!$session){
+            $pdo->prepare('DELETE FROM feed_sessions WHERE expires_at<NOW() LIMIT 500')->execute();
+            $feedId=$this->uuid();
+            [$where,$params]=$this->databaseWhere($filters);
+            $count=$pdo->prepare('SELECT COUNT(*) FROM works w WHERE '.implode(' AND ',$where));$count->execute($params);$total=(int)$count->fetchColumn();
+            $pivot=(int)sprintf('%u',crc32($userId.'|'.$feedId.'|'.date('Y-m-d')));
+            $insert=$pdo->prepare('INSERT INTO feed_sessions(id,anonymous_user_id,filter_hash,filter_json,total_count,generated_count,recommender_version,random_pivot,expires_at) VALUES (?,?,?,?,?,0,?,?,DATE_ADD(NOW(),INTERVAL '.self::FEED_TTL_HOURS.' HOUR))');
+            $insert->execute([$feedId,$userId,$filterHash,$filterJson,$total,self::RECOMMENDER_VERSION,$pivot]);
+            $session=['id'=>$feedId,'total_count'=>$total,'generated_count'=>0,'random_pivot'=>$pivot];
+            if(trim($cidInput)!==''){
+                try{
+                    $cid=$this->fanza->normalizeCid($cidInput);$direct=$this->works->feedItemByCid($cid)??$this->works->fetchAndUpsert($cid);
+                    if(($direct['sampleCount']??0)<1)throw new RuntimeException('指定した作品に表示可能なサンプルがありません。');
+                    $this->insertFeedRows($pdo,$feedId,0,[['cid'=>$cid,'source'=>'direct','score'=>999.0]]);
+                    $session['generated_count']=1;$session['total_count']=max(1,$total+1);
+                    $pdo->prepare('UPDATE feed_sessions SET generated_count=1,total_count=? WHERE id=?')->execute([$session['total_count'],$feedId]);
+                }catch(Throwable $e){$queryError=$e->getMessage();}
             }
-        }
-        $works = array_values($worksByCid);
-        if ($works === []) {
-            return [
-                'items' => [],
-                'scanned' => 0,
-                'apiTotal' => $apiTotal,
-                'effectiveMinSamples' => max(1, (int)$filters['minSamples']),
-                'offset' => $offset,
-                'nextOffset' => null,
-                'hasMore' => false,
-                'source' => 'database',
-            ];
+        }else{$feedId=(string)$session['id'];}
+
+        $needed=$cursor+$limit;
+        for($guard=0;$guard<4&&(int)$session['generated_count']<$needed&&((int)$session['generated_count']<(int)$session['total_count']);$guard++){
+            $added=$this->appendFeedBlock($pdo,$session,$filters,$userId);
+            if($added===0){$session['total_count']=(int)$session['generated_count'];$pdo->prepare('UPDATE feed_sessions SET total_count=? WHERE id=?')->execute([$session['total_count'],$feedId]);break;}
+            $session['generated_count']=(int)$session['generated_count']+$added;
         }
 
-        $cids = array_column($works, 'cid');
-        $genreMap = $this->loadWorkGenres($pdo, $cids);
-        $userScores = $this->loadUserGenreScores($pdo, $anonymousUserId);
-        $seen = $this->loadRecentlySeen($pdo, $anonymousUserId);
-        $daySalt = gmdate('Y-m-d');
-
-        $ranked = [];
-        foreach ($works as $work) {
-            $cid = (string)$work['cid'];
-            $genreRows = $genreMap[$cid] ?? [];
-            $genreAffinity = 0.0;
-            foreach ($genreRows as $genre) {
-                $genreAffinity += (float)($userScores[$genre['id']] ?? 0.0);
-            }
-            if ($genreRows !== []) {
-                $genreAffinity /= sqrt((float)count($genreRows));
-            }
-
-            $rating = (float)$work['rating'];
-            $reviews = (int)$work['review_count'];
-            $ratingScore = max(0.0, min(2.0, ($rating / 5.0) * 2.0));
-            $popularityScore = min(2.8, log10((float)$reviews + 1.0) * 0.9);
-            $freshnessScore = $this->freshnessScore((string)($work['release_date'] ?: $work['updated_at']));
-            $exploreScore = $this->stableRandom($anonymousUserId . '|' . $cid . '|' . $daySalt) * 1.25;
-            $seenPenalty = isset($seen[$cid]) ? -3.5 : 0.0;
-            $score = $genreAffinity * 0.78 + $ratingScore + $popularityScore + $freshnessScore + $exploreScore + $seenPenalty;
-
-            $ranked[] = [
-                'score' => $score,
-                'item' => $this->databaseRowToFeedItem($work, $genreRows),
-            ];
-        }
-
-        usort($ranked, static fn(array $a, array $b): int => $b['score'] <=> $a['score']);
-        $start = max(0, $offset - 1);
-        $slice = array_slice($ranked, $start, $limit);
-        $items = array_map(static fn(array $row): array => $row['item'], $slice);
-        $next = $start + count($items) + 1;
-        $hasMore = $next <= min($apiTotal, count($ranked));
-
-        return [
-            'items' => $items,
-            'scanned' => count($works),
-            'apiTotal' => $apiTotal,
-            'effectiveMinSamples' => max(1, (int)$filters['minSamples']),
-            'offset' => $offset,
-            'nextOffset' => $hasMore ? $next : null,
-            'hasMore' => $hasMore,
-            'source' => 'database',
-        ];
+        $stmt=$pdo->prepare('SELECT position,work_cid,source,score FROM feed_items WHERE feed_id=? AND position>? ORDER BY position ASC LIMIT '.$limit);
+        $stmt->execute([$feedId,$cursor]);$feedRows=$stmt->fetchAll();$cids=array_map(static fn(array $r):string=>(string)$r['work_cid'],$feedRows);$hydrated=$this->works->feedItemsByCids($cids);
+        $items=[];foreach($feedRows as $r){$cid=(string)$r['work_cid'];if(!isset($hydrated[$cid]))continue;$item=$hydrated[$cid];$item['feedId']=$feedId;$item['rank']=(int)$r['position'];$item['recommendationSource']=(string)$r['source'];$items[]=$item;}
+        $next=$cursor+count($feedRows);$hasMore=$next<(int)$session['total_count'];
+        if($hasMore&&(int)$session['generated_count']<=$next){$added=$this->appendFeedBlock($pdo,$session,$filters,$userId);$session['generated_count']+=(int)$added;if($added===0){$session['total_count']=$session['generated_count'];$hasMore=$next<$session['total_count'];}}
+        return ['items'=>$items,'feedId'=>$feedId,'cursor'=>$cursor,'nextCursor'=>$hasMore?$next:null,'hasMore'=>$hasMore,'apiTotal'=>(int)$session['total_count'],'scanned'=>count($feedRows),'effectiveMinSamples'=>(int)$filters['minSamples'],'source'=>'database','queryError'=>$queryError,'recommenderVersion'=>self::RECOMMENDER_VERSION,'floor'=>$this->safeFloor()];
     }
 
-    private function catalogFromApi(array $filters, int $offset, int $limit): array
+    private function appendFeedBlock(PDO $pdo,array &$session,array $filters,string $userId): int
     {
-        $floor = $this->safeFloor(true);
-        $effectiveMinSamples = max(1, (int)$filters['minSamples']);
-        $page = $this->fanza->fetchItemPage($floor, $offset, (string)$filters['genreId'], 'review', self::LIVE_HITS);
-        $items = [];
-        $lastConsumedIndex = -1;
-        foreach ($page['items'] as $index => $rawItem) {
-            $item = $this->fanza->feedItem($rawItem);
-            if (!$this->matches($item, $filters, $effectiveMinSamples)) {
-                continue;
-            }
-            $items[] = $this->stripInternalFields($item);
-            $lastConsumedIndex = (int)$index;
-            if (count($items) >= $limit) {
-                break;
-            }
-        }
+        $feedId=(string)$session['id'];$remaining=max(0,(int)$session['total_count']-(int)$session['generated_count']);if($remaining===0)return 0;$target=min(self::BLOCK_SIZE,$remaining);
+        [$where,$params]=$this->databaseWhere($filters);$baseWhere=implode(' AND ',$where).' AND NOT EXISTS (SELECT 1 FROM feed_items fi WHERE fi.feed_id=:feed_id AND fi.work_cid=w.cid)';$common=[...$params,':feed_id'=>$feedId];
+        $candidate=[];
+        $take=function(string $sql,array $bind,string $source)use($pdo,&$candidate):void{$s=$pdo->prepare($sql);$s->execute($bind);foreach($s->fetchAll() as $r){$cid=(string)$r['cid'];if(!isset($candidate[$source][$cid]))$candidate[$source][$cid]=$r;}};
+        $select='SELECT w.cid,w.rating,w.review_count,w.release_date,w.updated_at FROM works w WHERE '.$baseWhere;
+        $take($select.' ORDER BY w.review_count DESC,w.rating DESC,w.cid ASC LIMIT '.min(240,max(60,$target)), $common,'popular');
+        $take($select.' ORDER BY w.release_date DESC,w.cid ASC LIMIT '.min(180,max(40,$target)), $common,'recent');
+        $pivot=(int)$session['random_pivot'];$exploreParams=[...$common,':pivot'=>$pivot];
+        $take($select.' AND w.random_key>=:pivot ORDER BY w.random_key ASC,w.cid ASC LIMIT '.min(180,max(40,$target)), $exploreParams,'explore');
+        if(count($candidate['explore']??[])<max(30,(int)ceil($target*.25)))$take($select.' AND w.random_key<:pivot ORDER BY w.random_key ASC,w.cid ASC LIMIT '.min(180,max(40,$target)), $exploreParams,'explore');
 
-        if ($lastConsumedIndex >= 0 && count($items) >= $limit) {
-            $candidateNextOffset = $offset + $lastConsumedIndex + 1;
-        } else {
-            $candidateNextOffset = $offset + count($page['items']);
-        }
-        $total = (int)$page['total'];
-        $hasMore = count($page['items']) > 0
-            && ($total > 0 ? $candidateNextOffset <= $total : count($page['items']) >= self::LIVE_HITS);
-
-        return [
-            'items' => $items,
-            'scanned' => count($page['items']),
-            'apiTotal' => $total,
-            'effectiveMinSamples' => $effectiveMinSamples,
-            'offset' => $offset,
-            'nextOffset' => $hasMore ? $candidateNextOffset : null,
-            'hasMore' => $hasMore,
-            'source' => 'fanza-api',
-        ];
+        $all=[];foreach($candidate as $source=>$rows)foreach($rows as $cid=>$row){if(!isset($all[$cid]))$all[$cid]=$row;$all[$cid]['sources'][]=$source;}
+        if($all===[])return 0;$genreMap=$this->loadGenreIds($pdo,array_keys($all));$scores=$this->loadUserGenreScores($pdo,$userId);$now=time();
+        $bySource=['popular'=>[],'recent'=>[],'explore'=>[]];
+        foreach($all as $cid=>$row){$aff=$this->boundedAffinity($genreMap[$cid]??[],$scores,$now);$rating=max(0,min(2,((float)$row['rating']/5)*2));$pop=min(2.8,log10((float)$row['review_count']+1)*.9);$fresh=$this->freshnessScore((string)($row['release_date']?:$row['updated_at']));$explore=$this->stableRandom($feedId.'|'.$cid)*1.25;$score=$aff+$rating+$pop+$fresh+$explore;foreach($row['sources'] as $source)$bySource[$source][]=[$cid,$score];}
+        foreach($bySource as &$rows)usort($rows,static fn($a,$b)=>$b[1]<=>$a[1]?:strcmp($a[0],$b[0]));unset($rows);
+        $selected=[];$used=[];$quotas=['popular'=>(int)ceil($target*.5),'recent'=>(int)ceil($target*.25),'explore'=>$target-(int)ceil($target*.5)-(int)ceil($target*.25)];
+        foreach(['popular','recent','explore'] as $source){$n=0;foreach($bySource[$source] as [$cid,$score]){if(isset($used[$cid]))continue;$selected[]=['cid'=>$cid,'source'=>$source,'score'=>$score];$used[$cid]=true;if(++$n>=$quotas[$source])break;}}
+        if(count($selected)<$target){$flat=[];foreach($bySource as $source=>$rows)foreach($rows as [$cid,$score])if(!isset($used[$cid]))$flat[]=[$cid,$score,$source];usort($flat,static fn($a,$b)=>$b[1]<=>$a[1]?:strcmp($a[0],$b[0]));foreach($flat as [$cid,$score,$source]){if(isset($used[$cid]))continue;$selected[]=['cid'=>$cid,'source'=>$source,'score'=>$score];$used[$cid]=true;if(count($selected)>=$target)break;}}
+        if(count($selected)<$target){$needed=$target-count($selected);$fill=$pdo->prepare($select.' ORDER BY w.random_key ASC,w.cid ASC LIMIT '.min(500,$needed*3));$fill->execute($common);foreach($fill->fetchAll() as $r){$cid=(string)$r['cid'];if(isset($used[$cid]))continue;$selected[]=['cid'=>$cid,'source'=>'explore','score'=>0.0];$used[$cid]=true;if(count($selected)>=$target)break;}}
+        if($selected===[])return 0;$start=(int)$session['generated_count'];$this->insertFeedRows($pdo,$feedId,$start,$selected);$added=count($selected);$pdo->prepare('UPDATE feed_sessions SET generated_count=generated_count+?,updated_at=NOW() WHERE id=?')->execute([$added,$feedId]);return $added;
     }
 
-    private function findDatabaseItem(string $cid): ?array
+    private function insertFeedRows(PDO $pdo,string $feedId,int $start,array $rows):void
     {
-        $pdo = $this->database->connection();
-        if (!$pdo) {
-            return null;
-        }
-        try {
-            $stmt = $pdo->prepare('SELECT w.cid, w.title, w.affiliate_url, w.sample_images_json, w.sample_count, w.review_count, w.rating, w.price, w.price_value, w.asset_bucket, w.asset_type, w.release_date, w.updated_at FROM works w WHERE w.cid = ? LIMIT 1');
-            $stmt->execute([$cid]);
-            $work = $stmt->fetch();
-            if (!is_array($work)) {
-                return null;
-            }
-            $genres = $this->loadWorkGenres($pdo, [$cid]);
-            return $this->databaseRowToFeedItem($work, $genres[$cid] ?? []);
-        } catch (Throwable) {
-            return null;
-        }
+        $stmt=$pdo->prepare('INSERT IGNORE INTO feed_items(feed_id,position,work_cid,source,score) VALUES (?,?,?,?,?)');$pos=$start;
+        foreach($rows as $r){$pos++;$stmt->execute([$feedId,$pos,(string)$r['cid'],(string)$r['source'],(float)$r['score']]);}
     }
 
-    private function databaseRowToFeedItem(array $work, array $genreRows): array
+    private function loadSession(PDO $pdo,string $feedId,string $userId,string $hash):?array
     {
-        $images = json_decode((string)$work['sample_images_json'], true);
-        if (!is_array($images)) {
-            $images = [];
-        }
-        $assetType = (string)$work['asset_type'];
-        if (!in_array($assetType, ['comic', 'cg', 'game', 'voice', 'other'], true)) {
-            $assetType = 'other';
-        }
-        return [
-            'cid' => (string)$work['cid'],
-            'title' => (string)$work['title'],
-            'affiliateUrl' => (string)$work['affiliate_url'],
-            'images' => array_values(array_filter($images, 'is_string')),
-            'sampleCount' => (int)$work['sample_count'],
-            'reviews' => (int)$work['review_count'],
-            'rating' => (float)$work['rating'],
-            'genres' => array_values(array_map(static fn(array $genre): string => (string)$genre['name'], $genreRows)),
-            'price' => (string)$work['price'],
-            'assetBucket' => (string)$work['asset_bucket'],
-            'assetType' => $assetType,
-            'assetLabel' => FanzaClient::assetLabel($assetType),
-        ];
+        if(preg_match('/^[a-f0-9-]{36}$/i',$feedId)!==1)return null;$s=$pdo->prepare('SELECT * FROM feed_sessions WHERE id=? AND anonymous_user_id=? AND filter_hash=? AND expires_at>NOW() LIMIT 1');$s->execute([$feedId,$userId,$hash]);$row=$s->fetch();return is_array($row)?$row:null;
     }
 
-    private function loadWorkGenres(PDO $pdo, array $cids): array
+    private function catalogFromApi(array $filters,int $cursor,int $limit,string $cidInput):array
     {
-        if ($cids === []) {
-            return [];
-        }
-        $placeholders = implode(',', array_fill(0, count($cids), '?'));
-        $stmt = $pdo->prepare(
-            'SELECT wg.work_cid, g.id, g.name FROM work_genres wg JOIN genres g ON g.id = wg.genre_id WHERE wg.work_cid IN (' . $placeholders . ')',
-        );
-        $stmt->execute(array_values($cids));
-        $map = [];
-        foreach ($stmt->fetchAll() as $row) {
-            $cid = (string)$row['work_cid'];
-            $map[$cid][] = ['id' => (string)$row['id'], 'name' => (string)$row['name']];
-        }
-        return $map;
+        $floor=$this->safeFloor(true);$offset=min(50000,$cursor+1);$page=$this->fanza->fetchItemPage($floor,$offset,(string)$filters['genreId'],'review',self::LIVE_HITS);$items=[];$consumed=0;
+        foreach($page['items'] as $raw){$consumed++;$item=$this->fanza->feedItem($raw);if(!$this->matches($item,$filters))continue;$items[]=$this->stripInternalFields($item);if(count($items)>=$limit)break;}
+        if($cursor===0&&trim($cidInput)!==''){try{$direct=$this->stripInternalFields($this->fanza->feedItem($this->fanza->fetchItem($this->fanza->normalizeCid($cidInput),$floor)));$items=[$direct,...array_values(array_filter($items,fn($x)=>$x['cid']!==$direct['cid']))];}catch(Throwable){}}
+        $next=$cursor+$consumed;$hasMore=$consumed>0&&((int)$page['total']===0||$next<(int)$page['total']);return ['items'=>$items,'feedId'=>null,'cursor'=>$cursor,'nextCursor'=>$hasMore?$next:null,'hasMore'=>$hasMore,'apiTotal'=>(int)$page['total'],'scanned'=>$consumed,'effectiveMinSamples'=>(int)$filters['minSamples'],'source'=>'fanza-api','queryError'=>'','recommenderVersion'=>'live-fallback','floor'=>$floor];
     }
 
-    private function loadUserGenreScores(PDO $pdo, string $anonymousUserId): array
+    private function databaseWhere(array $filters):array
     {
-        if ($anonymousUserId === '') {
-            return [];
-        }
-        try {
-            $stmt = $pdo->prepare('SELECT genre_id, score FROM user_genre_scores WHERE anonymous_user_id = ?');
-            $stmt->execute([$anonymousUserId]);
-            $scores = [];
-            foreach ($stmt->fetchAll() as $row) {
-                $scores[(string)$row['genre_id']] = (float)$row['score'];
-            }
-            return $scores;
-        } catch (Throwable) {
-            return [];
-        }
+        $where=['w.sample_count>=:min_samples','w.review_count>=:min_reviews','w.rating>=:min_rating','w.is_active=1'];$params=[':min_samples'=>(int)$filters['minSamples'],':min_reviews'=>(int)$filters['minReviews'],':min_rating'=>(float)$filters['minRating']];
+        if($filters['minPrice']>0){$where[]='w.price_value>=:min_price';$params[':min_price']=(int)$filters['minPrice'];}if($filters['maxPrice']>0){$where[]='w.price_value<=:max_price';$params[':max_price']=(int)$filters['maxPrice'];}
+        if($filters['assetType']!=='all'){$where[]='w.asset_type=:asset';$params[':asset']=(string)$filters['assetType'];}
+        if($filters['genreId']!==''){$where[]='EXISTS (SELECT 1 FROM work_genres wg WHERE wg.work_cid=w.cid AND wg.genre_id=:genre)';$params[':genre']=(string)$filters['genreId'];}
+        if($filters['query']!==''){$where[]='(w.title LIKE :q OR w.maker LIKE :q OR EXISTS (SELECT 1 FROM work_series ws JOIN series s ON s.id=ws.series_id WHERE ws.work_cid=w.cid AND s.name LIKE :q))';$params[':q']='%'.str_replace(['%','_'],['\\%','\\_'],(string)$filters['query']).'%';}
+        return [$where,$params];
     }
 
-    private function loadRecentlySeen(PDO $pdo, string $anonymousUserId): array
-    {
-        if ($anonymousUserId === '') {
-            return [];
-        }
-        try {
-            $stmt = $pdo->prepare(
-                "SELECT work_cid, MAX(created_at) AS last_seen FROM events WHERE anonymous_user_id = ? AND event_type = 'impression' AND created_at >= DATE_SUB(NOW(), INTERVAL 14 DAY) GROUP BY work_cid ORDER BY last_seen DESC LIMIT 500",
-            );
-            $stmt->execute([$anonymousUserId]);
-            $seen = [];
-            foreach ($stmt->fetchAll() as $row) {
-                $seen[(string)$row['work_cid']] = true;
-            }
-            return $seen;
-        } catch (Throwable) {
-            return [];
-        }
-    }
-
-    private function databaseWhere(array $filters): array
-    {
-        $where = ['w.sample_count >= :min_samples', 'w.review_count >= :min_reviews', 'w.rating >= :min_rating', 'w.is_active = 1'];
-        $params = [
-            ':min_samples' => max(1, (int)$filters['minSamples']),
-            ':min_reviews' => (int)$filters['minReviews'],
-            ':min_rating' => (float)$filters['minRating'],
-        ];
-        if ($filters['minPrice'] > 0) {
-            $where[] = 'w.price_value >= :min_price';
-            $params[':min_price'] = (int)$filters['minPrice'];
-        }
-        if ($filters['maxPrice'] > 0) {
-            $where[] = 'w.price_value <= :max_price';
-            $params[':max_price'] = (int)$filters['maxPrice'];
-        }
-        if ($filters['assetType'] !== 'all') {
-            $where[] = 'w.asset_type = :asset_type';
-            $params[':asset_type'] = $filters['assetType'];
-        }
-        if ($filters['genreId'] !== '') {
-            $where[] = 'EXISTS (SELECT 1 FROM work_genres wg_filter WHERE wg_filter.work_cid = w.cid AND wg_filter.genre_id = :genre_id)';
-            $params[':genre_id'] = $filters['genreId'];
-        }
-        return [$where, $params];
-    }
-
-    private function diagnosticsFromDatabase(string $genreId): array
-    {
-        $pdo = $this->database->connection();
-        if (!$pdo) {
-            throw new RuntimeException('データベースへ接続できません。');
-        }
-        $where = ['w.is_active = 1'];
-        $params = [];
-        if ($genreId !== '') {
-            $where[] = 'EXISTS (SELECT 1 FROM work_genres wg_filter WHERE wg_filter.work_cid = w.cid AND wg_filter.genre_id = :genre_id)';
-            $params[':genre_id'] = $genreId;
-        }
-        $stmt = $pdo->prepare('SELECT w.sample_count, w.asset_type, w.asset_bucket FROM works w WHERE ' . implode(' AND ', $where));
-        $stmt->execute($params);
-        $stats = $this->emptyStats();
-        $scanned = 0;
-        while (($row = $stmt->fetch()) !== false) {
-            $scanned++;
-            $this->incrementStats($stats, (string)$row['asset_type'], (string)$row['asset_bucket'], (int)$row['sample_count']);
-        }
-        return ['scanned' => $scanned, 'apiTotal' => $scanned, 'stats' => $stats];
-    }
-
-    private function diagnosticsFromApi(string $genreId): array
-    {
-        $floor = $this->safeFloor(true);
-        $stats = $this->emptyStats();
-        $seen = [];
-        $scanned = 0;
-        $apiTotal = 0;
-        for ($pageIndex = 0; $pageIndex < self::DIAGNOSTIC_MAX_PAGES; $pageIndex++) {
-            $offset = 1 + $pageIndex * self::LIVE_HITS;
-            $page = $this->fanza->fetchItemPage($floor, $offset, $genreId, 'review', self::LIVE_HITS);
-            if ($pageIndex === 0) {
-                $apiTotal = (int)$page['total'];
-            }
-            if ($page['items'] === []) {
-                break;
-            }
-            $scanned += count($page['items']);
-            foreach ($page['items'] as $rawItem) {
-                $item = $this->fanza->feedItem($rawItem);
-                $cid = (string)$item['cid'];
-                if ($cid === '' || isset($seen[$cid])) {
-                    continue;
-                }
-                $seen[$cid] = true;
-                $this->incrementStats($stats, (string)$item['assetType'], (string)$item['assetBucket'], (int)$item['sampleCount']);
-            }
-            if (count($page['items']) < self::LIVE_HITS || (int)$page['resultCount'] < self::LIVE_HITS) {
-                break;
-            }
-            usleep(120000);
-        }
-        return ['scanned' => $scanned, 'apiTotal' => $apiTotal, 'stats' => $stats];
-    }
-
-    private function emptyStats(): array
-    {
-        $row = static fn(): array => ['total' => 0, 'zero' => 0, 'oneToFour' => 0, 'fiveToNine' => 0, 'tenPlus' => 0];
-        return [
-            'all' => $row(),
-            'comic' => $row(),
-            'cg' => $row(),
-            'game' => $row(),
-            'voice' => $row(),
-            'other' => $row(),
-            'rawBuckets' => [],
-        ];
-    }
-
-    private function incrementStats(array &$stats, string $assetType, string $assetBucket, int $sampleCount): void
-    {
-        if (!isset($stats[$assetType])) {
-            $assetType = 'other';
-        }
-        foreach (['all', $assetType] as $key) {
-            $stats[$key]['total']++;
-            if ($sampleCount === 0) {
-                $stats[$key]['zero']++;
-            } elseif ($sampleCount <= 4) {
-                $stats[$key]['oneToFour']++;
-            } elseif ($sampleCount <= 9) {
-                $stats[$key]['fiveToNine']++;
-            } else {
-                $stats[$key]['tenPlus']++;
-            }
-        }
-        if ($assetType === 'other') {
-            $stats['rawBuckets'][$assetBucket] = ($stats['rawBuckets'][$assetBucket] ?? 0) + 1;
-        }
-    }
-
-    private function normalizeFilters(array $filters): array
-    {
-        $assetTypes = ['all', 'comic', 'cg', 'game', 'voice', 'other'];
-        $assetType = (string)($filters['assetType'] ?? 'all');
-        $minPrice = max(0, min(10000000, (int)($filters['minPrice'] ?? 0)));
-        $maxPrice = max(0, min(10000000, (int)($filters['maxPrice'] ?? 0)));
-        if ($maxPrice > 0 && $minPrice > $maxPrice) {
-            [$minPrice, $maxPrice] = [$maxPrice, $minPrice];
-        }
-        return [
-            'minSamples' => max(0, min(100, (int)($filters['minSamples'] ?? 10))),
-            'minReviews' => max(0, min(100000, (int)($filters['minReviews'] ?? 10))),
-            'minRating' => max(0.0, min(5.0, (float)($filters['minRating'] ?? 4.5))),
-            'minPrice' => $minPrice,
-            'maxPrice' => $maxPrice,
-            'assetType' => in_array($assetType, $assetTypes, true) ? $assetType : 'all',
-            'genreId' => trim((string)($filters['genreId'] ?? '')),
-        ];
-    }
-
-    private function matches(array $item, array $filters, int $effectiveMinSamples): bool
-    {
-        if (($item['sampleCount'] ?? 0) < $effectiveMinSamples) {
-            return false;
-        }
-        if (($item['reviews'] ?? 0) < $filters['minReviews']) {
-            return false;
-        }
-        if (($item['rating'] ?? 0.0) < $filters['minRating']) {
-            return false;
-        }
-        if ($filters['minPrice'] > 0 || $filters['maxPrice'] > 0) {
-            $priceValue = $this->priceValue((string)($item['price'] ?? ''));
-            if ($priceValue === null) {
-                return false;
-            }
-            if ($filters['minPrice'] > 0 && $priceValue < $filters['minPrice']) {
-                return false;
-            }
-            if ($filters['maxPrice'] > 0 && $priceValue > $filters['maxPrice']) {
-                return false;
-            }
-        }
-        return $filters['assetType'] === 'all' || ($item['assetType'] ?? '') === $filters['assetType'];
-    }
-
-    private function priceValue(string $price): ?int
-    {
-        if (preg_match('/[0-9][0-9,]*/', $price, $match) !== 1) {
-            return null;
-        }
-        $digits = str_replace(',', '', $match[0]);
-        return $digits !== '' && ctype_digit($digits) ? (int)$digits : null;
-    }
-
-    private function stripInternalFields(array $item): array
-    {
-        unset($item['genreRows'], $item['releaseDate'], $item['maker']);
-        return $item;
-    }
-
-    private function safeFloor(bool $requireConfiguredApi = false): array
-    {
-        if ($requireConfiguredApi && !$this->fanza->configured()) {
-            throw new RuntimeException('作品DBがまだ空で、DMM API設定もありません。config.local.php を設定して同期してください。');
-        }
-        if ($this->fanza->configured()) {
-            try {
-                return $this->fanza->resolveDoujinFloor();
-            } catch (Throwable $error) {
-                if ($requireConfiguredApi) {
-                    throw $error;
-                }
-            }
-        }
-        return $this->fanza->fallbackFloor();
-    }
-
-    private function freshnessScore(string $date): float
-    {
-        $timestamp = strtotime($date);
-        if ($timestamp === false) {
-            return 0.0;
-        }
-        $ageDays = max(0.0, (time() - $timestamp) / 86400.0);
-        return max(0.0, 1.3 - min(1.3, $ageDays / 120.0 * 1.3));
-    }
-
-    private function stableRandom(string $value): float
-    {
-        $hex = substr(hash('sha256', $value), 0, 8);
-        return hexdec($hex) / 4294967295.0;
-    }
+    private function normalizeFilters(array $f):array{return ['minSamples'=>max(1,min(100,(int)($f['minSamples']??1))),'minReviews'=>max(0,(int)($f['minReviews']??0)),'minRating'=>max(0,min(5,(float)($f['minRating']??0))),'minPrice'=>max(0,(int)($f['minPrice']??0)),'maxPrice'=>max(0,(int)($f['maxPrice']??0)),'assetType'=>in_array(($f['assetType']??'all'),['all','comic','cg','game','voice','other'],true)?$f['assetType']:'all','genreId'=>mb_substr(trim((string)($f['genreId']??'')),0,64),'query'=>mb_substr(trim((string)($f['query']??'')),0,100)];}
+    private function loadGenreIds(PDO $pdo,array $cids):array{if($cids===[])return[];$p=implode(',',array_fill(0,count($cids),'?'));$s=$pdo->prepare("SELECT work_cid,genre_id FROM work_genres WHERE work_cid IN ({$p})");$s->execute($cids);$m=[];foreach($s->fetchAll() as $r)$m[(string)$r['work_cid']][]=(string)$r['genre_id'];return$m;}
+    private function loadUserGenreScores(PDO $pdo,string $uid):array{$s=$pdo->prepare('SELECT genre_id,score,updated_at FROM user_genre_scores WHERE anonymous_user_id=?');$s->execute([$uid]);$m=[];foreach($s->fetchAll() as $r)$m[(string)$r['genre_id']]=['score'=>(float)$r['score'],'updated'=>(string)$r['updated_at']];return$m;}
+    private function boundedAffinity(array $genreIds,array $scores,int $now):float{if($genreIds===[])return 0;$sum=0;foreach($genreIds as $id){$r=$scores[$id]??null;if(!$r)continue;$age=max(0,($now-(strtotime($r['updated'])?:$now))/86400);$decayed=$r['score']*pow(.5,$age/45);$sum+=tanh($decayed/8);}return max(-2.5,min(2.5,$sum/sqrt(count($genreIds))*2.0));}
+    private function freshnessScore(string $date):float{$t=strtotime($date);if(!$t)return 0;$days=max(0,(time()-$t)/86400);return max(0,1.3*(1-$days/120));}
+    private function stableRandom(string $seed):float{$v=(int)sprintf('%u',crc32($seed));return $v/4294967295;}
+    private function matches(array $i,array $f):bool{if((int)$i['sampleCount']<$f['minSamples']||(int)$i['reviews']<$f['minReviews']||(float)$i['rating']<$f['minRating'])return false;$pv=PriceParser::singleValue((string)$i['price']);if($f['minPrice']>0&&($pv===null||$pv<$f['minPrice']))return false;if($f['maxPrice']>0&&($pv===null||$pv>$f['maxPrice']))return false;if($f['assetType']!=='all'&&$i['assetType']!==$f['assetType'])return false;return true;}
+    private function stripInternalFields(array $item):array{unset($item['genreRows'],$item['seriesRows'],$item['productUrl'],$item['description']);$item['priceValue']=PriceParser::singleValue((string)($item['price']??''));$item['series']=array_values(array_map(static fn($s)=>(string)($s['name']??''),(array)($item['seriesRows']??[])));return$item;}
+    private function ensureUser(PDO $pdo,string $uid):void{$s=$pdo->prepare('INSERT INTO anonymous_users(id,created_at,last_seen_at) VALUES (?,NOW(),NOW()) ON DUPLICATE KEY UPDATE last_seen_at=NOW()');$s->execute([$uid]);}
+    private function safeFloor(bool $required=false):array{if(!$this->fanza->configured()){if($required)throw new RuntimeException('FANZA APIが設定されていません。');return$this->fanza->fallbackFloor();}try{return$this->fanza->resolveDoujinFloor();}catch(Throwable $e){if($required)throw$e;return$this->fanza->fallbackFloor();}}
+    private function requirePdo():PDO{$pdo=$this->database->connection();if(!$pdo)throw new RuntimeException('データベースへ接続できません。');return$pdo;}
+    private function uuid():string{$d=random_bytes(16);$d[6]=chr((ord($d[6])&15)|64);$d[8]=chr((ord($d[8])&63)|128);return vsprintf('%s%s-%s-%s-%s-%s%s%s',str_split(bin2hex($d),4));}
 }
