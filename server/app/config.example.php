@@ -20,5 +20,7 @@ return [
         'event_retention_days' => 60,
         'profile_retention_days' => 180,
         'sync_pages' => 5,
+        // 空欄なら /api/debug と /api/diagnostics は404。利用時は十分長いランダム値を設定する。
+        'admin_token' => '',
     ],
 ];
