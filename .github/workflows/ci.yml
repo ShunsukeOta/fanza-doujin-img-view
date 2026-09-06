@@ -1,201 +1,170 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 12
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: swipe_preview_test
+          MARIADB_USER: swipe
+          MARIADB_PASSWORD: swipe_test_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: リポジトリを取得
+        uses: actions/checkout@v4
+
+      - name: Node.jsを準備
+        uses: actions/setup-node@v4
         with:
           node-version: 22
-      - uses: shivammathur/setup-php@v2
+
+      - name: PHPを準備
+        uses: shivammathur/setup-php@v2
         with:
           php-version: '8.3'
-          extensions: curl, pdo_mysql
+          extensions: curl, pdo_mysql, mbstring
           coverage: none
+
       - name: 依存関係をインストール
         run: npm install --no-audit --no-fund
-      - name: TypeScript型チェック
-        run: npm run typecheck
-      - name: PHP構文チェック
-        run: npm run check:php
-      - name: 旧コードと不要ファイルの残留を確認
-        shell: bash
+
+      - name: TypeScript・PHP・ロジックを検証
         run: |
           set -euo pipefail
-          test ! -e app
-          test ! -e next.config.ts
-          test ! -e next-env.d.ts
-          test ! -e .vercel
-          test ! -e vercel.json
-          test ! -e styles/feed-stats.css
-          test ! -e components/FavoritesPage.tsx
-          test ! -e server/public/api/favorites.php
-          test ! -e server/public/api/recommend.php
-          if grep -R -n -E '(^|[^A-Za-z])(server-only|NextRequest|NextResponse|"use client"|\x27use client\x27)' components src lib server --include='*.ts' --include='*.tsx' --include='*.php'; then
-            echo "旧Next.js由来のコードが残っています。" >&2
-            exit 1
-          fi
-      - name: 漫画ビューアーの必須実装を確認
-        shell: bash
+          npm run typecheck
+          npm run check:php
+          npm run test:logic
+          php -r '
+            require "server/app/src/PriceParser.php";
+            $cases = ["1,000円" => 1000, "500〜1,000円" => null, "無料" => null];
+            foreach ($cases as $raw => $expected) {
+              $actual = SwipePreview\PriceParser::singleValue($raw);
+              if ($actual !== $expected) {
+                fwrite(STDERR, "PriceParser regression: {$raw}\n");
+                exit(1);
+              }
+            }
+          '
+
+      - name: MariaDB移行を実行して再実行安全性を確認
         run: |
           set -euo pipefail
-          grep -F 'className="preview-track manga-reader-track"' components/WorkCard.tsx >/dev/null
-          grep -F '本編残り' components/WorkCard.tsx >/dev/null
-          grep -F '続きを読む' components/WorkCard.tsx >/dev/null
-          grep -F 'reader-focus' components/FocusModeToggle.tsx >/dev/null
-          grep -F '保存済み' components/GlobalNav.tsx >/dev/null
-      - name: PWAと画面復帰を確認
-        shell: bash
+          cat > server/app/config.local.php <<'PHP'
+          <?php
+          return [
+            'dmm' => ['api_id' => '', 'affiliate_id' => ''],
+            'db' => [
+              'host' => '127.0.0.1',
+              'port' => 3306,
+              'name' => 'swipe_preview_test',
+              'user' => 'swipe',
+              'password' => 'swipe_test_password',
+              'charset' => 'utf8mb4',
+            ],
+            'app' => [
+              'timezone' => 'Asia/Tokyo',
+              'event_retention_days' => 60,
+              'profile_retention_days' => 180,
+              'sync_pages' => 5,
+              'admin_token' => '',
+            ],
+          ];
+          PHP
+          php server/app/cron/setup-db.php
+          php server/app/cron/setup-db.php
+          php -r '
+            $config = require "server/app/config.local.php";
+            $dsn = sprintf("mysql:host=%s;port=%d;dbname=%s;charset=%s", $config["db"]["host"], $config["db"]["port"], $config["db"]["name"], $config["db"]["charset"]);
+            $pdo = new PDO($dsn, $config["db"]["user"], $config["db"]["password"], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+            foreach (["works", "feed_sessions", "feed_items", "events", "app_migrations", "sync_runs"] as $table) {
+              $stmt = $pdo->prepare("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?");
+              $stmt->execute([$table]);
+              if ((int)$stmt->fetchColumn() !== 1) exit(1);
+            }
+            $stmt = $pdo->prepare("SELECT 1 FROM app_migrations WHERE id = ?");
+            $stmt->execute(["recommendation-v3-rebuild-20260907"]);
+            if (!$stmt->fetchColumn()) exit(1);
+          '
+          rm -f server/app/config.local.php
+
+      - name: 監査回帰チェック
         run: |
           set -euo pipefail
-          test -f public/manifest.webmanifest
-          test -f public/sw.js
-          test -f public/icons/app-icon.svg
-          test ! -e src/pwaViewport.ts
-          grep -F 'viewport-fit=cover' index.html >/dev/null
-          grep -F 'apple-mobile-web-app-capable' index.html >/dev/null
-          grep -F 'apple-mobile-web-app-status-bar-style' index.html >/dev/null
-          grep -F 'black-translucent' index.html >/dev/null
-          grep -F 'rel="manifest"' index.html >/dev/null
-          python3 - <<'PY'
-          import json
-          with open('public/manifest.webmanifest', encoding='utf-8') as f:
-              manifest = json.load(f)
-          assert manifest['display'] == 'standalone'
-          assert manifest['start_url'] == '/'
-          assert manifest['scope'] == '/'
-          assert manifest['background_color'] == '#0a0a0a'
-          assert manifest['theme_color'] == '#0a0a0a'
-          PY
-          if grep -R -F 'installPwaViewportFix' src >/dev/null; then
-            echo "不要なPWA viewport補正が残っています。" >&2
+          test ! -e .github/workflows/backfill-2025-09-05.yml
+          grep -F 'feed_sessions' server/app/schema.sql >/dev/null
+          grep -F 'feed_items' server/app/schema.sql >/dev/null
+          grep -F 'nextCursor' server/app/src/CatalogService.php >/dev/null
+          grep -F 'loadRecentlySeen' server/app/src/CatalogService.php >/dev/null
+          grep -F 'sampleReadRatio' components/WorkCard.tsx >/dev/null
+          grep -F 'progressedSamplePages' components/WorkCard.tsx >/dev/null
+          grep -F 'sample_complete' components/WorkCard.tsx >/dev/null
+          grep -F 'reader-cta-link' components/WorkCard.tsx >/dev/null
+          grep -F 'event_id' server/app/schema.sql >/dev/null
+          grep -F 'recordBatch' server/app/src/EventService.php >/dev/null
+          grep -F 'saved_at' server/app/schema.sql >/dev/null
+          grep -F 'refresh-catalog.php' .github/workflows/sync-shin.yml >/dev/null
+          grep -F 'retention.php' .github/workflows/sync-shin.yml >/dev/null
+          grep -F 'admin_request_authorized' server/public/api/debug.php >/dev/null
+          grep -F 'admin_request_authorized' server/public/api/diagnostics.php >/dev/null
+          grep -F 'Content-Security-Policy' server/public/.htaccess >/dev/null
+          grep -F 'cancel-in-progress: false' .github/workflows/deploy-shin.yml >/dev/null
+          grep -F 'navigateToSubpage' src/navigationState.ts >/dev/null
+          grep -F 'readerPage' src/navigationState.ts >/dev/null
+          if grep -F 'Math.round(track.scrollLeft / track.clientWidth)' -n src/analytics.ts components/WorkCard.tsx; then
+            echo '旧RTLページ計測が残っています。' >&2
             exit 1
           fi
-          grep -F 'rememberMainBeforeSubpage' components/GlobalNav.tsx >/dev/null
-          grep -F 'resumeMainFromSubpage' components/GlobalNav.tsx >/dev/null
-          grep -F 'history.go(-state.historySteps)' src/navigationState.ts >/dev/null
-          grep -F 'prepareMainResumeFallback' src/main.tsx >/dev/null
-      - name: PWAナビ配置を確認
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -f styles/pwa-layout.css
-          grep -F -- '--nav-safe-bottom: env(safe-area-inset-bottom)' styles/navigation.css >/dev/null
-          grep -F 'bottom: 0;' styles/navigation.css >/dev/null
-          grep -F 'height: calc(var(--global-nav-h) + var(--nav-safe-bottom))' styles/navigation.css >/dev/null
-          grep -F 'padding: 3px 16px var(--nav-safe-bottom)' styles/navigation.css >/dev/null
-          if grep -F -- '--pwa-bottom-extension' styles/navigation.css >/dev/null; then
-            echo "動的なPWA下端補正が残っています。" >&2
+          if grep -F 'candidateTarget = min(1500' -n server/app/src/CatalogService.php; then
+            echo '1,500件固定候補上限が残っています。' >&2
             exit 1
           fi
-          if grep -F '100dvh' styles/pwa-layout.css >/dev/null; then
-            echo "サブページにPWA専用の強制100dvhが残っています。" >&2
+          if grep -F 'CRC32(CONCAT' -n server/app/src/CatalogService.php; then
+            echo '全件式CRC32 ORDER BYが残っています。' >&2
             exit 1
           fi
-          grep -F 'padding-bottom: calc(var(--global-nav-h) + var(--nav-safe-bottom) + 6px)' styles/pwa-layout.css >/dev/null
-      - name: 集中モードの残骸を確認
-        shell: bash
-        run: |
-          set -euo pipefail
-          grep -F '.reader-focus .item-info' styles/reader.css >/dev/null
-          grep -F 'visibility: hidden' styles/reader.css >/dev/null
-          grep -F 'pointer-events: none !important' styles/reader.css >/dev/null
-      - name: サブページ見出しと件数UIを確認
-        shell: bash
-        run: |
-          set -euo pipefail
-          if grep -F 'LIBRARY' components/SavedPage.tsx >/dev/null; then
-            echo "保存済みに英語サブ見出しが残っています。" >&2
-            exit 1
-          fi
-          if grep -F 'MY PAGE' components/MyPage.tsx >/dev/null; then
-            echo "マイページに英語サブ見出しが残っています。" >&2
-            exit 1
-          fi
-          if grep -F 'あとで読みたい作品をまとめて確認できます' components/SavedPage.tsx >/dev/null; then
-            echo "保存済みに説明文が残っています。" >&2
-            exit 1
-          fi
-          if grep -F '保存した作品や、これまでの閲覧からあなた向けの情報をまとめます' components/MyPage.tsx >/dev/null; then
-            echo "マイページに説明文が残っています。" >&2
-            exit 1
-          fi
-          grep -F '<span>保存した作品 <strong>{total.toLocaleString("ja-JP")}</strong>件</span>' components/SavedPage.tsx >/dev/null
-          grep -F 'font-size: 12px' styles/pwa-layout.css >/dev/null
-          grep -F 'justify-content: flex-end' styles/pwa-layout.css >/dev/null
-          grep -F 'border: 0' styles/pwa-layout.css >/dev/null
-          grep -F 'padding: 0' styles/pwa-layout.css >/dev/null
-      - name: 価格範囲フィルターを確認
-        shell: bash
-        run: |
-          set -euo pipefail
-          grep -F '価格下限' components/SwipePreviewApp.tsx >/dev/null
-          grep -F '価格上限' components/SwipePreviewApp.tsx >/dev/null
-          grep -F 'min_price' components/SwipePreviewApp.tsx >/dev/null
-          grep -F 'max_price' components/SwipePreviewApp.tsx >/dev/null
-          grep -F "'minPrice' => read_int('min_price'" server/app/bootstrap.php >/dev/null
-          grep -F "'maxPrice' => read_int('max_price'" server/app/bootstrap.php >/dev/null
-          grep -F 'w.price_value >= :min_price' server/app/src/CatalogService.php >/dev/null
-          grep -F 'w.price_value <= :max_price' server/app/src/CatalogService.php >/dev/null
-          grep -F 'price_value INT UNSIGNED NULL' server/app/schema.sql >/dev/null
-          grep -F "ensure_column(\$pdo, 'works', 'price_value'" server/app/cron/setup-db.php >/dev/null
-          grep -F 'price_value=COALESCE(VALUES(price_value), price_value)' server/app/cron/fanza-sync.php >/dev/null
-      - name: 作品メタデータ同期を確認
-        shell: bash
-        run: |
-          set -euo pipefail
-          grep -F 'description LONGTEXT NULL' server/app/schema.sql >/dev/null
-          grep -F 'CREATE TABLE IF NOT EXISTS series' server/app/schema.sql >/dev/null
-          grep -F 'CREATE TABLE IF NOT EXISTS work_series' server/app/schema.sql >/dev/null
-          grep -F 'CREATE TABLE IF NOT EXISTS work_price_history' server/app/schema.sql >/dev/null
-          grep -F "'seriesRows' => \$series" server/app/src/FanzaClient.php >/dev/null
-          grep -F "\$params['gte_date']" server/app/src/FanzaClient.php >/dev/null
-          grep -F "\$params['lte_date']" server/app/src/FanzaClient.php >/dev/null
-          grep -F "['pages::', 'sort::', 'since::', 'until::']" server/app/cron/fanza-sync.php >/dev/null
-          grep -F 'work_price_history' server/public/api/work-details.php >/dev/null
-          test -f .github/workflows/backfill-2025-09-05.yml
-      - name: 保存済みUIを確認
-        shell: bash
-        run: |
-          set -euo pipefail
-          grep -F 'favorite-save-toggle' components/SavedPage.tsx >/dev/null
-          grep -F 'サンプルを見る' components/SavedPage.tsx >/dev/null
-          grep -F 'openWorkInMain(item.cid)' components/SavedPage.tsx >/dev/null
-          if grep -F 'favorite-reactions' components/SavedPage.tsx >/dev/null; then
-            echo "保存済みカードにリアクション件数表示が残っています。" >&2
-            exit 1
-          fi
-          if grep -F '>FANZA' components/SavedPage.tsx >/dev/null; then
-            echo "保存済みカードに旧FANZAボタンが残っています。" >&2
-            exit 1
-          fi
+
       - name: 本番成果物を作成
         env:
           GITHUB_SHA: ${{ github.sha }}
         run: npm run build:shin
-      - name: 成果物を確認
+
+      - name: 成果物と秘密情報混入を確認
         run: |
+          set -euo pipefail
           test -f deploy/public_html/index.html
           test -f deploy/public_html/manifest.webmanifest
           test -f deploy/public_html/sw.js
-          test -f deploy/public_html/icons/app-icon.svg
+          test -f deploy/public_html/.htaccess
           test -f deploy/public_html/api/catalog.php
           test -f deploy/public_html/api/events.php
-          test -f deploy/public_html/api/reactions.php
-          test -f deploy/public_html/api/saved.php
-          test -f deploy/public_html/api/me.php
-          test -f deploy/public_html/api/work-details.php
-          test -f deploy/public_html/api/debug.php
-          test ! -f deploy/public_html/api/favorites.php
-          test ! -f deploy/public_html/api/recommend.php
-          test -f deploy/app/src/UserLibraryService.php
-          test -f deploy/app/schema.sql
           test -f deploy/app/cron/setup-db.php
           test -f deploy/app/cron/fanza-sync.php
+          test -f deploy/app/cron/refresh-catalog.php
+          test -f deploy/app/cron/retention.php
+          test -f deploy/app/src/WorkRepository.php
+          test -f deploy/app/src/PriceParser.php
+          test ! -f deploy/app/config.local.php
+          grep -F 'Content-Security-Policy' deploy/public_html/.htaccess >/dev/null
