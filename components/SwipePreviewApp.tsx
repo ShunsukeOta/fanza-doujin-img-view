@@ -308,7 +308,7 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
     const nextImage = items[activeWork + 1]?.images?.[0];
     if (!nextImage) return;
     let cancelled = false;
-    let timeout = 0;
+    let cancelFallback: (() => void) | null = null;
     let idleId: number | null = null;
     const warm = () => {
       if (!cancelled) void preloadAndDecodeImage(nextImage, "auto");
@@ -316,12 +316,13 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
     if ("requestIdleCallback" in window) {
       idleId = window.requestIdleCallback(warm, { timeout: 900 });
     } else {
-      timeout = globalThis.setTimeout(warm, 350);
+      const timeoutId = globalThis.setTimeout(warm, 350);
+      cancelFallback = () => globalThis.clearTimeout(timeoutId);
     }
     return () => {
       cancelled = true;
       if (idleId !== null && "cancelIdleCallback" in window) window.cancelIdleCallback(idleId);
-      if (timeout) clearTimeout(timeout);
+      cancelFallback?.();
     };
   }, [activeWork, items]);
 
