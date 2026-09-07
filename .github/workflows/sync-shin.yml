@@ -1,4 +1,4 @@
-name: FANZA作品DBを同期
+name: FANZA作品DB保守
 
 on:
   schedule:
@@ -9,13 +9,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: shin-catalog-sync
+  group: shin-catalog-maintenance
   cancel-in-progress: false
 
 jobs:
-  sync:
+  maintain:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+
     steps:
       - name: SSHを設定
         shell: bash
@@ -23,53 +24,35 @@ jobs:
           SHIN_SSH_PRIVATE_KEY: ${{ secrets.SHIN_SSH_PRIVATE_KEY }}
         run: |
           set -euo pipefail
+          test -n "$SHIN_SSH_PRIVATE_KEY"
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SHIN_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_shin"
           chmod 600 "$HOME/.ssh/id_shin"
-          : > "$HOME/.ssh/known_hosts"
-
-          for attempt in 1 2 3 4 5; do
-            tmp_hosts="$(mktemp)"
-            if timeout 20s ssh-keyscan -T 10 -p 10022 -H wp983575.wpx.jp > "$tmp_hosts" 2>/dev/null && [ -s "$tmp_hosts" ]; then
-              cat "$tmp_hosts" >> "$HOME/.ssh/known_hosts"
-              rm -f "$tmp_hosts"
-              break
-            fi
-            rm -f "$tmp_hosts"
-            if [ "$attempt" -eq 5 ]; then
-              echo "SSHホスト鍵を5回試行しても取得できませんでした。" >&2
-              exit 1
-            fi
-            echo "SSHホスト鍵取得に失敗。${attempt}/5 回目、再試行します。"
-            sleep $((attempt * 3))
-          done
-
+          ssh-keyscan -T 10 -p 10022 -H wp983575.wpx.jp > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
-          test -s "$HOME/.ssh/known_hosts"
 
-      - name: サーバー上で作品DBを同期
+      - name: 新着・重要作品・旧作品を保守
         shell: bash
         run: |
           set -euo pipefail
-          for attempt in 1 2 3 4; do
-            if ssh -i "$HOME/.ssh/id_shin" -p 10022 \
-              -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
-              wp983575@wp983575.wpx.jp '
-                set -eu
-                APP="$HOME/wp983575.wpx.jp/app"
-                if [ ! -f "$APP/config.local.php" ]; then
-                  echo "config.local.php が未設定なので同期をスキップします。"
-                  exit 0
-                fi
-                test -x /usr/bin/php8.3
-                /usr/bin/php8.3 "$APP/cron/fanza-sync.php" --pages=5 --sort=date
-              '; then
-              exit 0
-            fi
-            if [ "$attempt" -eq 4 ]; then
-              echo "作品DB同期のSSH実行に4回失敗しました。" >&2
-              exit 1
-            fi
-            echo "作品DB同期のSSH実行に失敗。${attempt}/4 回目、再試行します。"
-            sleep $((attempt * 5))
-          done
+          ssh -i "$HOME/.ssh/id_shin" -p 10022 \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
+            wp983575@wp983575.wpx.jp 'bash -s' <<'REMOTE'
+          set -u
+          APP="$HOME/wp983575.wpx.jp/app"
+          PHP_CLI=/usr/bin/php8.3
+          test -x "$PHP_CLI" || exit 1
+          test -f "$APP/config.local.php" || exit 1
+
+          status=0
+          echo "[1/3] 最新作品を同期"
+          "$PHP_CLI" "$APP/cron/fanza-sync.php" --pages=5 --sort=date || status=1
+
+          echo "[2/3] 保存・クリック優先 + 旧作品を巡回"
+          "$PHP_CLI" "$APP/cron/refresh-catalog.php" --limit=300 || status=1
+
+          echo "[3/3] イベント・匿名ユーザー・期限切れフィードを整理"
+          "$PHP_CLI" "$APP/cron/retention.php" || status=1
+
+          exit "$status"
+          REMOTE

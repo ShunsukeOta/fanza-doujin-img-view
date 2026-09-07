@@ -6,8 +6,11 @@ require dirname(__DIR__, 2) . '/app/bootstrap.php';
 
 $pdo = $database->connection();
 $catalogReady = $database->hasUsableCatalog();
+$dmmConfigured = $fanza->configured();
+$ready = $pdo !== null && $catalogReady && $dmmConfigured;
+
 json_response([
-    'ok' => $catalogReady || $fanza->configured(),
+    'ok' => $ready,
     'runtime' => 'php',
     'php' => PHP_VERSION,
     'database' => [
@@ -17,7 +20,7 @@ json_response([
         'error' => $database->lastError() === null ? null : 'database connection failed',
     ],
     'dmm' => [
-        'configured' => $fanza->configured(),
+        'configured' => $dmmConfigured,
     ],
     'time' => date(DATE_ATOM),
-], 200, ['Cache-Control' => 'no-store']);
+], $ready ? 200 : 503, ['Cache-Control' => 'no-store']);
