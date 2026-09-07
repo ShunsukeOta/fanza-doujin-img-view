@@ -1,7 +1,6 @@
 import { StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 
-import { FocusModeToggle } from "@/components/FocusModeToggle";
 import { MyPage } from "@/components/MyPage";
 import { SavedPage } from "@/components/SavedPage";
 import { SwipePreviewApp } from "@/components/SwipePreviewApp";
@@ -42,9 +41,7 @@ function boundedFloat(
 }
 
 function registerServiceWorker(): void {
-  if (!("serviceWorker" in navigator)) {
-    return;
-  }
+  if (!("serviceWorker" in navigator)) return;
   window.addEventListener("load", () => {
     void navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => undefined);
   }, { once: true });
@@ -69,9 +66,7 @@ const initialFilters: FilterValues = {
 };
 
 const root = document.getElementById("root");
-if (!root) {
-  throw new Error("#root が見つかりません。");
-}
+if (!root) throw new Error("#root が見つかりません。");
 
 registerServiceWorker();
 startAnalytics();
@@ -80,21 +75,10 @@ if (pathname === "/favorites") {
   window.location.replace("/saved");
 } else {
   let app: ReactNode;
-  if (pathname === "/saved") {
-    app = <SavedPage />;
-  } else if (pathname === "/mypage") {
-    app = <MyPage />;
-  } else {
-    app = (
-      <>
-        <SwipePreviewApp initialFilters={initialFilters} initialCid={params.get("cid") ?? ""} />
-        <FocusModeToggle />
-      </>
-    );
-  }
+  if (pathname === "/saved") app = <SavedPage />;
+  else if (pathname === "/mypage") app = <MyPage />;
+  else app = <SwipePreviewApp initialFilters={initialFilters} initialCid={params.get("cid") ?? ""} />;
 
   createRoot(root).render(<StrictMode>{app}</StrictMode>);
-  if (pathname !== "/saved" && pathname !== "/mypage") {
-    installMainResumeLifecycle();
-  }
+  if (pathname !== "/saved" && pathname !== "/mypage") installMainResumeLifecycle();
 }
