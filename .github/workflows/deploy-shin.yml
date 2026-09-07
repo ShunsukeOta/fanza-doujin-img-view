@@ -49,6 +49,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
 
       - name: 本番Secretsを確認
         shell: bash
@@ -73,7 +74,8 @@ jobs:
           GITHUB_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          npm install --no-audit --no-fund
+          test -f package-lock.json
+          npm ci --no-audit --no-fund
           npm run build:shin
 
       - name: SSHを設定
