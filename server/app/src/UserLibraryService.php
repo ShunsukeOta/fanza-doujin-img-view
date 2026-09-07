@@ -32,8 +32,10 @@ final class UserLibraryService
         $where = 's.anonymous_user_id = :uid AND s.saved = 1';
         $params = [':uid' => $uid];
         if ($cursorData !== null) {
-            $where .= ' AND (s.saved_at < :saved_at OR (s.saved_at = :saved_at AND s.work_cid < :cursor_cid))';
-            $params[':saved_at'] = $cursorData['savedAt'];
+            // Native prepared statementでは同じ名前付きプレースホルダを再利用しない。
+            $where .= ' AND (s.saved_at < :saved_before OR (s.saved_at = :saved_equal AND s.work_cid < :cursor_cid))';
+            $params[':saved_before'] = $cursorData['savedAt'];
+            $params[':saved_equal'] = $cursorData['savedAt'];
             $params[':cursor_cid'] = $cursorData['cid'];
         }
 
@@ -142,6 +144,9 @@ final class UserLibraryService
         if ($cursor === '') {
             return null;
         }
+        if (strlen($cursor) > 320) {
+            return null;
+        }
         $padded = strtr($cursor, '-_', '+/');
         $padded .= str_repeat('=', (4 - strlen($padded) % 4) % 4);
         $decoded = base64_decode($padded, true);
@@ -151,6 +156,7 @@ final class UserLibraryService
         $parts = explode('|', $decoded, 2);
         if (
             count($parts) !== 2
+            || preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $parts[0]) !== 1
             || strtotime($parts[0]) === false
             || preg_match('/^[A-Za-z0-9_-]{1,128}$/', $parts[1]) !== 1
         ) {
