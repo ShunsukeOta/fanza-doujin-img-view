@@ -116,10 +116,12 @@ jobs:
           php server/app/tests/integration.php
           rm -f server/app/config.local.php
 
-      - name: 監査回帰チェック
+      - name: 監査・ビューアー回帰チェック
         run: |
           set -euo pipefail
           test -f package-lock.json
+          test -f src/readerSettings.ts
+          test -f src/imagePreload.ts
           test ! -e .github/workflows/backfill-2025-09-05.yml
           grep -F 'npm ci --no-audit --no-fund' .github/workflows/ci.yml >/dev/null
           grep -F 'npm ci --no-audit --no-fund' .github/workflows/deploy-shin.yml >/dev/null
@@ -135,6 +137,15 @@ jobs:
           grep -F 'progressedSamplePages' components/WorkCard.tsx >/dev/null
           grep -F 'sample_complete' components/WorkCard.tsx >/dev/null
           grep -F 'reader-cta-link' components/WorkCard.tsx >/dev/null
+          grep -F 'reader-cta-save' components/WorkCard.tsx >/dev/null
+          grep -F 'DOUBLE_TAP_ZOOM' components/WorkCard.tsx >/dev/null
+          grep -F 'preloadAndDecodeImages' components/WorkCard.tsx >/dev/null
+          grep -F 'preloadAndDecodeImage' components/SwipePreviewApp.tsx >/dev/null
+          grep -F 'tapNavigationDelta' components/WorkCard.tsx >/dev/null
+          grep -F 'reader-fit-' components/WorkCard.tsx >/dev/null
+          grep -F 'swipe-preview:reader-settings-v1' src/readerSettings.ts >/dev/null
+          grep -F 'touch-action: none' styles/accessibility.css >/dev/null
+          grep -F 'reader-fit-width' styles/reader.css >/dev/null
           grep -F 'event_id' server/app/schema.sql >/dev/null
           grep -F 'recordBatch' server/app/src/EventService.php >/dev/null
           grep -F 'saved_at' server/app/schema.sql >/dev/null
@@ -149,7 +160,6 @@ jobs:
           grep -F 'cancel-in-progress: false' .github/workflows/deploy-shin.yml >/dev/null
           grep -F 'navigateToSubpage' src/navigationState.ts >/dev/null
           grep -F 'readerPage' src/navigationState.ts >/dev/null
-          grep -F 'touch-action: pinch-zoom' styles/accessibility.css >/dev/null
           grep -F 'styles/accessibility.css' src/main.tsx >/dev/null
           if grep -F 'Math.round(track.scrollLeft / track.clientWidth)' -n src/analytics.ts components/WorkCard.tsx; then
             echo '旧RTLページ計測が残っています。' >&2
