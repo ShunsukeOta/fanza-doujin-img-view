@@ -36,6 +36,8 @@ export type FeedItem = {
   makerId?: string;
   price: string;
   priceValue?: number | null;
+  savedPriceValue?: number | null;
+  priceDropValue?: number | null;
   assetBucket: string;
   assetType: Exclude<AssetType, "all">;
   assetLabel: string;
