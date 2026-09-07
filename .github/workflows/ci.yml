@@ -50,7 +50,14 @@ jobs:
           coverage: none
 
       - name: 依存関係をインストール
-        run: npm install --no-audit --no-fund
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f package-lock.json ]; then
+            npm ci --no-audit --no-fund
+          else
+            npm install --no-audit --no-fund
+          fi
 
       - name: 依存lockfileを成果物として保存
         uses: actions/upload-artifact@v4
@@ -78,7 +85,7 @@ jobs:
             }
           '
 
-      - name: MariaDB移行を実行して再実行安全性を確認
+      - name: MariaDB移行・検索・固定feed・保存カーソルを検証
         run: |
           set -euo pipefail
           cat > server/app/config.local.php <<'PHP'
@@ -107,7 +114,7 @@ jobs:
           php -r '
             $config = require "server/app/config.local.php";
             $dsn = sprintf("mysql:host=%s;port=%d;dbname=%s;charset=%s", $config["db"]["host"], $config["db"]["port"], $config["db"]["name"], $config["db"]["charset"]);
-            $pdo = new PDO($dsn, $config["db"]["user"], $config["db"]["password"], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+            $pdo = new PDO($dsn, $config["db"]["user"], $config["db"]["password"], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES => false]);
             foreach (["works", "feed_sessions", "feed_items", "events", "app_migrations", "sync_runs"] as $table) {
               $stmt = $pdo->prepare("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?");
               $stmt->execute([$table]);
@@ -117,6 +124,7 @@ jobs:
             $stmt->execute(["recommendation-v3-rebuild-20260907"]);
             if (!$stmt->fetchColumn()) exit(1);
           '
+          php server/app/tests/integration.php
           rm -f server/app/config.local.php
 
       - name: 監査回帰チェック
@@ -127,6 +135,10 @@ jobs:
           grep -F 'feed_items' server/app/schema.sql >/dev/null
           grep -F 'nextCursor' server/app/src/CatalogService.php >/dev/null
           grep -F 'loadRecentlySeen' server/app/src/CatalogService.php >/dev/null
+          grep -F ':q_title' server/app/src/CatalogService.php >/dev/null
+          grep -F ':q_series' server/app/src/CatalogService.php >/dev/null
+          grep -F ':saved_before' server/app/src/UserLibraryService.php >/dev/null
+          grep -F ':saved_equal' server/app/src/UserLibraryService.php >/dev/null
           grep -F 'sampleReadRatio' components/WorkCard.tsx >/dev/null
           grep -F 'progressedSamplePages' components/WorkCard.tsx >/dev/null
           grep -F 'sample_complete' components/WorkCard.tsx >/dev/null
@@ -135,6 +147,8 @@ jobs:
           grep -F 'recordBatch' server/app/src/EventService.php >/dev/null
           grep -F 'saved_at' server/app/schema.sql >/dev/null
           grep -F 'priceDropValue' server/app/src/UserLibraryService.php >/dev/null
+          grep -F 'priceDropValue' lib/types.ts >/dev/null
+          grep -F 'favorite-buy' components/SavedPage.tsx >/dev/null
           grep -F 'refresh-catalog.php' .github/workflows/sync-shin.yml >/dev/null
           grep -F 'retention.php' .github/workflows/sync-shin.yml >/dev/null
           grep -F 'admin_request_authorized' server/public/api/debug.php >/dev/null
@@ -144,6 +158,7 @@ jobs:
           grep -F 'navigateToSubpage' src/navigationState.ts >/dev/null
           grep -F 'readerPage' src/navigationState.ts >/dev/null
           grep -F 'touch-action: pinch-zoom' styles/accessibility.css >/dev/null
+          grep -F 'styles/accessibility.css' src/main.tsx >/dev/null
           if grep -F 'Math.round(track.scrollLeft / track.clientWidth)' -n src/analytics.ts components/WorkCard.tsx; then
             echo '旧RTLページ計測が残っています。' >&2
             exit 1
@@ -154,6 +169,14 @@ jobs:
           fi
           if grep -F 'CRC32(CONCAT' -n server/app/src/CatalogService.php; then
             echo '全件式CRC32 ORDER BYが残っています。' >&2
+            exit 1
+          fi
+          if grep -F 'LIKE :q OR' -n server/app/src/CatalogService.php; then
+            echo 'native prepareで再利用される旧検索プレースホルダが残っています。' >&2
+            exit 1
+          fi
+          if grep -F 's.saved_at = :saved_at' -n server/app/src/UserLibraryService.php; then
+            echo 'native prepareで再利用される旧保存カーソルが残っています。' >&2
             exit 1
           fi
 
@@ -177,5 +200,6 @@ jobs:
           test -f deploy/app/cron/retention.php
           test -f deploy/app/src/WorkRepository.php
           test -f deploy/app/src/PriceParser.php
+          test -f deploy/app/tests/integration.php
           test ! -f deploy/app/config.local.php
           grep -F 'Content-Security-Policy' deploy/public_html/.htaccess >/dev/null
