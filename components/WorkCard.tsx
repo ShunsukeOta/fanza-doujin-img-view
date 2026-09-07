@@ -81,8 +81,8 @@ type Props = {
 const DEFAULT_ZOOM: ZoomState = { scale: 1, x: 0, y: 0 };
 const MAX_ZOOM = 4;
 const DOUBLE_TAP_ZOOM = 2.5;
-const DOUBLE_TAP_MS = 260;
-const SINGLE_TAP_DELAY_MS = 225;
+const DOUBLE_TAP_MS = 280;
+const SINGLE_TAP_DELAY_MS = 300;
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
@@ -610,6 +610,7 @@ export function WorkCard({
     if (tapTimer.current) clearTimeout(tapTimer.current);
     tapTimer.current = setTimeout(() => {
       tapTimer.current = null;
+      lastTap.current = null;
       const rect = track.getBoundingClientRect();
       const xRatio = rect.width > 0 ? clamp((clientX - rect.left) / rect.width, 0, 1) : 0.5;
       const delta = tapNavigationDelta(xRatio, readerSettings.readingDirection);
@@ -768,7 +769,29 @@ export function WorkCard({
     if (wasPinching) {
       if (pointersRef.current.size < 2) pinchRef.current = null;
       gestureRef.current = null;
-      if (zoomRef.current.scale <= 1.01) applyZoom(DEFAULT_ZOOM);
+      if (zoomRef.current.scale <= 1.01) {
+        applyZoom(DEFAULT_ZOOM);
+      } else if (pointersRef.current.size === 1) {
+        const [remaining] = [...pointersRef.current.entries()];
+        if (remaining) {
+          const [pointerId, point] = remaining;
+          const feed = feedElement();
+          const currentZoom = zoomRef.current;
+          gestureRef.current = {
+            pointerId,
+            startX: point.x,
+            startY: point.y,
+            startScrollLeft: trackRef.current?.scrollLeft ?? 0,
+            startFeedScrollTop: feed?.scrollTop ?? 0,
+            startPage: currentPageRef.current,
+            startPanX: currentZoom.x,
+            startPanY: currentZoom.y,
+            startedAt: performance.now(),
+            axis: "pan",
+            maxDistance: 0,
+          };
+        }
+      }
       return;
     }
 
@@ -869,10 +892,11 @@ export function WorkCard({
   const ctaStyle = {
     order: isRtl ? 0 : ctaPage,
   } satisfies CSSProperties;
+  const isTransformingImage = zoom.scale > 1.02 || Math.abs(zoom.x) > 0.5 || Math.abs(zoom.y) > 0.5;
 
   return (
     <article
-      className={`feed-item${zoom.scale > 1.02 ? " is-reader-zoomed" : ""}`}
+      className={`feed-item${isTransformingImage ? " is-reader-zoomed" : ""}`}
       data-work-index={index}
       data-cid={item.cid}
       data-reader-page={currentPage}
