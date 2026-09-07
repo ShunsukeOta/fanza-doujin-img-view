@@ -201,6 +201,19 @@ export function WorkCard({
     return Boolean(stage && image && image.offsetHeight > stage.clientHeight + 2);
   }, [readerSettings.fitMode]);
 
+  const canPanBaseVertically = useCallback((page: number, fingerDeltaY: number) => {
+    if (!hasBaseVerticalOverflow(page)) return false;
+    const stage = stageRefs.current.get(page);
+    const image = imageRefs.current.get(page);
+    if (!stage || !image) return false;
+    const maxY = Math.max(0, (image.offsetHeight - stage.clientHeight) / 2);
+    if (maxY <= 1) return false;
+    const currentY = zoomRef.current.y;
+    if (fingerDeltaY > 0) return currentY < maxY - 1;
+    if (fingerDeltaY < 0) return currentY > -maxY + 1;
+    return true;
+  }, [hasBaseVerticalOverflow]);
+
   const setLogicalPage = useCallback((page: number) => {
     const next = clamp(page, 0, ctaPage);
     if (next !== currentPageRef.current) resetZoom();
@@ -725,7 +738,7 @@ export function WorkCard({
     } else if (gesture.axis === null && Math.max(Math.abs(dx), Math.abs(dy)) >= 7) {
       if (Math.abs(dx) > Math.abs(dy) * 1.08) gesture.axis = "x";
       else if (Math.abs(dy) > Math.abs(dx) * 1.08) {
-        gesture.axis = hasBaseVerticalOverflow(currentPageRef.current) ? "pan" : "y";
+        gesture.axis = canPanBaseVertically(currentPageRef.current, dy) ? "pan" : "y";
       } else return;
     }
 
