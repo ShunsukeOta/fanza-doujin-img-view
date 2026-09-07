@@ -600,11 +600,14 @@ final class CatalogService
             $params[':genre'] = (string)$filters['genreId'];
         }
         if ($filters['query'] !== '') {
-            $where[] = '(w.title LIKE :q OR w.maker LIKE :q '
+            $where[] = '(w.title LIKE :q_title ESCAPE \'=\' OR w.maker LIKE :q_maker ESCAPE \'=\' '
                 . 'OR EXISTS (SELECT 1 FROM work_series ws JOIN series s ON s.id = ws.series_id '
-                . 'WHERE ws.work_cid = w.cid AND s.name LIKE :q))';
-            $escaped = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], (string)$filters['query']);
-            $params[':q'] = '%' . $escaped . '%';
+                . 'WHERE ws.work_cid = w.cid AND s.name LIKE :q_series ESCAPE \'=\'))';
+            $escaped = str_replace(['=', '%', '_'], ['==', '=%', '=_'], (string)$filters['query']);
+            $pattern = '%' . $escaped . '%';
+            $params[':q_title'] = $pattern;
+            $params[':q_maker'] = $pattern;
+            $params[':q_series'] = $pattern;
         }
         return [$where, $params];
     }
@@ -734,10 +737,10 @@ final class CatalogService
             return false;
         }
         $priceValue = PriceParser::singleValue((string)$item['price']);
-        if ($filters['minPrice'] > 0 && ($priceValue === null || $priceValue < $filters['minPrice'])) {
+        if ($filters['minPrice'] > 0 && ($priceValue === null || $priceValue < $filters['minPrice']) ) {
             return false;
         }
-        if ($filters['maxPrice'] > 0 && ($priceValue === null || $priceValue > $filters['maxPrice'])) {
+        if ($filters['maxPrice'] > 0 && ($priceValue === null || $priceValue > $filters['maxPrice']) ) {
             return false;
         }
         if ($filters['assetType'] !== 'all' && $item['assetType'] !== $filters['assetType']) {
