@@ -316,7 +316,7 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
     if ("requestIdleCallback" in window) {
       idleId = window.requestIdleCallback(warm, { timeout: 900 });
     } else {
-      timeout = window.setTimeout(warm, 350);
+      timeout = globalThis.setTimeout(warm, 350);
     }
     return () => {
       cancelled = true;
