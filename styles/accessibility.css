@@ -1,10 +1,11 @@
 /*
- * 1本指の縦横移動はWorkCardのPointer Eventsで制御し、2本指のピンチ拡大は
- * ブラウザ標準へ委譲する。reader.cssのtouch-action:noneを最終段で上書きする。
+ * 1本指の縦横移動・画像パン・2本指ピンチはWorkCardのPointer Eventsで統一する。
+ * ブラウザ標準のページズームではなく、現在の漫画画像だけを拡大する。
  */
 .feed,
-.manga-reader-track {
-  touch-action: pinch-zoom !important;
+.manga-reader-track,
+.reader-image-stage {
+  touch-action: none !important;
 }
 
 .feed:focus-visible,
