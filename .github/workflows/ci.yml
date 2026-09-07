@@ -41,6 +41,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
 
       - name: PHPを準備
         uses: shivammathur/setup-php@v2
@@ -49,23 +50,11 @@ jobs:
           extensions: curl, pdo_mysql, mbstring
           coverage: none
 
-      - name: 依存関係をインストール
-        shell: bash
+      - name: lockfileから依存関係を再現
         run: |
           set -euo pipefail
-          if [ -f package-lock.json ]; then
-            npm ci --no-audit --no-fund
-          else
-            npm install --no-audit --no-fund
-          fi
-
-      - name: 依存lockfileを成果物として保存
-        uses: actions/upload-artifact@v4
-        with:
-          name: npm-lock
-          path: package-lock.json
-          if-no-files-found: error
-          retention-days: 1
+          test -f package-lock.json
+          npm ci --no-audit --no-fund
 
       - name: TypeScript・PHP・ロジックを検証
         run: |
@@ -130,7 +119,10 @@ jobs:
       - name: 監査回帰チェック
         run: |
           set -euo pipefail
+          test -f package-lock.json
           test ! -e .github/workflows/backfill-2025-09-05.yml
+          grep -F 'npm ci --no-audit --no-fund' .github/workflows/ci.yml >/dev/null
+          grep -F 'npm ci --no-audit --no-fund' .github/workflows/deploy-shin.yml >/dev/null
           grep -F 'feed_sessions' server/app/schema.sql >/dev/null
           grep -F 'feed_items' server/app/schema.sql >/dev/null
           grep -F 'nextCursor' server/app/src/CatalogService.php >/dev/null
