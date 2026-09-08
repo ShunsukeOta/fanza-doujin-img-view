@@ -20,6 +20,7 @@ await mkdir(appOut, { recursive: true });
 await cp(dist, publicOut, { recursive: true });
 await cp(resolve(root, "server/public/.htaccess"), resolve(publicOut, ".htaccess"));
 await cp(resolve(root, "server/public/api"), resolve(publicOut, "api"), { recursive: true });
+await cp(resolve(root, "server/public/work.php"), resolve(publicOut, "work.php"));
 await cp(serverApp, appOut, {
   recursive: true,
   filter: (source) => {

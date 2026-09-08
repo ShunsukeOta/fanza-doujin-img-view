@@ -2,11 +2,14 @@ import { StrictMode, type ReactNode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 import { AgeGate } from "@/components/AgeGate";
+import { ComingSoonFloorPage } from "@/components/ComingSoonFloorPage";
+import { FloorTabs } from "@/components/FloorTabs";
 import { HistoryPage } from "@/components/HistoryPage";
 import { PrivacyPolicyPage, TermsPage } from "@/components/LegalPages";
 import { MyPage } from "@/components/MyPage";
 import { Onboarding } from "@/components/Onboarding";
 import { SavedPage } from "@/components/SavedPage";
+import { SearchPage } from "@/components/SearchPage";
 import { SwipePreviewApp } from "@/components/SwipePreviewApp";
 import type { FilterValues } from "@/lib/types";
 import "@/styles/globals.css";
@@ -14,6 +17,7 @@ import "@/styles/navigation.css";
 import "@/styles/pages.css";
 import "@/styles/reader.css";
 import "@/styles/onboarding.css";
+import "@/styles/discovery.css";
 import "@/styles/accessibility.css";
 import { hasAgeVerification } from "@/src/ageVerification";
 import { startAnalytics } from "@/src/analytics";
@@ -43,14 +47,25 @@ function registerServiceWorker(): void {
   }, { once: true });
 }
 
+function workCidFromPath(pathname: string): string {
+  const match = pathname.match(/^\/work\/([^/]+)$/);
+  if (!match) return "";
+  try {
+    return decodeURIComponent(match[1]).slice(0, 256);
+  } catch {
+    return "";
+  }
+}
+
 type MainExperienceProps = {
   initialFilters: FilterValues;
   initialCid: string;
+  skipOnboarding?: boolean;
 };
 
-function MainExperience({ initialFilters, initialCid }: MainExperienceProps) {
-  // 一時仕様: 閲覧済みフラグを保存せず、メインページを新規表示するたびに必ず出す。
-  const [onboardingComplete, setOnboardingComplete] = useState(false);
+function MainExperience({ initialFilters, initialCid, skipOnboarding = false }: MainExperienceProps) {
+  // 一時仕様: 通常のFeedは新規表示するたびに案内。作品共有URLは対象作品へ直接入る。
+  const [onboardingComplete, setOnboardingComplete] = useState(skipOnboarding);
 
   useEffect(() => {
     if (onboardingComplete) installMainResumeLifecycle();
@@ -60,7 +75,12 @@ function MainExperience({ initialFilters, initialCid }: MainExperienceProps) {
     return <Onboarding onComplete={() => setOnboardingComplete(true)} />;
   }
 
-  return <SwipePreviewApp initialFilters={initialFilters} initialCid={initialCid} />;
+  return (
+    <>
+      <FloorTabs activeFloor="comic" context="feed" overlay />
+      <SwipePreviewApp initialFilters={initialFilters} initialCid={initialCid} />
+    </>
+  );
 }
 
 function ProtectedExperience({ children }: { children: ReactNode }) {
@@ -78,7 +98,8 @@ function ProtectedExperience({ children }: { children: ReactNode }) {
 }
 
 const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
-if (!["/saved", "/mypage", "/history", "/favorites", "/privacy", "/terms"].includes(pathname)) {
+const protectedSubpages = ["/saved", "/search", "/mypage", "/history", "/favorites"];
+if (![...protectedSubpages, "/privacy", "/terms", "/actress", "/amateur"].includes(pathname)) {
   prepareMainResumeFallback();
 }
 
@@ -98,6 +119,8 @@ const initialFilters: FilterValues = {
   maxPrice: boundedInt(params, "max_price", 0, 0, 10_000_000),
   query: (params.get("q") ?? "").slice(0, 100),
 };
+const pathWorkCid = workCidFromPath(pathname);
+const workCid = pathWorkCid || (params.get("cid") ?? "");
 
 const root = document.getElementById("root");
 if (!root) throw new Error("#root が見つかりません。");
@@ -113,9 +136,18 @@ if (pathname === "/favorites") {
   else {
     let protectedPage: ReactNode;
     if (pathname === "/saved") protectedPage = <SavedPage />;
+    else if (pathname === "/search") protectedPage = <SearchPage />;
     else if (pathname === "/mypage") protectedPage = <MyPage />;
     else if (pathname === "/history") protectedPage = <HistoryPage />;
-    else protectedPage = <MainExperience initialFilters={initialFilters} initialCid={params.get("cid") ?? ""} />;
+    else if (pathname === "/actress") protectedPage = <ComingSoonFloorPage floor="actress" />;
+    else if (pathname === "/amateur") protectedPage = <ComingSoonFloorPage floor="amateur" />;
+    else protectedPage = (
+      <MainExperience
+        initialFilters={initialFilters}
+        initialCid={workCid}
+        skipOnboarding={pathWorkCid !== ""}
+      />
+    );
     app = <ProtectedExperience>{protectedPage}</ProtectedExperience>;
   }
 

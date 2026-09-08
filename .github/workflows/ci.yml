@@ -83,7 +83,7 @@ jobs:
             if ($client->isComicItem(["imageURL" => ["large" => "https://pics.dmm.co.jp/digital/cg/test/testpl.jpg"]])) exit(1);
           '
 
-      - name: MariaDB移行・検索・固定feed・保存カーソルを検証
+      - name: MariaDB移行・詳細検索・固定feed・保存カーソルを検証
         run: |
           set -euo pipefail
           cat > server/app/config.local.php <<'PHP'
@@ -100,6 +100,7 @@ jobs:
             ],
             'app' => [
               'timezone' => 'Asia/Tokyo',
+              'public_origin' => 'https://example.invalid',
               'event_retention_days' => 60,
               'profile_retention_days' => 180,
               'sync_pages' => 5,
@@ -151,6 +152,7 @@ jobs:
           }
           PHP
           php server/app/tests/integration.php
+          php server/app/tests/search-integration.php
 
           # 旧バージョンのasset列がある本番DBを再現し、非コミック削除・孤立メタ整理・互換列固定を検証する。
           php <<'PHP'
@@ -242,6 +244,11 @@ jobs:
           grep -F 'sampleReadRatio' components/WorkCard.tsx >/dev/null
           grep -F 'reader-cta-link' components/WorkCard.tsx >/dev/null
           grep -F 'recordBatch' server/app/src/EventService.php >/dev/null
+          grep -F 'SearchService' server/app/bootstrap.php >/dev/null
+          grep -F 'maker_query' server/app/src/SearchService.php >/dev/null
+          grep -F 'series_query' server/app/src/SearchService.php >/dev/null
+          grep -F 'work.php?cid=' server/public/.htaccess >/dev/null
+          grep -F 'og:title' server/public/work.php >/dev/null
           grep -F 'refresh-catalog.php' .github/workflows/sync-shin.yml >/dev/null
           grep -F 'retention.php' .github/workflows/sync-shin.yml >/dev/null
           grep -F 'admin_request_authorized' server/public/api/debug.php >/dev/null
@@ -275,13 +282,16 @@ jobs:
           test -f deploy/public_html/manifest.webmanifest
           test -f deploy/public_html/sw.js
           test -f deploy/public_html/.htaccess
+          test -f deploy/public_html/work.php
           test -f deploy/public_html/api/catalog.php
+          test -f deploy/public_html/api/search.php
           test -f deploy/public_html/api/events.php
           test -f deploy/app/cron/setup-db.php
           test -f deploy/app/cron/fanza-sync.php
           test -f deploy/app/cron/refresh-catalog.php
           test -f deploy/app/cron/retention.php
           test -f deploy/app/src/WorkRepository.php
+          test -f deploy/app/src/SearchService.php
           test -f deploy/app/src/PriceParser.php
           test ! -e deploy/app/tests
           test ! -f deploy/app/config.local.php

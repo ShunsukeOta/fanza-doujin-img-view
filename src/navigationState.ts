@@ -1,12 +1,12 @@
 import { scrollLeftForLogicalPage } from "@/src/readerMath";
 import { loadReaderSettings } from "@/src/readerSettings";
 
-const MAIN_RETURN_KEY = "swipe-preview:main-return-v3";
-const RESUME_REQUEST_KEY = "swipe-preview:resume-request-v3";
+const MAIN_RETURN_KEY = "swipe-preview:main-return-v4";
+const RESUME_REQUEST_KEY = "swipe-preview:resume-request-v4";
 const MAX_STATE_AGE_MS = 12 * 60 * 60 * 1000;
 
-type SubpagePath = "/saved" | "/mypage" | "/history";
-export type NavOrigin = "main" | "saved" | "mypage" | "history";
+type SubpagePath = "/saved" | "/search" | "/mypage" | "/history";
+export type NavOrigin = "main" | "saved" | "search" | "mypage" | "history";
 
 type MainReturnState = {
   resumeUrl: string;
@@ -30,6 +30,10 @@ function safeRemove(key: string): void {
   try { sessionStorage.removeItem(key); } catch { /* noop */ }
 }
 
+function isSubpagePath(value: unknown): value is SubpagePath {
+  return value === "/saved" || value === "/search" || value === "/mypage" || value === "/history";
+}
+
 function readState(): MainReturnState | null {
   const raw = safeGet(MAIN_RETURN_KEY);
   if (!raw) return null;
@@ -40,7 +44,7 @@ function readState(): MainReturnState | null {
       && typeof parsed.cid === "string"
       && typeof parsed.pageIndex === "number"
       && typeof parsed.isCta === "boolean"
-      && (parsed.subpage === "/saved" || parsed.subpage === "/mypage" || parsed.subpage === "/history")
+      && isSubpagePath(parsed.subpage)
       && typeof parsed.historySteps === "number"
       && parsed.historySteps >= 1
       && typeof parsed.savedAt === "number"
@@ -80,9 +84,9 @@ function rememberMainBeforeSubpage(subpage: SubpagePath): void {
   if (!snapshot) return;
 
   const url = new URL(window.location.href);
-  url.pathname = "/";
+  url.pathname = `/work/${encodeURIComponent(snapshot.cid)}`;
   url.hash = "";
-  url.searchParams.set("cid", snapshot.cid);
+  url.searchParams.delete("cid");
 
   const state: MainReturnState = {
     resumeUrl: `${url.pathname}${url.search}`,
@@ -135,9 +139,7 @@ export function openWorkInMain(cid: string): void {
   const normalized = cid.trim();
   if (!normalized) return;
   safeRemove(RESUME_REQUEST_KEY);
-  const url = new URL("/", window.location.origin);
-  url.searchParams.set("cid", normalized);
-  window.location.assign(`${url.pathname}${url.search}`);
+  window.location.assign(`/work/${encodeURIComponent(normalized)}`);
 }
 
 export function prepareMainResumeFallback(): void {
