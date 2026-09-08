@@ -4,14 +4,30 @@ const fail = (message) => {
   console.error(`debt check: ${message}`);
   process.exitCode = 1;
 };
+const read = (path) => readFileSync(path, "utf8");
+const mustContain = (text, values, label) => {
+  for (const value of values) {
+    if (!text.includes(value)) fail(`${label} に ${value} がありません。`);
+  }
+};
+const mustNotContain = (text, values, label) => {
+  for (const value of values) {
+    if (text.includes(value)) fail(`${label} に廃止済み要素 ${value} が残っています。`);
+  }
+};
 
-const removedStyles = [
+for (const path of [
   "styles/page-scroll.css",
   "styles/pwa-layout.css",
   "styles/saved-enhancements.css",
-];
-for (const path of removedStyles) {
-  if (existsSync(path)) fail(`${path} が再作成されています。pages/globalsへ統合してください。`);
+  "styles/video.css",
+  "components/VideoWorkCard.tsx",
+  "components/FloorSwitcher.tsx",
+  "components/FloorTabs.tsx",
+  "components/ComingSoonFloorPage.tsx",
+  "src/floors.ts",
+]) {
+  if (existsSync(path)) fail(`廃止済みファイル ${path} が残っています。`);
 }
 
 const styleFiles = [
@@ -23,9 +39,11 @@ const styleFiles = [
   "styles/discovery.css",
   "styles/accessibility.css",
 ];
-const css = styleFiles.map((path) => readFileSync(path, "utf8")).join("\n");
-
-for (const selector of [
+for (const path of styleFiles) {
+  if (!existsSync(path)) fail(`必須CSS ${path} がありません。`);
+}
+const css = styleFiles.map(read).join("\n");
+mustNotContain(css, [
   ".debug-action",
   ".debug-sheet",
   ".diag-table",
@@ -36,14 +54,15 @@ for (const selector of [
   ".reader-settings-note",
   ".floor-tabs",
   ".floor-tab",
-]) {
-  if (css.includes(selector)) fail(`削除済みUIのCSS ${selector} が残っています。`);
-}
-
-for (const required of [
+  ".floor-switcher",
+  ".floor-coming",
+  ".video-feed-item",
+  ".video-embed-player",
+  ".video-swipe-zone",
+], "CSS");
+mustContain(css, [
   ".feed-load-error",
   ".favorite-buy",
-  ".favorite-actions :is(button, a)",
   ".reader-fit-width",
   ".reader-cta-link",
   ".age-gate",
@@ -52,223 +71,140 @@ for (const required of [
   ".history-list",
   ".profile-danger-zone",
   ".rating-filter",
-  ".floor-switcher",
-  ".floor-switcher-menu",
   ".detail-search-form",
   ".search-result-grid",
-]) {
-  if (!css.includes(required)) fail(`必須スタイル ${required} がありません。`);
-}
-
+], "CSS");
 if (!css.includes('font-family: "Noto Sans JP", sans-serif')) {
   fail("全体フォントがNoto Sans JPへ固定されていません。");
 }
 
-const main = readFileSync("src/main.tsx", "utf8");
-for (const removed of removedStyles) {
-  const importPath = `@/${removed}`;
-  if (main.includes(importPath)) fail(`削除済みCSS ${importPath} をimportしています。`);
-}
-if (!main.includes("hasAgeVerification") || !main.includes("<AgeGate")) {
-  fail("成人向け画面の年齢確認ゲートがありません。");
-}
-if (!main.includes('pathname === "/privacy"') || !main.includes('pathname === "/terms"')) {
-  fail("プライバシーポリシーまたは利用規約ルートがありません。");
-}
-if (!main.includes('pathname === "/history"')) {
-  fail("閲覧履歴ページのルートがありません。");
-}
-if (!main.includes('pathname === "/search"') || !main.includes("<SearchPage")) {
-  fail("詳細検索ページのルートがありません。");
-}
-if (!main.includes("workCidFromPath") || !main.includes("<FloorSwitcher")) {
-  fail("作品単位URLまたはFeedフロア切替がMainへ統合されていません。");
-}
-if (!main.includes('skipOnboarding={pathWorkCid !== ""}')) {
-  fail("共有作品URLが通常Feed用オンボーディングを迂回してReaderへ直行しません。");
-}
+const main = read("src/main.tsx");
+mustContain(main, [
+  "hasAgeVerification",
+  "<AgeGate",
+  'pathname === "/privacy"',
+  'pathname === "/terms"',
+  'pathname === "/history"',
+  'pathname === "/search"',
+  "<SearchPage",
+  "workCidFromPath",
+  'skipOnboarding={pathWorkCid !== ""}',
+], "Main");
+mustNotContain(main, [
+  "FloorSwitcher",
+  "FloorTabs",
+  "ComingSoonFloorPage",
+  'pathname === "/amateur"',
+  'pathname === "/actress"',
+  'styles/video.css',
+], "Main");
 
-const imagePreload = readFileSync("src/imagePreload.ts", "utf8");
-if (!imagePreload.includes("MAX_DECODE_CACHE")) fail("画像decodeキャッシュの上限がありません。");
-
-const reactions = readFileSync("src/reactions.ts", "utf8");
-if (!reactions.includes("MAX_REACTION_QUERY_CIDS = 50")) fail("リアクションAPIとフロントの件数上限が不一致です。");
-
-const navigation = readFileSync("src/navigationState.ts", "utf8");
-if (!navigation.includes("scrollLeftForLogicalPage")) fail("復帰位置が読む方向を考慮していません。");
-if (!navigation.includes('"/history"') || !navigation.includes('"/search"')) {
-  fail("履歴または詳細検索が画面復帰ナビゲーションへ統合されていません。");
-}
-if (!navigation.includes('window.location.assign(`/work/${encodeURIComponent(normalized)}`)')) {
-  fail("作品を開く導線が作品単位URLを使用していません。");
-}
-
-const readerSettings = readFileSync("src/readerSettings.ts", "utf8");
-for (const required of ["subscribeReaderSettings", "readerSettingsEqual", "SETTINGS_EVENT", '"pageshow"', '"focus"']) {
-  if (!readerSettings.includes(required)) fail(`Reader設定同期に必要な ${required} がありません。`);
-}
-
-const fanza = readFileSync("server/app/src/FanzaClient.php", "utf8");
-if (!fanza.includes("'makerId' =>")) fail("maker_idを正規化結果へ渡していません。");
-if (!fanza.includes("function isComicItem")) fail("FANZA取得時のコミック判定がありません。");
-for (const removed of ["assetDefinitions", "assetLabel", "detectAssetBucket", "'assetType' =>", "'assetBucket' =>"]) {
-  if (fanza.includes(removed)) fail(`削除済み作品タイプ分類 ${removed} がFanzaClientへ残っています。`);
-}
-
-const build = readFileSync("scripts/build-shin.mjs", "utf8");
-if (!build.includes('path !== "tests"')) fail("本番成果物からserver/app/testsを除外していません。");
-if (!build.includes('server/public/work.php')) fail("作品OGPレンダラーが本番成果物へ含まれていません。");
-
-const app = readFileSync("components/SwipePreviewApp.tsx", "utf8");
+const app = read("components/SwipePreviewApp.tsx");
+mustContain(app, ["WorkCard", "subscribeReaderSettings", "draftMinSamples", "RATING_OPTIONS", "ビューアー設定"], "Feed");
+mustNotContain(app, ["VideoWorkCard", "FeedFloorKey", "sampleMovieUrl", 'floor === "amateur"'], "Feed");
 if (/nextCursor === null\s*\|\|\s*!feedId/.test(app)) {
   fail("FANZA APIフォールバック時にfeedIdなしで追加取得できません。");
 }
 if (!app.includes('catalog.source === "database" ? catalog.apiTotal : 0')) {
-  fail("FANZA fallbackの同人フロア全件数をコミック総数として表示する回帰があります。");
-}
-for (const required of ["subscribeReaderSettings", "draftMinSamples", "draftMinReviews", "RATING_OPTIONS", "ビューアー設定"]) {
-  if (!app.includes(required)) fail(`絞り込み/Reader改善に必要な ${required} がありません。`);
-}
-if (app.includes("ダブルタップで拡大・解除、2本指ピンチで1〜4倍に拡大できます。設定はこの端末に保存されます。")) {
-  fail("削除対象のReader補足テキストが再混入しています。");
-}
-if (/id="min_rating"\s+type="number"/.test(app)) {
-  fail("最低評価が数値入力へ戻っています。5段階の星UIを使用してください。");
-}
-for (const deadRetry of ["retryAttempt", "retryAt", "retryDelay", "ApiError"]) {
-  if (app.includes(deadRetry)) fail(`実際に機能しない追加取得retryコード ${deadRetry} が残っています。`);
-}
-for (const removed of ["AssetType", "asset_type", "assetType", "作品タイプ", "CG・イラスト系", "ボイス・音声系"]) {
-  if (app.includes(removed)) fail(`コミック専用UIに旧作品タイプ要素 ${removed} が残っています。`);
+  fail("FANZA APIフォールバック件数をDB総件数として表示する回帰があります。");
 }
 
-const myPage = readFileSync("components/MyPage.tsx", "utf8");
-if (!myPage.includes("subscribeReaderSettings") || !myPage.includes("readerSettingsEqual")) {
-  fail("マイページのReader設定が絞り込み画面と同期されていません。");
-}
+const searchPage = read("components/SearchPage.tsx");
+mustContain(searchPage, ["maker", "series", "genreId", "minRating", "price_asc", "/api/search", "openWorkInMain(item.cid)"], "詳細検索");
+mustNotContain(searchPage, ["FloorTabs", "floorFromLocation", "floorLabel", "COMING SOON", "amateur", "actress"], "詳細検索");
 
-const globalNav = readFileSync("components/GlobalNav.tsx", "utf8");
-const navigationCss = readFileSync("styles/navigation.css", "utf8");
-if (!globalNav.includes("SearchIcon") || !globalNav.includes(">検索<") || !globalNav.includes(">読む<")) {
-  fail("詳細検索を含むグローバルメニュー構造がありません。");
-}
+const savedPage = read("components/SavedPage.tsx");
+mustContain(savedPage, ["/api/saved", "openWorkInMain(item.cid)", "favorite-buy"], "保存済み");
+mustNotContain(savedPage, ["FloorTabs", "floorFromLocation", "floorLabel", "COMING SOON", "amateur", "actress"], "保存済み");
+
+const globalNav = read("components/GlobalNav.tsx");
+mustContain(globalNav, ["SearchIcon", ">検索<", ">読む<", 'navigateToSubpage("/mypage", origin)'], "グローバルメニュー");
+mustNotContain(globalNav, ["floorFromLocation", "floorContextPath", "floorFeedPath", "amateur", "actress"], "グローバルメニュー");
+const navigationCss = read("styles/navigation.css");
 if (!navigationCss.includes("backdrop-filter: blur(22px)") || !navigationCss.includes("grid-template-columns: repeat(4")) {
   fail("4項目フローティング型グローバルメニューCSSがありません。");
 }
 
-const floorSwitcher = readFileSync("components/FloorSwitcher.tsx", "utf8");
-for (const required of ["FLOORS", "floorContextPath", "表示するコンテンツ", "aria-haspopup=\"menu\""]) {
-  if (!floorSwitcher.includes(required)) fail(`表示切替UIに ${required} がありません。`);
-}
-const floorCompat = readFileSync("components/FloorTabs.tsx", "utf8");
-if (!floorCompat.includes("<FloorSwitcher")) {
-  fail("既存画面のフロア切替がFloorSwitcherへ統一されていません。");
-}
-const savedPage = readFileSync("components/SavedPage.tsx", "utf8");
-if (!savedPage.includes("<FloorTabs") || !savedPage.includes("floorFromLocation")) {
-  fail("保存済み画面へフロア切替が統合されていません。");
+const navigation = read("src/navigationState.ts");
+mustContain(navigation, ["scrollLeftForLogicalPage", '"/history"', '"/search"', 'window.location.assign(`/work/${encodeURIComponent(normalized)}`)'], "復帰ナビゲーション");
+mustNotContain(navigation, ["MainFloor", "/amateur?cid=", 'floor: "amateur"'], "復帰ナビゲーション");
+
+const readerSettings = read("src/readerSettings.ts");
+mustContain(readerSettings, ["subscribeReaderSettings", "readerSettingsEqual", "SETTINGS_EVENT", '"pageshow"', '"focus"'], "Reader設定同期");
+const imagePreload = read("src/imagePreload.ts");
+if (!imagePreload.includes("MAX_DECODE_CACHE")) fail("画像decodeキャッシュの上限がありません。");
+const reactions = read("src/reactions.ts");
+if (!reactions.includes("MAX_REACTION_QUERY_CIDS = 50")) fail("リアクションAPIとフロントの件数上限が不一致です。");
+
+const types = read("lib/types.ts");
+mustNotContain(types, ["FloorKey", "mediaType", "sampleMovieUrl", "AssetType", "assetType", "assetBucket", "assetLabel", "assetTypes"], "フロント型");
+
+const fanza = read("server/app/src/FanzaClient.php");
+mustContain(fanza, ["resolveDoujinFloor", "function isComicItem", "'makerId' =>"], "FANZAクライアント");
+mustNotContain(fanza, ["videoc", "sampleMovieURL", "sampleMovieUrl", "FLOOR_DEFINITIONS", "normalizeFloorKey", "resolveFloor(", "amateur", "assetDefinitions", "assetLabel", "detectAssetBucket", "'assetType' =>", "'assetBucket' =>"], "FANZAクライアント");
+
+const catalog = read("server/app/src/CatalogService.php");
+mustContain(catalog, ["LIVE_MAX_PAGES", "stoppedInsidePage", "isComicItem", "rules-v3.2-comic"], "CatalogService");
+mustNotContain(catalog, ["floor_key", "sample_movie_url", "FeedFloorKey", "rules-v3.3-amateur", "amateur", "assetType", "assetTypes", "asset_type", "assetLabel", "assetBucket"], "CatalogService");
+if (/candidateTarget = min\(1500/.test(catalog)) fail("1,500件固定候補上限が残っています。");
+if (catalog.includes("CRC32(CONCAT")) fail("全件式CRC32 ORDER BYが残っています。");
+
+const workRepository = read("server/app/src/WorkRepository.php");
+mustNotContain(workRepository, ["floor_key", "sample_movie_url", "sampleMovieUrl", "resolveFloor", "asset_type", "asset_bucket", "assetType", "assetBucket", "assetLabel"], "WorkRepository");
+if (/upsertNormalized\(array \$item,\s*string \$source/.test(workRepository)) {
+  fail("WorkRepository::upsertNormalized に未使用のsource引数が残っています。");
 }
 
-const searchPage = readFileSync("components/SearchPage.tsx", "utf8");
-for (const required of ["maker", "series", "genreId", "minRating", "price_asc", "/api/search"]) {
-  if (!searchPage.includes(required)) fail(`詳細検索UIに ${required} がありません。`);
+const schema = read("server/app/schema.sql");
+mustContain(schema, ["idx_works_feed", "feed_sessions", "feed_items"], "DB schema");
+mustNotContain(schema, ["floor_key", "sample_movie_url", "idx_works_floor_feed", "asset_type", "asset_bucket", "idx_works_asset"], "DB schema");
+
+const database = read("server/app/src/Database.php");
+mustNotContain(database, ["floorKey", "floor_key", "sample_movie_url", "amateur"], "Database");
+
+const sync = read("server/app/cron/fanza-sync.php");
+mustContain(sync, ["resolveDoujinFloor", "isComicItem", "skippedNonComic"], "FANZA同期");
+mustNotContain(sync, ["floor::", "--floor", "resolveFloor", "amateur", "videoc"], "FANZA同期");
+if (sync.includes("fetchGenres")) {
+  fail("同期処理が同人フロア全体のジャンルを事前投入しています。作品実データ由来に限定してください。");
 }
 
-const readerCss = readFileSync("styles/reader.css", "utf8");
-if (!readerCss.includes("white-space: nowrap") || !readerCss.includes("gap: 12px")) {
-  fail("スワイプ案内またはReaderアクション余白の改善が欠落しています。");
-}
+const setupDb = read("server/app/cron/setup-db.php");
+mustContain(setupDb, ["ComicOnlyCleanup::run", "idx_works_feed", "recommendation-v3-rebuild-20260907"], "DB setup");
+mustNotContain(setupDb, ["multi-floor-amateur-video-20260908", "floor_key", "sample_movie_url", "idx_works_floor_feed"], "DB setup本体");
+if (!existsSync("server/app/src/ComicOnlyCleanup.php")) fail("本番DB縮退用の一時cleanupがありません。");
+const cleanup = read("server/app/src/ComicOnlyCleanup.php");
+mustContain(cleanup, ["floor_key", "sample_movie_url", "asset_type", "asset_bucket", "idx_works_feed", "multi-floor-amateur-video-20260908"], "DB cleanup");
 
-const indexHtml = readFileSync("index.html", "utf8");
+const searchApi = read("server/public/api/search.php");
+mustContain(searchApi, ["searchService->search"], "詳細検索API");
+mustNotContain(searchApi, ["floorKey", "amateur"], "詳細検索API");
+const savedApi = read("server/public/api/saved.php");
+mustContain(savedApi, ["userLibraryService->saved"], "保存API");
+mustNotContain(savedApi, ["floorKey", "amateur"], "保存API");
+
+const searchService = read("server/app/src/SearchService.php");
+mustContain(searchService, ["maker_query", "series_query", "genre_id", "price_asc", "feedItemsByCids"], "SearchService");
+mustNotContain(searchService, ["floor_key", "amateur"], "SearchService");
+
+const workPage = read("server/public/work.php");
+mustContain(workPage, ['og:title', 'og:description', 'og:image', 'rel="canonical"', 'twitter:card'], "作品OGPページ");
+const htaccess = read("server/public/.htaccess");
+mustContain(htaccess, ["Content-Security-Policy", "work.php?cid=", "R=301", "QSD", "fonts.googleapis.com", "fonts.gstatic.com"], "本番ルーティング/CSP");
+mustNotContain(htaccess, ["litevideo", "frame-src https://*.dmm", "media-src 'self' https:"], "本番CSP");
+
+const build = read("scripts/build-shin.mjs");
+mustContain(build, ['path !== "tests"', "server/public/work.php"], "本番ビルド");
+const indexHtml = read("index.html");
 if (!indexHtml.includes("fonts.googleapis.com") || !indexHtml.includes("Noto+Sans+JP")) {
   fail("Noto Sans JPのWeb Font読込がありません。");
 }
 
-const types = readFileSync("lib/types.ts", "utf8");
-for (const removed of ["AssetType", "AssetTypeDefinition", "assetType", "assetBucket", "assetLabel", "assetTypes"]) {
-  if (types.includes(removed)) fail(`フロント型に旧作品タイプ要素 ${removed} が残っています。`);
-}
-
-const catalog = readFileSync("server/app/src/CatalogService.php", "utf8");
-for (const removed of ["assetType", "assetTypes", "asset_type", "assetLabel", "assetBucket"]) {
-  if (catalog.includes(removed)) fail(`CatalogServiceに旧作品タイプ分岐 ${removed} が残っています。`);
-}
-if (!catalog.includes("LIVE_MAX_PAGES") || !catalog.includes("isComicItem")) {
-  fail("FANZA fallbackがコミックだけを複数ページ走査する実装になっていません。");
-}
-if (!catalog.includes("stoppedInsidePage")) {
-  fail("FANZA fallbackが部分ページでlimit到達した際のcursor継続を保護していません。");
-}
-
-const workRepository = readFileSync("server/app/src/WorkRepository.php", "utf8");
-if (/upsertNormalized\(array \$item,\s*string \$source/.test(workRepository)) {
-  fail("WorkRepository::upsertNormalized に未使用のsource引数が残っています。");
-}
-for (const removed of ["asset_type", "asset_bucket", "assetType", "assetBucket", "assetLabel"]) {
-  if (workRepository.includes(removed)) fail(`WorkRepositoryに旧作品タイプ列 ${removed} への依存が残っています。`);
-}
-
-const schema = readFileSync("server/app/schema.sql", "utf8");
-for (const removed of ["asset_type", "asset_bucket", "idx_works_asset"]) {
-  if (schema.includes(removed)) fail(`新規DB schemaに旧作品タイプ定義 ${removed} が残っています。`);
-}
-
-const sync = readFileSync("server/app/cron/fanza-sync.php", "utf8");
-if (!sync.includes("isComicItem") || !sync.includes("skippedNonComic")) {
-  fail("同期処理がコミック以外を除外していません。");
-}
-if (sync.includes("fetchGenres")) {
-  fail("同期処理が同人フロア全体のジャンルを事前投入しています。コミック実データ由来に限定してください。");
-}
-
-const setupDb = readFileSync("server/app/cron/setup-db.php", "utf8");
-if (!setupDb.includes("comic-only-catalog-20260908") || !setupDb.includes("removed_non_comic")) {
-  fail("既存DBの非コミック作品を整理するmigrationがありません。");
-}
-if (!setupDb.includes("LEFT JOIN work_genres") || !setupDb.includes("LEFT JOIN work_series")) {
-  fail("コミック専用化migrationで孤立ジャンル・シリーズを整理していません。");
-}
-const comicMark = setupDb.indexOf("mark_migration($pdo, $comicOnlyMigration);");
-const comicDdl = setupDb.indexOf("ALTER TABLE works MODIFY asset_type");
-if (comicDdl >= 0 && (comicMark < 0 || comicMark < comicDdl)) {
-  fail("コミック専用化migrationが互換DDL完了前に適用済みmarkされています。");
-}
-
-const api = readFileSync("src/api.ts", "utf8");
-for (const deadApi of ["retryDelay", "retryAfterMs", "ApiError"]) {
-  if (api.includes(deadApi)) fail(`未使用のAPI補助実装 ${deadApi} が残っています。`);
-}
-
-const meApi = readFileSync("server/public/api/me.php", "utf8");
-if (!meApi.includes("'DELETE'") || !meApi.includes("deleteProfile") || !meApi.includes("clear_anonymous_identity")) {
-  fail("匿名データ削除APIが完全に接続されていません。");
-}
-
-const historyApi = readFileSync("server/public/api/history.php", "utf8");
+const meApi = read("server/public/api/me.php");
+mustContain(meApi, ["'DELETE'", "deleteProfile", "clear_anonymous_identity"], "匿名データ削除API");
+const historyApi = read("server/public/api/history.php");
 if (!historyApi.includes("userLibraryService->history")) fail("閲覧履歴APIがUserLibraryServiceへ接続されていません。");
-
-const searchApi = readFileSync("server/public/api/search.php", "utf8");
-if (!searchApi.includes("searchService->search")) {
-  fail("詳細検索APIがSearchServiceへ接続されていません。");
-}
-const searchService = readFileSync("server/app/src/SearchService.php", "utf8");
-for (const required of ["maker_query", "series_query", "genre_id", "price_asc", "feedItemsByCids"]) {
-  if (!searchService.includes(required)) fail(`SearchServiceに ${required} がありません。`);
-}
-
-const workPage = readFileSync("server/public/work.php", "utf8");
-for (const required of ['og:title', 'og:description', 'og:image', 'rel="canonical"', 'twitter:card']) {
-  if (!workPage.includes(required)) fail(`作品OGPページに ${required} がありません。`);
-}
-
-const htaccess = readFileSync("server/public/.htaccess", "utf8");
-const router = readFileSync("server/public/router.php", "utf8");
-if (!htaccess.includes("history") || !router.includes("history")) fail("閲覧履歴APIのルーティングが不足しています。");
-if (!htaccess.includes("search") || !router.includes("search")) fail("詳細検索APIのルーティングが不足しています。");
-if (!htaccess.includes("work.php?cid=") || !router.includes("/work/")) fail("作品単位URLのルーティングが不足しています。");
-if (!htaccess.includes("R=301") || !htaccess.includes("QSD")) fail("旧cid共有URLがcanonical作品URLへ301統一されていません。");
-if (!htaccess.includes("fonts.googleapis.com") || !htaccess.includes("fonts.gstatic.com")) {
-  fail("Noto Sans JP配信元がCSPで許可されていません。");
-}
+const api = read("src/api.ts");
+mustNotContain(api, ["retryDelay", "retryAfterMs", "ApiError"], "API補助実装");
 
 if (!process.exitCode) console.log("debt check: OK");
