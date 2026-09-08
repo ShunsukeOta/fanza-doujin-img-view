@@ -25,10 +25,46 @@ function currentOrigin(): NavOrigin {
 
 export function GlobalNav({ active = currentNav() }: Props) {
   const origin = currentOrigin();
-  const goMain = () => { if (origin !== "main") resumeMainFromSubpage(); };
-  return <nav className="global-nav" aria-label="グローバルメニュー">
-    <button className={`global-nav-item${active === "saved" ? " is-active" : ""}`} type="button" onClick={() => { if (currentPath() !== "/saved") navigateToSubpage("/saved", origin); }} aria-label="保存済み" aria-current={currentPath() === "/saved" ? "page" : undefined}><BookmarkIcon /><span>保存済み</span></button>
-    <button className="global-nav-main" type="button" onClick={goMain} aria-current={origin === "main" ? "page" : undefined} aria-label="メインページ・上下にスワイプして作品を移動"><FeedSwipeIcon /><span className="sr-only">メインページ</span></button>
-    <button className={`global-nav-item${active === "mypage" ? " is-active" : ""}`} type="button" onClick={() => { if (currentPath() !== "/mypage") navigateToSubpage("/mypage", origin); }} aria-label="マイページ" aria-current={currentPath() === "/mypage" ? "page" : undefined}><UserIcon /><span>マイページ</span></button>
-  </nav>;
+  const goMain = () => {
+    if (origin !== "main") resumeMainFromSubpage();
+  };
+
+  return (
+    <nav className="global-nav" aria-label="グローバルメニュー">
+      <button
+        className={`global-nav-item${active === "saved" ? " is-active" : ""}`}
+        type="button"
+        onClick={() => {
+          if (currentPath() !== "/saved") navigateToSubpage("/saved", origin);
+        }}
+        aria-label="保存済み"
+        aria-current={currentPath() === "/saved" ? "page" : undefined}
+      >
+        <BookmarkIcon />
+        <span>保存</span>
+      </button>
+      <button
+        className={`global-nav-item global-nav-main${active === "main" ? " is-active" : ""}`}
+        type="button"
+        onClick={goMain}
+        aria-current={origin === "main" ? "page" : undefined}
+        aria-label="読む・上下にスワイプして作品を移動"
+      >
+        <FeedSwipeIcon />
+        <span>読む</span>
+      </button>
+      <button
+        className={`global-nav-item${active === "mypage" ? " is-active" : ""}`}
+        type="button"
+        onClick={() => {
+          if (currentPath() !== "/mypage") navigateToSubpage("/mypage", origin);
+        }}
+        aria-label="マイページ"
+        aria-current={currentPath() === "/mypage" ? "page" : undefined}
+      >
+        <UserIcon />
+        <span>マイページ</span>
+      </button>
+    </nav>
+  );
 }
