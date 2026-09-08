@@ -32,10 +32,13 @@ FANZA同人の**コミック作品だけ**を対象に、TikTok / Shortsのよ�
 3. DB障害時のライブフォールバックでも非コミック作品をスキップする
 4. 直接CID指定で非コミックを指定してもReaderへ混入させない
 5. 既存DBのCG・ゲーム・音声・その他作品は一度だけmigrationで削除する
-6. 古い固定Feedを破棄し、コミックだけで推薦Feedを再生成する
-7. 作品タイプ用のフロント型・URLパラメータ・UI・APIフィルターを廃止する
+6. 非コミック削除で孤立したジャンル・シリーズを整理する
+7. 古い固定Feedを破棄し、コミックだけで推薦Feedを再生成する
+8. 作品タイプ用のフロント型・URLパラメータ・UI・APIフィルターを廃止する
 
 既存本番DBに存在する旧 `asset_type / asset_bucket` 列は、旧リリースへ安全にロールバックできるよう**互換列として一時的に残します**。残存値とDEFAULTは`comic`へ固定し、新コードからは一切参照しません。新規DBの`schema.sql`には旧列を作成しません。これはexpand-contract migrationの互換期間です。
+
+migrationは非コミック削除・孤立メタデータ整理・互換列DDLがすべて成功した後に適用済みとしてmarkします。途中失敗時は次回実行で安全に再試行できます。
 
 旧URLの `asset_type` / `category` パラメータはフロントで削除し、カタログ条件として使用しません。
 
@@ -163,7 +166,9 @@ recommender versionは **`rules-v3.2-comic`** です。
 
 DBへ接続できない、または表示可能なDB作品がない場合はFANZA APIからライブ取得します。
 
-同人フロアにはコミック以外も含まれるため、フォールバックでは最大複数APIページを走査し、`isComicItem()`を通過したコミックだけをFeedへ返します。`feedId`は`null`となり、`nextCursor`で続きを取得します。
+同人フロアにはコミック以外も含まれるため、フォールバックでは最大複数APIページを走査し、`isComicItem()`を通過したコミックだけをFeedへ返します。`feedId`は`null`となり、`nextCursor`で続きを取得します。1回のAPIレスポンス途中で表示件数へ到達した場合も、未走査部分を飛ばさないcursor計算にしています。
+
+FANZAの`total_count`は同人フロア全体の件数なので、フォールバック中はコミック総数として画面へ表示しません。画面上は現在読み込めているコミック件数を使用します。
 
 ## FANZA同期
 
@@ -182,6 +187,8 @@ isComicItem(raw)
        ↓
      MariaDB
 ```
+
+`genres / series`も同人フロア全体のマスターを事前投入せず、実際に取り込んだコミックの`iteminfo`から保存します。これによりCG・ゲーム・音声だけで使われるメタデータが再混入しません。
 
 作品保守は3系統です。
 
@@ -263,14 +270,16 @@ npm run build:shin
 - 新規schemaへの`asset_type / asset_bucket`復活
 - FANZAコミック判定の欠落
 - 同期時の非コミックスキップ欠落
-- 既存DBコミック専用化migrationの欠落
-- FANZA fallbackの複数ページ・コミック判定欠落
+- 同人フロア全体ジャンルの同期処理への再混入
+- 既存DBコミック専用化migration / 孤立メタ整理の欠落
+- migration完了markが互換DDLより先に立つ回帰
+- FANZA fallbackの複数ページ・部分ページcursor処理の欠落
 
 ## CI
 
 Pull RequestではTypeScript、全PHP構文、debt check、Readerロジック、MariaDB migration、検索、固定Feed、保存cursor、閲覧履歴cursor、匿名データ削除、価格差額、本番build、成果物への秘密情報混入をまとめて確認します。
 
-MariaDB 11.4をCI service containerとして使用します。
+MariaDB 11.4をCI service containerとして使用します。新規schemaの再実行安全性に加え、旧`asset_type / asset_bucket`列を持つDBをCI内で再現し、非コミック削除、孤立ジャンル・シリーズ削除、互換列の`comic`固定、migration再実行を検証します。
 
 ## 本番デプロイ
 
