@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { GlobalNav } from "@/components/GlobalNav";
 import type { FeedItem } from "@/lib/types";
 import { fetchJson } from "@/src/api";
-import { openWorkInMain } from "@/src/navigationState";
+import { navigateToSubpage, openWorkInMain } from "@/src/navigationState";
 import { formatPrice } from "@/src/price";
 
 type HistoryItem = FeedItem & { viewedAt?: string };
@@ -98,7 +98,7 @@ export function HistoryPage() {
     <div className="subpage-shell">
       <header className="subpage-header">
         <div>
-          <a className="subpage-back-link" href="/mypage">← マイページ</a>
+          <button className="subpage-back-link" type="button" onClick={() => navigateToSubpage("/mypage", "history")}>← マイページ</button>
           <h1>閲覧履歴</h1>
         </div>
         <button className="subpage-refresh" type="button" onClick={() => void load()} disabled={loading}>再読込</button>
