@@ -1,7 +1,8 @@
-import { StrictMode, type ReactNode } from "react";
+import { StrictMode, type ReactNode, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 import { MyPage } from "@/components/MyPage";
+import { Onboarding } from "@/components/Onboarding";
 import { SavedPage } from "@/components/SavedPage";
 import { SwipePreviewApp } from "@/components/SwipePreviewApp";
 import type { AssetType, FilterValues } from "@/lib/types";
@@ -10,6 +11,7 @@ import "@/styles/navigation.css";
 import "@/styles/pages.css";
 import "@/styles/page-scroll.css";
 import "@/styles/reader.css";
+import "@/styles/onboarding.css";
 import "@/styles/saved-enhancements.css";
 import "@/styles/pwa-layout.css";
 import "@/styles/accessibility.css";
@@ -47,6 +49,22 @@ function registerServiceWorker(): void {
   }, { once: true });
 }
 
+type MainExperienceProps = {
+  initialFilters: FilterValues;
+  initialCid: string;
+};
+
+function MainExperience({ initialFilters, initialCid }: MainExperienceProps) {
+  // 一時仕様: 閲覧済みフラグを保存せず、メインページを新規表示するたびに必ず出す。
+  const [onboardingComplete, setOnboardingComplete] = useState(false);
+
+  if (!onboardingComplete) {
+    return <Onboarding onComplete={() => setOnboardingComplete(true)} />;
+  }
+
+  return <SwipePreviewApp initialFilters={initialFilters} initialCid={initialCid} />;
+}
+
 const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
 if (pathname !== "/saved" && pathname !== "/mypage" && pathname !== "/favorites") {
   prepareMainResumeFallback();
@@ -77,7 +95,7 @@ if (pathname === "/favorites") {
   let app: ReactNode;
   if (pathname === "/saved") app = <SavedPage />;
   else if (pathname === "/mypage") app = <MyPage />;
-  else app = <SwipePreviewApp initialFilters={initialFilters} initialCid={params.get("cid") ?? ""} />;
+  else app = <MainExperience initialFilters={initialFilters} initialCid={params.get("cid") ?? ""} />;
 
   createRoot(root).render(<StrictMode>{app}</StrictMode>);
   if (pathname !== "/saved" && pathname !== "/mypage") installMainResumeLifecycle();
