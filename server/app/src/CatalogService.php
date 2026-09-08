@@ -11,9 +11,10 @@ use Throwable;
 final class CatalogService
 {
     private const LIVE_HITS = 100;
+    private const LIVE_MAX_PAGES = 5;
     private const FEED_TTL_HOURS = 12;
     private const BLOCK_SIZE = 120;
-    private const RECOMMENDER_VERSION = 'rules-v3.1';
+    private const RECOMMENDER_VERSION = 'rules-v3.2-comic';
     private const MAX_CURSOR = 200000;
 
     public function __construct(
@@ -70,7 +71,6 @@ final class CatalogService
         return [
             'floor' => $floor,
             'genres' => $genres,
-            'assetTypes' => FanzaClient::assetDefinitions(),
             'recommenderVersion' => self::RECOMMENDER_VERSION,
         ];
     }
@@ -110,15 +110,7 @@ final class CatalogService
         return [
             'scanned' => $stats['total'],
             'apiTotal' => $stats['total'],
-            'stats' => [
-                'all' => $stats,
-                'comic' => $stats,
-                'cg' => $stats,
-                'game' => $stats,
-                'voice' => $stats,
-                'other' => $stats,
-                'rawBuckets' => [],
-            ],
+            'stats' => ['comic' => $stats],
         ];
     }
 
@@ -172,7 +164,7 @@ final class CatalogService
                     $cid = $this->fanza->normalizeCid($cidInput);
                     $direct = $this->works->feedItemByCid($cid) ?? $this->works->fetchAndUpsert($cid);
                     if (($direct['sampleCount'] ?? 0) < 1 || ($direct['available'] ?? true) === false) {
-                        throw new RuntimeException('指定した作品に表示可能なサンプルがありません。');
+                        throw new RuntimeException('指定したコミックに表示可能なサンプルがありません。');
                     }
 
                     $directBelongsToPool = $this->cidMatchesDatabaseFilters($pdo, $cid, $filters);
@@ -211,7 +203,6 @@ final class CatalogService
             }
         }
 
-        // フィード生成後に販売終了した作品はJOIN時点で除外し、positionの穴をユーザーへ返さない。
         $feedRows = [];
         for ($guard = 0; $guard < 4; $guard++) {
             $stmt = $pdo->prepare(
@@ -511,35 +502,59 @@ final class CatalogService
     private function catalogFromApi(array $filters, int $cursor, int $limit, string $cidInput): array
     {
         $floor = $this->safeFloor(true);
-        $offset = min(50000, $cursor + 1);
-        $page = $this->fanza->fetchItemPage(
-            $floor,
-            $offset,
-            (string)$filters['genreId'],
-            'review',
-            self::LIVE_HITS,
-        );
         $items = [];
         $consumed = 0;
-        foreach ($page['items'] as $raw) {
-            $consumed++;
-            $item = $this->fanza->feedItem($raw);
-            if (!$this->matches($item, $filters)) {
-                continue;
+        $apiTotal = 0;
+        $sourceExhausted = false;
+
+        for ($pageIndex = 0; $pageIndex < self::LIVE_MAX_PAGES && count($items) < $limit; $pageIndex++) {
+            $offset = min(50000, $cursor + $consumed + 1);
+            $page = $this->fanza->fetchItemPage(
+                $floor,
+                $offset,
+                (string)$filters['genreId'],
+                'review',
+                self::LIVE_HITS,
+            );
+            $apiTotal = max($apiTotal, (int)$page['total']);
+            if ($page['items'] === []) {
+                $sourceExhausted = true;
+                break;
             }
-            $items[] = $this->stripInternalFields($item);
-            if (count($items) >= $limit) {
+
+            $stoppedInsidePage = false;
+            foreach ($page['items'] as $raw) {
+                $consumed++;
+                if (!$this->fanza->isComicItem($raw)) {
+                    continue;
+                }
+                $item = $this->fanza->feedItem($raw);
+                if (!$this->matches($item, $filters)) {
+                    continue;
+                }
+                $items[] = $this->stripInternalFields($item);
+                if (count($items) >= $limit) {
+                    $stoppedInsidePage = true;
+                    break;
+                }
+            }
+
+            if ($stoppedInsidePage) {
+                break;
+            }
+            if ((int)$page['resultCount'] < self::LIVE_HITS) {
+                $sourceExhausted = true;
                 break;
             }
         }
 
         if ($cursor === 0 && trim($cidInput) !== '') {
             try {
-                $direct = $this->stripInternalFields(
-                    $this->fanza->feedItem(
-                        $this->fanza->fetchItem($this->fanza->normalizeCid($cidInput), $floor)
-                    )
-                );
+                $raw = $this->fanza->fetchItem($this->fanza->normalizeCid($cidInput), $floor);
+                if (!$this->fanza->isComicItem($raw)) {
+                    throw new RuntimeException('指定した作品はコミックではありません。');
+                }
+                $direct = $this->stripInternalFields($this->fanza->feedItem($raw));
                 $items = [
                     $direct,
                     ...array_values(array_filter(
@@ -547,25 +562,30 @@ final class CatalogService
                         static fn(array $item): bool => $item['cid'] !== $direct['cid']
                     )),
                 ];
+                $items = array_slice($items, 0, $limit);
             } catch (Throwable) {
-                // DB障害時のfallbackなので、CID失敗だけでカタログ全体は止めない。
+                // DB障害時のfallbackなので、直接CIDの失敗だけでカタログ全体は止めない。
             }
         }
 
         $next = $cursor + $consumed;
-        $hasMore = $consumed > 0 && ((int)$page['total'] === 0 || $next < (int)$page['total']);
+        $hasMore = !$sourceExhausted
+            && $consumed > 0
+            && ($apiTotal === 0 || $next < $apiTotal)
+            && $next < 50000;
+
         return [
             'items' => $items,
             'feedId' => null,
             'cursor' => $cursor,
             'nextCursor' => $hasMore ? $next : null,
             'hasMore' => $hasMore,
-            'apiTotal' => (int)$page['total'],
+            'apiTotal' => $apiTotal,
             'scanned' => $consumed,
             'effectiveMinSamples' => (int)$filters['minSamples'],
             'source' => 'fanza-api',
             'queryError' => '',
-            'recommenderVersion' => 'live-fallback',
+            'recommenderVersion' => 'live-fallback-comic',
             'floor' => $floor,
         ];
     }
@@ -590,10 +610,6 @@ final class CatalogService
         if ($filters['maxPrice'] > 0) {
             $where[] = 'w.price_value <= :max_price';
             $params[':max_price'] = (int)$filters['maxPrice'];
-        }
-        if ($filters['assetType'] !== 'all') {
-            $where[] = 'w.asset_type = :asset';
-            $params[':asset'] = (string)$filters['assetType'];
         }
         if ($filters['genreId'] !== '') {
             $where[] = 'EXISTS (SELECT 1 FROM work_genres wg WHERE wg.work_cid = w.cid AND wg.genre_id = :genre)';
@@ -629,14 +645,12 @@ final class CatalogService
         if ($minPrice > 0 && $maxPrice > 0 && $minPrice > $maxPrice) {
             [$minPrice, $maxPrice] = [$maxPrice, $minPrice];
         }
-        $asset = $filters['assetType'] ?? 'all';
         return [
             'minSamples' => max(1, min(100, (int)($filters['minSamples'] ?? 1))),
             'minReviews' => max(0, min(100000, (int)($filters['minReviews'] ?? 0))),
             'minRating' => max(0.0, min(5.0, (float)($filters['minRating'] ?? 0))),
             'minPrice' => $minPrice,
             'maxPrice' => $maxPrice,
-            'assetType' => in_array($asset, ['all', 'comic', 'cg', 'game', 'voice', 'other'], true) ? $asset : 'all',
             'genreId' => mb_substr(trim((string)($filters['genreId'] ?? '')), 0, 64),
             'query' => mb_substr(trim((string)($filters['query'] ?? '')), 0, 100),
         ];
@@ -737,13 +751,10 @@ final class CatalogService
             return false;
         }
         $priceValue = PriceParser::singleValue((string)$item['price']);
-        if ($filters['minPrice'] > 0 && ($priceValue === null || $priceValue < $filters['minPrice']) ) {
+        if ($filters['minPrice'] > 0 && ($priceValue === null || $priceValue < $filters['minPrice'])) {
             return false;
         }
-        if ($filters['maxPrice'] > 0 && ($priceValue === null || $priceValue > $filters['maxPrice']) ) {
-            return false;
-        }
-        if ($filters['assetType'] !== 'all' && $item['assetType'] !== $filters['assetType']) {
+        if ($filters['maxPrice'] > 0 && ($priceValue === null || $priceValue > $filters['maxPrice'])) {
             return false;
         }
         if ($filters['query'] !== '') {

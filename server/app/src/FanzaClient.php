@@ -198,11 +198,35 @@ final class FanzaClient
         return $decoded;
     }
 
+    public function isComicItem(array $item): bool
+    {
+        $imageUrl = $this->record($item['imageURL'] ?? null);
+        $urls = [];
+        foreach (['large', 'list', 'small'] as $key) {
+            $url = $imageUrl[$key] ?? null;
+            if (is_string($url) && preg_match('~^https?://~i', $url) === 1) {
+                $urls[] = $url;
+            }
+        }
+        $urls = array_merge($urls, $this->sampleImages($item));
+
+        foreach ($urls as $url) {
+            $path = (string)parse_url($url, PHP_URL_PATH);
+            if (preg_match('~/digital/([^/]+)/~i', $path, $match) !== 1) {
+                continue;
+            }
+            return strtolower($match[1]) === 'comic';
+        }
+        return false;
+    }
+
     public function feedItem(array $item): array
     {
+        if (!$this->isComicItem($item)) {
+            throw new RuntimeException('この作品はコミック作品ではありません。');
+        }
+
         $images = $this->sampleImages($item);
-        $bucket = $this->detectAssetBucket($item);
-        $assetType = in_array($bucket, ['comic', 'cg', 'game', 'voice'], true) ? $bucket : 'other';
         $review = $this->record($item['review'] ?? null);
         $prices = $this->record($item['prices'] ?? null);
         $genres = $this->itemGenres($item);
@@ -215,7 +239,6 @@ final class FanzaClient
             'title' => $this->string($item['title'] ?? null),
             'productUrl' => $this->string($item['URL'] ?? null),
             'affiliateUrl' => $this->string($item['affiliateURL'] ?? null),
-            // ItemListは通常説明文を返さないが、フロア差などで返る場合はそのまま保持する。
             'description' => $this->itemDescription($item),
             'images' => $images,
             'sampleCount' => count($images),
@@ -230,37 +253,10 @@ final class FanzaClient
             'genreRows' => $genres,
             'seriesRows' => $series,
             'price' => $this->string($prices['price'] ?? null),
-            'assetBucket' => $bucket,
-            'assetType' => $assetType,
-            'assetLabel' => self::assetLabel($assetType),
             'releaseDate' => $this->string($item['date'] ?? null),
             'maker' => $maker['name'],
             'makerId' => $maker['id'],
         ];
-    }
-
-    public static function assetDefinitions(): array
-    {
-        return [
-            ['key' => 'all', 'label' => 'すべて'],
-            ['key' => 'comic', 'label' => 'コミック系'],
-            ['key' => 'cg', 'label' => 'CG・イラスト系'],
-            ['key' => 'game', 'label' => 'ゲーム系'],
-            ['key' => 'voice', 'label' => 'ボイス・音声系'],
-            ['key' => 'other', 'label' => 'その他・不明'],
-        ];
-    }
-
-    public static function assetLabel(string $type): string
-    {
-        return match ($type) {
-            'comic' => 'コミック系',
-            'cg' => 'CG・イラスト系',
-            'game' => 'ゲーム系',
-            'voice' => 'ボイス・音声系',
-            'all' => 'すべて',
-            default => 'その他・不明',
-        };
     }
 
     private function pageCountFromVolume(string $volume): ?int
@@ -434,30 +430,6 @@ final class FanzaClient
                 ?: $this->string($maker['maker_id'] ?? null),
             'name' => $this->string($maker['name'] ?? null),
         ];
-    }
-
-    private function detectAssetBucket(array $item): string
-    {
-        $imageUrl = $this->record($item['imageURL'] ?? null);
-        $urls = [];
-        foreach (['large', 'list', 'small'] as $key) {
-            $url = $imageUrl[$key] ?? null;
-            if (is_string($url) && preg_match('~^https?://~i', $url) === 1) {
-                $urls[] = $url;
-            }
-        }
-        $urls = array_merge($urls, $this->sampleImages($item));
-        foreach ($urls as $url) {
-            $path = (string)parse_url($url, PHP_URL_PATH);
-            if (preg_match('~/digital/([^/]+)/~i', $path, $match) !== 1) {
-                continue;
-            }
-            $bucket = strtolower($match[1]);
-            return in_array($bucket, ['comic', 'cg', 'game', 'voice'], true)
-                ? $bucket
-                : 'other:' . $bucket;
-        }
-        return 'unknown';
     }
 
     private function record(mixed $value): array

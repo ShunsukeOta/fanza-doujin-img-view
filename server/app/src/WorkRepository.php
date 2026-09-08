@@ -38,8 +38,8 @@ final class WorkRepository
 
             $stmt = $pdo->prepare(
                 'INSERT INTO works '
-                . '(cid, title, product_url, affiliate_url, description, sample_images_json, sample_count, full_page_count, volume, review_count, rating, price, price_value, asset_bucket, asset_type, release_date, maker, maker_id, random_key, is_active, availability_status, first_seen_at, last_seen_at, metadata_checked_at, price_checked_at, availability_checked_at, details_checked_at, details_status, next_refresh_at, refresh_fail_count) '
-                . 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, \'active\', NOW(), NOW(), NOW(), NOW(), NOW(), NOW(), ?, DATE_ADD(NOW(), INTERVAL 7 DAY), 0) '
+                . '(cid, title, product_url, affiliate_url, description, sample_images_json, sample_count, full_page_count, volume, review_count, rating, price, price_value, release_date, maker, maker_id, random_key, is_active, availability_status, first_seen_at, last_seen_at, metadata_checked_at, price_checked_at, availability_checked_at, details_checked_at, details_status, next_refresh_at, refresh_fail_count) '
+                . 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, \'active\', NOW(), NOW(), NOW(), NOW(), NOW(), NOW(), ?, DATE_ADD(NOW(), INTERVAL 7 DAY), 0) '
                 . 'ON DUPLICATE KEY UPDATE '
                 . 'title=VALUES(title), product_url=COALESCE(NULLIF(VALUES(product_url), \'\'), product_url), affiliate_url=COALESCE(NULLIF(VALUES(affiliate_url), \'\'), affiliate_url), '
                 . 'description=CASE WHEN VALUES(description) IS NULL OR VALUES(description)=\'\' THEN description ELSE VALUES(description) END, '
@@ -47,7 +47,7 @@ final class WorkRepository
                 . 'full_page_count=COALESCE(VALUES(full_page_count), full_page_count), volume=CASE WHEN VALUES(volume)<>\'\' THEN VALUES(volume) ELSE volume END, '
                 . 'review_count=VALUES(review_count), rating=VALUES(rating), '
                 . 'price=CASE WHEN VALUES(price)<>\'\' THEN VALUES(price) ELSE price END, price_value=CASE WHEN VALUES(price)<>\'\' THEN VALUES(price_value) ELSE price_value END, '
-                . 'asset_bucket=VALUES(asset_bucket), asset_type=VALUES(asset_type), release_date=COALESCE(VALUES(release_date), release_date), '
+                . 'release_date=COALESCE(VALUES(release_date), release_date), '
                 . 'maker=VALUES(maker), maker_id=VALUES(maker_id), random_key=VALUES(random_key), is_active=1, availability_status=\'active\', '
                 . 'last_seen_at=NOW(), metadata_checked_at=NOW(), price_checked_at=NOW(), availability_checked_at=NOW(), '
                 . 'details_checked_at=NOW(), details_status=CASE WHEN VALUES(details_status)=\'known\' THEN \'known\' ELSE details_status END, '
@@ -67,8 +67,6 @@ final class WorkRepository
                 max(0.0, min(5.0, (float)($item['rating'] ?? 0))),
                 $price,
                 $priceValue,
-                (string)($item['assetBucket'] ?? 'unknown'),
-                (string)($item['assetType'] ?? 'other'),
                 $releaseDate,
                 (string)($item['maker'] ?? ''),
                 (string)($item['makerId'] ?? ''),
@@ -117,7 +115,9 @@ final class WorkRepository
             $item = $this->fetchAndUpsert($cid);
             return ['status' => 'updated', 'item' => $item];
         } catch (Throwable $error) {
-            $notFound = str_contains($error->getMessage(), '現在のFANZA同人APIでは取得できません');
+            $message = $error->getMessage();
+            $notDisplayable = str_contains($message, '現在のFANZA同人APIでは取得できません')
+                || str_contains($message, 'コミック作品ではありません');
             $pdo->beginTransaction();
             try {
                 $stmt = $pdo->prepare('SELECT refresh_fail_count FROM works WHERE cid = ? FOR UPDATE');
@@ -125,13 +125,13 @@ final class WorkRepository
                 $row = $stmt->fetch();
                 if (is_array($row)) {
                     $fails = min(255, (int)$row['refresh_fail_count'] + 1);
-                    if ($notFound && $fails >= 2) {
+                    if ($notDisplayable && $fails >= 2) {
                         $update = $pdo->prepare("UPDATE works SET refresh_fail_count=?, is_active=0, availability_status='unavailable', availability_checked_at=NOW(), next_refresh_at=DATE_ADD(NOW(), INTERVAL 30 DAY) WHERE cid=?");
                         $update->execute([$fails, $cid]);
                     } else {
-                        $minutes = $notFound ? 360 : min(1440, 15 * (2 ** min(6, $fails)));
+                        $minutes = $notDisplayable ? 360 : min(1440, 15 * (2 ** min(6, $fails)));
                         $update = $pdo->prepare("UPDATE works SET refresh_fail_count=?, availability_status=?, next_refresh_at=DATE_ADD(NOW(), INTERVAL {$minutes} MINUTE) WHERE cid=?");
-                        $update->execute([$fails, $notFound ? 'checking' : 'unknown', $cid]);
+                        $update->execute([$fails, $notDisplayable ? 'checking' : 'unknown', $cid]);
                     }
                 }
                 $pdo->commit();
@@ -163,7 +163,7 @@ final class WorkRepository
         $pdo = $this->requirePdo();
         $placeholders = implode(',', array_fill(0, count($cids), '?'));
         $stmt = $pdo->prepare(
-            'SELECT cid,title,affiliate_url,sample_images_json,sample_count,full_page_count,review_count,rating,price,price_value,asset_bucket,asset_type,maker,maker_id,is_active,availability_status '
+            'SELECT cid,title,affiliate_url,sample_images_json,sample_count,full_page_count,review_count,rating,price,price_value,maker,maker_id,is_active,availability_status '
             . 'FROM works WHERE cid IN (' . $placeholders . ')'
         );
         $stmt->execute($cids);
@@ -178,8 +178,6 @@ final class WorkRepository
             if (!is_array($row)) continue;
             $images = json_decode((string)$row['sample_images_json'], true);
             $images = is_array($images) ? array_values(array_filter($images, 'is_string')) : [];
-            $assetType = (string)$row['asset_type'];
-            if (!in_array($assetType, ['comic', 'cg', 'game', 'voice', 'other'], true)) $assetType = 'other';
             $result[$cid] = [
                 'cid' => $cid,
                 'title' => (string)$row['title'],
@@ -195,9 +193,6 @@ final class WorkRepository
                 'priceValue' => $row['price_value'] === null ? null : (int)$row['price_value'],
                 'maker' => (string)$row['maker'],
                 'makerId' => (string)$row['maker_id'],
-                'assetBucket' => (string)$row['asset_bucket'],
-                'assetType' => $assetType,
-                'assetLabel' => FanzaClient::assetLabel($assetType),
                 'available' => (bool)$row['is_active'],
                 'availabilityStatus' => (string)$row['availability_status'],
             ];

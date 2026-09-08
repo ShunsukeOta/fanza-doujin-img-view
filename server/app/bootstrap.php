@@ -83,18 +83,12 @@ function read_float(string $key, float $fallback, float $min, float $max): float
 
 function request_filters(): array
 {
-    $assetType = trim((string)($_GET['asset_type'] ?? $_GET['category'] ?? 'all'));
-    if (!in_array($assetType, ['all', 'comic', 'cg', 'game', 'voice', 'other'], true)) {
-        $assetType = 'all';
-    }
-
     return [
         'minSamples' => read_int('min_samples', 1, 1, 100),
         'minReviews' => read_int('min_reviews', 0, 0, 100000),
         'minRating' => read_float('min_rating', 0.0, 0.0, 5.0),
         'minPrice' => read_int('min_price', 0, 0, 10000000),
         'maxPrice' => read_int('max_price', 0, 0, 10000000),
-        'assetType' => $assetType,
         'genreId' => mb_substr(trim((string)($_GET['genre_id'] ?? '')), 0, 64),
         'query' => mb_substr(trim((string)($_GET['q'] ?? '')), 0, 100),
     ];

@@ -45,8 +45,6 @@ function test_item(int $index): array
         'reviews' => $index * 3,
         'rating' => min(5.0, 3.0 + $index / 10),
         'price' => $index === 1 ? '1,000円' : (string)(500 + $index * 10) . '円',
-        'assetBucket' => 'doujin',
-        'assetType' => 'comic',
         'releaseDate' => date('Y-m-d H:i:s', time() - $index * 3600),
         'maker' => $maker,
         'makerId' => 'maker_' . $index,
@@ -54,6 +52,15 @@ function test_item(int $index): array
         'seriesRows' => $seriesRows,
     ];
 }
+
+assert_test(
+    $fanza->isComicItem(['imageURL' => ['large' => 'https://pics.dmm.co.jp/digital/comic/example/examplepl.jpg']]),
+    'digital/comicをコミックとして判定できない',
+);
+assert_test(
+    !$fanza->isComicItem(['imageURL' => ['large' => 'https://pics.dmm.co.jp/digital/cg/example/examplepl.jpg']]),
+    'digital/cgをコミックとして誤判定している',
+);
 
 for ($index = 1; $index <= 14; $index++) {
     $workRepository->upsertNormalized(test_item($index));
@@ -66,7 +73,6 @@ $baseFilters = [
     'minRating' => 0,
     'minPrice' => 0,
     'maxPrice' => 0,
-    'assetType' => 'all',
     'genreId' => '',
     'query' => '',
 ];

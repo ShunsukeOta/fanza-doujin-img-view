@@ -130,8 +130,8 @@ export function HistoryPage() {
         ) : items.length === 0 ? (
           <div className="subpage-state">
             <strong>まだ閲覧履歴がありません</strong>
-            <p>作品フィードで表示した作品がここに並びます。履歴はイベント保存期間の範囲で表示されます。</p>
-            <button type="button" onClick={() => window.location.assign("/")}>作品を探す</button>
+            <p>コミックフィードで表示した作品がここに並びます。履歴はイベント保存期間の範囲で表示されます。</p>
+            <button type="button" onClick={() => window.location.assign("/")}>コミックを探す</button>
           </div>
         ) : (
           <>
@@ -144,7 +144,7 @@ export function HistoryPage() {
                   <div className="history-body">
                     <span className="history-viewed-at">{formatViewedAt(item.viewedAt)}</span>
                     <h2>{item.title || item.cid}</h2>
-                    <p>{item.maker || item.genres.slice(0, 2).join(" / ") || item.assetLabel}</p>
+                    <p>{item.maker || item.genres.slice(0, 2).join(" / ") || "FANZA同人コミック"}</p>
                     <div className="history-meta">
                       <span>★ {item.rating.toFixed(1)}</span>
                       {item.price ? <span>{formatPrice(item.price, item.priceValue ?? null)}</span> : null}

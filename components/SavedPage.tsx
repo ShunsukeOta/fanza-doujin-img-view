@@ -145,8 +145,8 @@ export function SavedPage() {
           <div className="subpage-state">
             <span className="subpage-state-icon"><BookmarkIcon /></span>
             <strong>まだ保存した作品がありません</strong>
-            <p>メインページで「保存」を押した作品がここに並びます。</p>
-            <button type="button" onClick={() => window.location.assign("/")}>作品を探す</button>
+            <p>コミックフィードで「保存」を押した作品がここに並びます。</p>
+            <button type="button" onClick={() => window.location.assign("/")}>コミックを探す</button>
           </div>
         ) : (
           <>
@@ -168,9 +168,7 @@ export function SavedPage() {
                       ) : (
                         <div className="favorite-noimage">NO IMAGE</div>
                       )}
-                      <span className="favorite-type">
-                        {item.available === false ? "販売終了" : item.assetLabel}
-                      </span>
+                      {item.available === false ? <span className="favorite-type">販売終了</span> : null}
                       <button
                         className="favorite-save-toggle"
                         type="button"
