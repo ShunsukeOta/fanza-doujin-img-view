@@ -522,6 +522,7 @@ final class CatalogService
                 break;
             }
 
+            $stoppedInsidePage = false;
             foreach ($page['items'] as $raw) {
                 $consumed++;
                 if (!$this->fanza->isComicItem($raw)) {
@@ -533,10 +534,14 @@ final class CatalogService
                 }
                 $items[] = $this->stripInternalFields($item);
                 if (count($items) >= $limit) {
+                    $stoppedInsidePage = true;
                     break;
                 }
             }
 
+            if ($stoppedInsidePage) {
+                break;
+            }
             if ((int)$page['resultCount'] < self::LIVE_HITS) {
                 $sourceExhausted = true;
                 break;
