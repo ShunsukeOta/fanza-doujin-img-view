@@ -3,6 +3,7 @@
   z-index: 1000;
   inset: 0;
   overflow: hidden;
+  overscroll-behavior: none;
   background: #080808;
   color: #f7f7f7;
 }
@@ -110,7 +111,7 @@
   --practice-y: 0px;
   position: relative;
   width: 100%;
-  height: clamp(224px, 34dvh, 292px);
+  height: clamp(224px, 34svh, 292px);
   overflow: hidden;
   border: 1px solid #222;
   border-radius: 22px;
@@ -664,7 +665,7 @@
 
   .onboarding-header { min-height: 36px; }
   .onboarding-main { grid-template-rows: minmax(188px, 1fr) auto; gap: 7px; }
-  .onboarding-practice { height: clamp(188px, 31dvh, 214px); }
+  .onboarding-practice { height: clamp(188px, 31svh, 214px); }
   .onboarding-demo-phone { width: 132px; height: 178px; border-radius: 20px; }
   .onboarding-reader-demo { width: 136px; height: 178px; }
   .onboarding-demo-page { width: 112px; height: 154px; flex-basis: 112px; }
