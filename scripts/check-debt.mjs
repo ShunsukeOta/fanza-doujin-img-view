@@ -34,6 +34,8 @@ for (const selector of [
   ".genre-line",
   ".next-hint",
   ".reader-settings-note",
+  ".floor-tabs",
+  ".floor-tab",
 ]) {
   if (css.includes(selector)) fail(`削除済みUIのCSS ${selector} が残っています。`);
 }
@@ -50,7 +52,8 @@ for (const required of [
   ".history-list",
   ".profile-danger-zone",
   ".rating-filter",
-  ".floor-tabs",
+  ".floor-switcher",
+  ".floor-switcher-menu",
   ".detail-search-form",
   ".search-result-grid",
 ]) {
@@ -78,7 +81,7 @@ if (!main.includes('pathname === "/history"')) {
 if (!main.includes('pathname === "/search"') || !main.includes("<SearchPage")) {
   fail("詳細検索ページのルートがありません。");
 }
-if (!main.includes("workCidFromPath") || !main.includes("<FloorTabs")) {
+if (!main.includes("workCidFromPath") || !main.includes("<FloorSwitcher")) {
   fail("作品単位URLまたはFeedフロア切替がMainへ統合されていません。");
 }
 if (!main.includes('skipOnboarding={pathWorkCid !== ""}')) {
@@ -153,11 +156,13 @@ if (!navigationCss.includes("backdrop-filter: blur(22px)") || !navigationCss.inc
   fail("4項目フローティング型グローバルメニューCSSがありません。");
 }
 
-const floorTabs = readFileSync("components/FloorTabs.tsx", "utf8");
-for (const required of ["同人漫画", "女優動画", "素人動画", "floorContextPath"]) {
-  if (!floorTabs.includes(required) && !readFileSync("src/floors.ts", "utf8").includes(required)) {
-    fail(`フロア切替に必要な ${required} がありません。`);
-  }
+const floorSwitcher = readFileSync("components/FloorSwitcher.tsx", "utf8");
+for (const required of ["FLOORS", "floorContextPath", "表示するコンテンツ", "aria-haspopup=\"menu\""]) {
+  if (!floorSwitcher.includes(required)) fail(`表示切替UIに ${required} がありません。`);
+}
+const floorCompat = readFileSync("components/FloorTabs.tsx", "utf8");
+if (!floorCompat.includes("<FloorSwitcher")) {
+  fail("既存画面のフロア切替がFloorSwitcherへ統一されていません。");
 }
 const savedPage = readFileSync("components/SavedPage.tsx", "utf8");
 if (!savedPage.includes("<FloorTabs") || !savedPage.includes("floorFromLocation")) {
