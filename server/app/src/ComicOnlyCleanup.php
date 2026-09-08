@@ -35,7 +35,11 @@ final class ComicOnlyCleanup
         }
 
         $pdo->exec('DROP TEMPORARY TABLE IF EXISTS comic_only_cleanup_cids');
-        $pdo->exec('CREATE TEMPORARY TABLE comic_only_cleanup_cids (cid VARCHAR(128) NOT NULL PRIMARY KEY) ENGINE=MEMORY');
+        $pdo->exec(
+            'CREATE TEMPORARY TABLE comic_only_cleanup_cids '
+            . '(cid VARCHAR(128) NOT NULL PRIMARY KEY) ENGINE=MEMORY '
+            . 'DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+        );
         if ($conditions !== []) {
             $pdo->exec(
                 'INSERT IGNORE INTO comic_only_cleanup_cids (cid) SELECT cid FROM works WHERE '
