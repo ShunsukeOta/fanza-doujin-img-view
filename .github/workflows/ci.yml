@@ -128,12 +128,16 @@ jobs:
                   'SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?'
               );
               $stmt->execute([$table]);
-              if ((int)$stmt->fetchColumn() !== 1) exit(1);
+              if ((int)$stmt->fetchColumn() !== 1) {
+                  throw new RuntimeException("missing table: {$table}");
+              }
           }
           foreach (['recommendation-v3-rebuild-20260907', 'comic-only-catalog-20260908'] as $migration) {
               $stmt = $pdo->prepare('SELECT 1 FROM app_migrations WHERE id = ?');
               $stmt->execute([$migration]);
-              if (!$stmt->fetchColumn()) exit(1);
+              if (!$stmt->fetchColumn()) {
+                  throw new RuntimeException("missing migration: {$migration}");
+              }
           }
           foreach (['asset_type', 'asset_bucket'] as $column) {
               $stmt = $pdo->prepare(
@@ -141,7 +145,9 @@ jobs:
                   . 'WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?'
               );
               $stmt->execute(['works', $column]);
-              if ((int)$stmt->fetchColumn() !== 0) exit(1);
+              if ((int)$stmt->fetchColumn() !== 0) {
+                  throw new RuntimeException("new schema unexpectedly contains {$column}");
+              }
           }
           PHP
           php server/app/tests/integration.php
@@ -193,20 +199,36 @@ jobs:
           $pdo = new PDO($dsn, $config['db']['user'], $config['db']['password'], [
               PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
           ]);
-          if ((int)$pdo->query("SELECT COUNT(*) FROM works WHERE cid='audit_014'")->fetchColumn() !== 0) exit(1);
-          if ((int)$pdo->query("SELECT COUNT(*) FROM works WHERE cid='audit_013'")->fetchColumn() !== 1) exit(1);
-          if ((int)$pdo->query("SELECT COUNT(*) FROM genres WHERE id='legacy_cg_genre'")->fetchColumn() !== 0) exit(1);
-          if ((int)$pdo->query("SELECT COUNT(*) FROM series WHERE id='legacy_cg_series'")->fetchColumn() !== 0) exit(1);
-          if (!(bool)$pdo->query("SELECT 1 FROM app_migrations WHERE id='comic-only-catalog-20260908'")->fetchColumn()) exit(1);
+          if ((int)$pdo->query("SELECT COUNT(*) FROM works WHERE cid='audit_014'")->fetchColumn() !== 0) {
+              throw new RuntimeException('legacy non-comic work was not removed');
+          }
+          if ((int)$pdo->query("SELECT COUNT(*) FROM works WHERE cid='audit_013'")->fetchColumn() !== 1) {
+              throw new RuntimeException('comic work was removed unexpectedly');
+          }
+          if ((int)$pdo->query("SELECT COUNT(*) FROM genres WHERE id='legacy_cg_genre'")->fetchColumn() !== 0) {
+              throw new RuntimeException('orphan non-comic genre remains');
+          }
+          if ((int)$pdo->query("SELECT COUNT(*) FROM series WHERE id='legacy_cg_series'")->fetchColumn() !== 0) {
+              throw new RuntimeException('orphan non-comic series remains');
+          }
+          if (!(bool)$pdo->query("SELECT 1 FROM app_migrations WHERE id='comic-only-catalog-20260908'")->fetchColumn()) {
+              throw new RuntimeException('comic-only migration was not marked');
+          }
           foreach (['asset_type', 'asset_bucket'] as $column) {
               $stmt = $pdo->prepare(
                   'SELECT column_default FROM information_schema.columns '
                   . 'WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?'
               );
               $stmt->execute(['works', $column]);
-              if ((string)$stmt->fetchColumn() !== 'comic') exit(1);
+              $rawDefault = (string)$stmt->fetchColumn();
+              $normalizedDefault = trim($rawDefault, "'\"");
+              if ($normalizedDefault !== 'comic') {
+                  throw new RuntimeException("unexpected default {$column}={$rawDefault}");
+              }
           }
-          if ((int)$pdo->query("SELECT COUNT(*) FROM works WHERE asset_type <> 'comic' OR asset_bucket <> 'comic'")->fetchColumn() !== 0) exit(1);
+          if ((int)$pdo->query("SELECT COUNT(*) FROM works WHERE asset_type <> 'comic' OR asset_bucket <> 'comic'")->fetchColumn() !== 0) {
+              throw new RuntimeException('legacy asset columns contain non-comic values');
+          }
           PHP
           rm -f server/app/config.local.php
 
