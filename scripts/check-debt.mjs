@@ -20,6 +20,7 @@ const styleFiles = [
   "styles/pages.css",
   "styles/reader.css",
   "styles/onboarding.css",
+  "styles/discovery.css",
   "styles/accessibility.css",
 ];
 const css = styleFiles.map((path) => readFileSync(path, "utf8")).join("\n");
@@ -49,6 +50,9 @@ for (const required of [
   ".history-list",
   ".profile-danger-zone",
   ".rating-filter",
+  ".floor-tabs",
+  ".detail-search-form",
+  ".search-result-grid",
 ]) {
   if (!css.includes(required)) fail(`必須スタイル ${required} がありません。`);
 }
@@ -71,6 +75,12 @@ if (!main.includes('pathname === "/privacy"') || !main.includes('pathname === "/
 if (!main.includes('pathname === "/history"')) {
   fail("閲覧履歴ページのルートがありません。");
 }
+if (!main.includes('pathname === "/search"') || !main.includes("<SearchPage")) {
+  fail("詳細検索ページのルートがありません。");
+}
+if (!main.includes("workCidFromPath") || !main.includes("<FloorTabs")) {
+  fail("作品単位URLまたはFeedフロア切替がMainへ統合されていません。");
+}
 
 const imagePreload = readFileSync("src/imagePreload.ts", "utf8");
 if (!imagePreload.includes("MAX_DECODE_CACHE")) fail("画像decodeキャッシュの上限がありません。");
@@ -80,7 +90,12 @@ if (!reactions.includes("MAX_REACTION_QUERY_CIDS = 50")) fail("リアクショ�
 
 const navigation = readFileSync("src/navigationState.ts", "utf8");
 if (!navigation.includes("scrollLeftForLogicalPage")) fail("復帰位置が読む方向を考慮していません。");
-if (!navigation.includes('"/history"')) fail("閲覧履歴が画面復帰ナビゲーションへ統合されていません。");
+if (!navigation.includes('"/history"') || !navigation.includes('"/search"')) {
+  fail("履歴または詳細検索が画面復帰ナビゲーションへ統合されていません。");
+}
+if (!navigation.includes('window.location.assign(`/work/${encodeURIComponent(normalized)}`)')) {
+  fail("作品を開く導線が作品単位URLを使用していません。");
+}
 
 const readerSettings = readFileSync("src/readerSettings.ts", "utf8");
 for (const required of ["subscribeReaderSettings", "readerSettingsEqual", "SETTINGS_EVENT", '"pageshow"', '"focus"']) {
@@ -96,6 +111,7 @@ for (const removed of ["assetDefinitions", "assetLabel", "detectAssetBucket", "'
 
 const build = readFileSync("scripts/build-shin.mjs", "utf8");
 if (!build.includes('path !== "tests"')) fail("本番成果物からserver/app/testsを除外していません。");
+if (!build.includes('server/public/work.php')) fail("作品OGPレンダラーが本番成果物へ含まれていません。");
 
 const app = readFileSync("components/SwipePreviewApp.tsx", "utf8");
 if (/nextCursor === null\s*\|\|\s*!feedId/.test(app)) {
@@ -127,11 +143,27 @@ if (!myPage.includes("subscribeReaderSettings") || !myPage.includes("readerSetti
 
 const globalNav = readFileSync("components/GlobalNav.tsx", "utf8");
 const navigationCss = readFileSync("styles/navigation.css", "utf8");
-if (!globalNav.includes("global-nav-main") || !globalNav.includes(">読む<")) {
-  fail("刷新後のグローバルメニュー構造がありません。");
+if (!globalNav.includes("SearchIcon") || !globalNav.includes(">検索<") || !globalNav.includes(">読む<")) {
+  fail("詳細検索を含むグローバルメニュー構造がありません。");
 }
-if (!navigationCss.includes("backdrop-filter: blur(22px)") || !navigationCss.includes("grid-template-columns: repeat(3")) {
-  fail("刷新後のフローティング型グローバルメニューCSSがありません。");
+if (!navigationCss.includes("backdrop-filter: blur(22px)") || !navigationCss.includes("grid-template-columns: repeat(4")) {
+  fail("4項目フローティング型グローバルメニューCSSがありません。");
+}
+
+const floorTabs = readFileSync("components/FloorTabs.tsx", "utf8");
+for (const required of ["同人漫画", "女優動画", "素人動画", "floorContextPath"]) {
+  if (!floorTabs.includes(required) && !readFileSync("src/floors.ts", "utf8").includes(required)) {
+    fail(`フロア切替に必要な ${required} がありません。`);
+  }
+}
+const savedPage = readFileSync("components/SavedPage.tsx", "utf8");
+if (!savedPage.includes("<FloorTabs") || !savedPage.includes("floorFromLocation")) {
+  fail("保存済み画面へフロア切替が統合されていません。");
+}
+
+const searchPage = readFileSync("components/SearchPage.tsx", "utf8");
+for (const required of ["maker", "series", "genreId", "minRating", "price_asc", "/api/search"]) {
+  if (!searchPage.includes(required)) fail(`詳細検索UIに ${required} がありません。`);
 }
 
 const readerCss = readFileSync("styles/reader.css", "utf8");
@@ -207,9 +239,21 @@ if (!meApi.includes("'DELETE'") || !meApi.includes("deleteProfile") || !meApi.in
 const historyApi = readFileSync("server/public/api/history.php", "utf8");
 if (!historyApi.includes("userLibraryService->history")) fail("閲覧履歴APIがUserLibraryServiceへ接続されていません。");
 
+const searchApi = readFileSync("server/public/api/search.php", "utf8");
+for (const required of ["maker_query", "series_query", "genre_id", "price_asc", "feedItemsByCids"]) {
+  if (!searchApi.includes(required)) fail(`詳細検索APIに ${required} がありません。`);
+}
+
+const workPage = readFileSync("server/public/work.php", "utf8");
+for (const required of ['og:title', 'og:description', 'og:image', 'rel="canonical"', 'twitter:card']) {
+  if (!workPage.includes(required)) fail(`作品OGPページに ${required} がありません。`);
+}
+
 const htaccess = readFileSync("server/public/.htaccess", "utf8");
 const router = readFileSync("server/public/router.php", "utf8");
 if (!htaccess.includes("history") || !router.includes("history")) fail("閲覧履歴APIのルーティングが不足しています。");
+if (!htaccess.includes("search") || !router.includes("search")) fail("詳細検索APIのルーティングが不足しています。");
+if (!htaccess.includes("work.php?cid=") || !router.includes("/work/")) fail("作品単位URLのルーティングが不足しています。");
 if (!htaccess.includes("fonts.googleapis.com") || !htaccess.includes("fonts.gstatic.com")) {
   fail("Noto Sans JP配信元がCSPで許可されていません。");
 }
