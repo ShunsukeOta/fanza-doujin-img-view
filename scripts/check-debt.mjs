@@ -67,4 +67,22 @@ if (!fanza.includes("'makerId' =>")) fail("maker_idを正規化結果へ渡し�
 const build = readFileSync("scripts/build-shin.mjs", "utf8");
 if (!build.includes('path !== "tests"')) fail("本番成果物からserver/app/testsを除外していません。");
 
+const app = readFileSync("components/SwipePreviewApp.tsx", "utf8");
+if (/nextCursor === null\s*\|\|\s*!feedId/.test(app)) {
+  fail("FANZA APIフォールバック時にfeedIdなしで追加取得できません。");
+}
+for (const deadRetry of ["retryAttempt", "retryAt", "retryDelay", "ApiError"]) {
+  if (app.includes(deadRetry)) fail(`実際に機能しない追加取得retryコード ${deadRetry} が残っています。`);
+}
+
+const api = readFileSync("src/api.ts", "utf8");
+for (const deadApi of ["retryDelay", "retryAfterMs", "ApiError"]) {
+  if (api.includes(deadApi)) fail(`未使用のAPI補助実装 ${deadApi} が残っています。`);
+}
+
+const workRepository = readFileSync("server/app/src/WorkRepository.php", "utf8");
+if (/upsertNormalized\(array \$item,\s*string \$source/.test(workRepository)) {
+  fail("WorkRepository::upsertNormalized に未使用のsource引数が残っています。");
+}
+
 if (!process.exitCode) console.log("debt check: OK");
