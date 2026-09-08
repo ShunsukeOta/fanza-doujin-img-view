@@ -31,5 +31,8 @@ try {
         'generatedAt' => date(DATE_ATOM),
     ], 200, ['Cache-Control' => 'private, no-store']);
 } catch (Throwable $error) {
-    json_response(['error' => public_error_message($error, 'マイページ情報を取得できませんでした。')], 500, ['Cache-Control' => 'no-store']);
+    $fallback = $method === 'DELETE'
+        ? '匿名データを削除できませんでした。'
+        : 'マイページ情報を取得できませんでした。';
+    json_response(['error' => public_error_message($error, $fallback)], 500, ['Cache-Control' => 'no-store']);
 }
