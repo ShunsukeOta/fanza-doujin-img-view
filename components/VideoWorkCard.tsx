@@ -18,6 +18,7 @@ type Props = {
   isActive: boolean;
   onToast: (message: string) => void;
   onVerticalSwipe: (direction: -1 | 1) => void;
+  onToggleControls?: () => void;
 };
 
 type PointerStart = { id: number; x: number; y: number; startedAt: number };
