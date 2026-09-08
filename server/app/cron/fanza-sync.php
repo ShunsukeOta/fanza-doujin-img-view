@@ -37,6 +37,7 @@ $run = $pdo->prepare(
 $run->execute();
 $runId = (int)$pdo->lastInsertId();
 $processed = 0;
+$skippedNonComic = 0;
 
 function parse_sync_date(string $raw, bool $end = false): ?DateTimeImmutable
 {
@@ -111,6 +112,10 @@ try {
             }
 
             foreach ($page['items'] as $raw) {
+                if (!$fanza->isComicItem($raw)) {
+                    $skippedNonComic++;
+                    continue;
+                }
                 $item = $fanza->feedItem($raw);
                 if (trim((string)($item['cid'] ?? '')) === '') {
                     continue;
@@ -124,8 +129,9 @@ try {
                 'range=' . $label
                 . ' page=' . ($pageIndex + 1)
                 . ' rows=' . count($page['items'])
+                . ' comic=' . $processed
+                . ' skipped_non_comic=' . $skippedNonComic
                 . ' total=' . $page['total']
-                . ' processed=' . $processed
                 . "\n",
             );
             if (count($page['items']) < 100 || (int)$page['resultCount'] < 100) {
@@ -139,7 +145,7 @@ try {
         "UPDATE sync_runs SET status = 'success', finished_at = NOW(), processed_count = ? WHERE id = ?"
     )->execute([$processed, $runId]);
     $works = (int)$pdo->query('SELECT COUNT(*) FROM works')->fetchColumn();
-    fwrite(STDOUT, "同期完了 processed={$processed} works={$works}\n");
+    fwrite(STDOUT, "同期完了 comic={$processed} skipped_non_comic={$skippedNonComic} works={$works}\n");
 } catch (Throwable $error) {
     $pdo->prepare(
         "UPDATE sync_runs SET status = 'failed', finished_at = NOW(), processed_count = ?, error_message = ? WHERE id = ?"
