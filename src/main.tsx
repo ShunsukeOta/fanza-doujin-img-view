@@ -60,11 +60,12 @@ function workCidFromPath(pathname: string): string {
 type MainExperienceProps = {
   initialFilters: FilterValues;
   initialCid: string;
+  skipOnboarding?: boolean;
 };
 
-function MainExperience({ initialFilters, initialCid }: MainExperienceProps) {
-  // 一時仕様: 閲覧済みフラグを保存せず、メインページを新規表示するたびに必ず出す。
-  const [onboardingComplete, setOnboardingComplete] = useState(false);
+function MainExperience({ initialFilters, initialCid, skipOnboarding = false }: MainExperienceProps) {
+  // 一時仕様: 通常のFeedは新規表示するたびに案内。作品共有URLは対象作品へ直接入る。
+  const [onboardingComplete, setOnboardingComplete] = useState(skipOnboarding);
 
   useEffect(() => {
     if (onboardingComplete) installMainResumeLifecycle();
@@ -118,7 +119,8 @@ const initialFilters: FilterValues = {
   maxPrice: boundedInt(params, "max_price", 0, 0, 10_000_000),
   query: (params.get("q") ?? "").slice(0, 100),
 };
-const workCid = workCidFromPath(pathname) || (params.get("cid") ?? "");
+const pathWorkCid = workCidFromPath(pathname);
+const workCid = pathWorkCid || (params.get("cid") ?? "");
 
 const root = document.getElementById("root");
 if (!root) throw new Error("#root が見つかりません。");
@@ -139,7 +141,13 @@ if (pathname === "/favorites") {
     else if (pathname === "/history") protectedPage = <HistoryPage />;
     else if (pathname === "/actress") protectedPage = <ComingSoonFloorPage floor="actress" />;
     else if (pathname === "/amateur") protectedPage = <ComingSoonFloorPage floor="amateur" />;
-    else protectedPage = <MainExperience initialFilters={initialFilters} initialCid={workCid} />;
+    else protectedPage = (
+      <MainExperience
+        initialFilters={initialFilters}
+        initialCid={workCid}
+        skipOnboarding={pathWorkCid !== ""}
+      />
+    );
     app = <ProtectedExperience>{protectedPage}</ProtectedExperience>;
   }
 
