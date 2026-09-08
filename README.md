@@ -4,7 +4,7 @@ FANZA同人作品のサンプルを、TikTok / Shortsのような縦フィード
 
 現在の本番構成は **React 19 + Vite 7 + TypeScript / PHP 8.3 / MariaDB / シンレンタルサーバー** です。Node.jsは開発・CI・ビルド時だけ使用し、本番Webサーバーには常駐させません。
 
-> このREADMEは2026-09-08時点の`main`実装に合わせています。
+> このREADMEは2026-09-08時点の現行実装に合わせています。
 
 ## 現在のステータス
 
@@ -13,8 +13,10 @@ FANZA同人作品のサンプルを、TikTok / Shortsのような縦フィード
 - PWA `display: standalone` 対応
 - DBベースの固定推薦フィードを本番利用
 - DBが利用できない場合はFANZA APIへフォールバック
+- 18歳以上確認を実装済み
+- プライバシーポリシー / 利用規約を実装済み
+- マイページから匿名データを自己削除可能
 - オンボーディングは現在、メイン画面を新規表示するたびに表示する一時仕様
-- 本公開前に年齢確認、SEO公開方針、プライバシー説明を確定する必要あり
 
 公開先: `https://wp983575.wpx.jp/`
 
@@ -29,12 +31,16 @@ FANZA同人作品のサンプルを、TikTok / Shortsのような縦フィード
 - いいね、保存、共有
 - サンプル読了後のFANZAアフィリエイトCTA
 - 保存済み作品一覧と価格変化表示
+- 閲覧履歴
 - 作品名・サークル・シリーズのキーワード検索
 - 作品タイプ、ジャンル、価格、サンプル枚数、レビュー件数、評価で絞り込み
 - 匿名行動データからジャンル嗜好を更新するルールベース推薦
+- Reader設定の端末保存
+- 18歳以上確認
+- 匿名データ削除
 - PWA / Service Worker
 - 3ステップのオンボーディング
-- メイン ↔ 保存済み / マイページ間の閲覧位置復帰
+- メイン ↔ 保存済み / マイページ / 閲覧履歴間の閲覧位置復帰
 
 ## 画面
 
@@ -43,22 +49,71 @@ FANZA同人作品のサンプルを、TikTok / Shortsのような縦フィード
 | `/` | メインの縦スワイプ作品フィード |
 | `/saved` | 保存済み作品 |
 | `/mypage` | 匿名ユーザーのマイページ |
+| `/history` | 閲覧履歴 |
+| `/privacy` | プライバシーポリシー |
+| `/terms` | 利用規約 |
 | `/favorites` | 旧URL。`/saved`へリダイレクト |
 
-React Routerは使用せず、現在は`src/main.tsx`でpathnameを判定して画面を出し分けています。
+React Routerは使用せず、`src/main.tsx`でpathnameを判定して画面を出し分けています。
+
+## 年齢確認
+
+成人向け作品を表示する画面は、18歳以上確認を通過してからマウントします。
+
+- 「この端末で確認を記憶する」がON: `localStorage`へ確認済み状態を保存
+- OFF: `sessionStorage`へ保存し、ブラウザセッション中だけ有効
+- `/privacy` と `/terms` は年齢確認前でも閲覧可能
+- 年齢確認前は作品APIの画面コンポーネントをマウントせず、行動計測も開始しない
+
+匿名データ削除を実行すると、年齢確認済み状態も端末から削除します。
 
 ## オンボーディングの一時仕様
 
 現在は検証中のため、メイン画面を新規表示するたびにオンボーディングを表示します。
 
-閲覧済みフラグは`localStorage` / `sessionStorage` / Cookieへ保存していません。オンボーディング完了後にメインフィードを表示し、そこから閲覧位置の復帰処理を開始します。
+オンボーディング閲覧済みフラグは`localStorage` / `sessionStorage` / Cookieへ保存していません。マイページの「操作ガイド」からも同じガイドを再表示できます。
 
 詳細は `docs/onboarding-implementation.md` を参照してください。
+
+## マイページ
+
+`/mypage`では以下を利用できます。
+
+- 保存済み件数 / 閲覧作品数 / いいね件数
+- 最近見た作品
+- 上位ジャンル嗜好
+- Reader設定
+  - 全体表示 / 横幅優先
+  - 右→左 / 左→右
+  - 画面端タップ送り
+  - Reader UI最小化
+- 操作ガイド
+- 保存済み / 閲覧履歴への導線
+- プライバシーポリシー / 利用規約
+- 利用開始日
+- 匿名データ削除
+
+### 匿名データ削除
+
+`DELETE /api/me`で現在の匿名ユーザーIDを削除します。
+
+`anonymous_users`を削除すると外部キーの`ON DELETE CASCADE`により、次のユーザー固有データも削除されます。
+
+- 行動イベント
+- いいね / 保存状態
+- ジャンル嗜好スコア
+- 固定推薦feed session / feed items
+
+レスポンス時に`fp_uid` / `fp_sid` Cookieも失効させます。フロントでは同時に`swipe-preview:`プレフィックスのlocalStorage / sessionStorageを削除し、Reader設定、年齢確認、画面復帰状態等をリセットします。
+
+再利用時には新しい匿名IDが発行されます。
 
 ## システム構成
 
 ```text
 ブラウザ
+  ↓
+18歳以上確認
   ↓
 React / Vite 静的ファイル
   ↓
@@ -67,7 +122,8 @@ React / Vite 静的ファイル
 /api/events        行動イベント
 /api/reactions     いいね・保存状態
 /api/saved         保存済み作品
-/api/me            匿名マイページ
+/api/history       閲覧履歴
+/api/me            匿名マイページ / 匿名データ削除
 /api/work-details  読了時の作品詳細・価格再確認
 /api/health        稼働確認
   ↓
@@ -101,9 +157,9 @@ DBに表示可能な作品が1件以上存在する場合、`/api/catalog`はMar
 
 DBへ接続できない、または表示可能なDB作品がない場合はFANZA APIからライブ取得します。
 
-フォールバック時のレスポンスは`feedId: null`となり、`nextCursor`だけで次ページへ進みます。フロント側も`feedId`なしの追加取得へ対応しているため、1ページ目だけで停止しません。
+フォールバック時のレスポンスは`feedId: null`となり、`nextCursor`だけで次ページへ進みます。フロント側も`feedId`なしの追加取得へ対応しています。
 
-追加取得に失敗した場合はユーザーへ「再試行」を表示し、現在は明示的な手動再試行へ一本化しています。機能していない自動retry / 指数バックオフ用stateは残していません。
+追加取得に失敗した場合はユーザーへ「再試行」を表示し、明示的な手動再試行へ一本化しています。
 
 ## レコメンド
 
@@ -130,7 +186,7 @@ DBへ接続できない、または表示可能なDB作品がない場合はFANZ
 
 ## 行動イベント
 
-現在の主なイベントは以下です。
+現在の主なイベント:
 
 ```text
 session_start
@@ -148,6 +204,18 @@ affiliate_click
 
 イベントは匿名ユーザーID / セッションIDと紐付けます。ページ進捗、最大到達ページ、読了率、滞在時間、feed内順位などを必要に応じて保存し、推薦と分析へ利用します。
 
+年齢確認を通過するまでは`startAnalytics()`を開始しません。
+
+## 閲覧履歴
+
+`/api/history`は`work_impression` / 旧`impression`イベントを作品単位に集約し、最後に表示した時刻の新しい順で返します。
+
+- cursorページング
+- 1リクエスト最大50件
+- `/mypage`では直近4作品をプレビュー
+- `/history`では一覧表示
+- イベントretentionにより古い履歴は自動整理
+
 ## DB
 
 主要テーブル:
@@ -164,9 +232,16 @@ affiliate_click
 - `sync_runs`: 同期・巡回更新の実行履歴
 - `app_migrations`: 一度だけ行うデータ移行の管理
 
-IPアドレスや実名情報はアプリDBへ保存しません。
+IPアドレスや実名情報はアプリDBへ保存しません。ホスティング事業者やWebサーバーの標準アクセスログはアプリDBとは別です。
 
 初期設定ではイベント生ログを60日、匿名ユーザーと派生データを最終行動から180日で整理します。匿名ユーザーCookieは継続利用中に期限を延長します。
+
+## プライバシー / 利用規約
+
+- `/privacy`: 匿名ID、Cookie、行動イベント、端末設定、保存期間、削除方法、FANZA外部遷移を説明
+- `/terms`: 18歳以上の利用条件、禁止事項、知的財産、商品情報、外部サービス、アフィリエイト、免責等を説明
+
+FANZAへのリンクにはアフィリエイトリンクを含み、購入等により運営者が報酬を受け取る場合があります。
 
 ## FANZA作品同期
 
@@ -187,7 +262,7 @@ IPアドレスや実名情報はアプリDBへ保存しません。
 ```text
 components/            React UI
 lib/                   フロント共通型
-src/                   analytics / API / reader / navigation等
+src/                   analytics / API / reader / navigation / age verification等
 styles/                責務別CSS
 public/                manifest / service worker / icons
 server/public/         公開PHP APIと.htaccess
@@ -199,7 +274,7 @@ docs/                  実装メモ
 .github/workflows/     CI / deploy / catalog maintenance
 ```
 
-CSSは現在、次の6ファイルへ責務分離しています。
+CSSは次の6ファイルへ責務分離しています。
 
 ```text
 styles/globals.css
@@ -210,7 +285,7 @@ styles/onboarding.css
 styles/accessibility.css
 ```
 
-過去に分散していた`page-scroll.css` / `pwa-layout.css` / `saved-enhancements.css`は統合済みです。
+マイページ、閲覧履歴、年齢確認、法務ページのスタイルは`styles/pages.css`へ集約しています。
 
 ## 開発
 
@@ -239,10 +314,10 @@ npm run check:debt
 npm run build:shin
 ```
 
-`check:debt`では現在、以下のような回帰を静的検査しています。
+`check:debt`では以下のような回帰を静的検査します。
 
 - 削除済みCSS / UIの復活
-- 必須Reader / Savedスタイルの欠落
+- 必須Reader / Saved / マイページ / 年齢確認 / 法務スタイルの欠落
 - 画像decodeキャッシュ上限の欠落
 - リアクションAPIとフロントのCID件数上限不一致
 - RTL / LTR復帰処理の欠落
@@ -251,6 +326,10 @@ npm run build:shin
 - APIフォールバック時に`feedId`を必須にしてしまう回帰
 - 機能しない追加取得retryコードの再混入
 - `WorkRepository::upsertNormalized()`への未使用`source`引数の再混入
+- 年齢確認ゲートの欠落
+- `/privacy` / `/terms` / `/history`ルートの欠落
+- 匿名データ削除APIの接続漏れ
+- 閲覧履歴APIルーティングの接続漏れ
 
 `build:shin`は以下を生成します。
 
@@ -276,6 +355,8 @@ Pull RequestのCIでは以下をまとめて確認します。
 - 検索
 - 固定feed
 - 保存cursor
+- 閲覧履歴cursor
+- 匿名データ削除のcascade
 - 値下げ差額
 - クリティカルな実装回帰
 - 本番成果物build
@@ -305,7 +386,7 @@ app / public_html切替
 本番HTTP検証
 ```
 
-本番切替後は、commit SHA、PWA manifest、CSP / HSTS / X-Frame-Options、DB/FANZA health、固定feedページング、`/saved`、`/mypage`、debug/diagnostics非公開境界まで検証します。
+本番切替後は、commit SHA、PWA manifest、CSP / HSTS / X-Frame-Options、DB/FANZA health、固定feedページング、ユーザーAPI、debug/diagnostics非公開境界まで検証します。
 
 ## GitHub Actions Secrets
 
@@ -325,12 +406,9 @@ SHIN_ADMIN_TOKEN       # 管理debug/diagnosticsを利用する場合のみ
 
 現在は開発・検証段階のため、`noindex,nofollow`を維持しています。
 
-検索エンジンへ公開する前に、少なくとも以下を確定・実装してください。
+年齢確認、プライバシーポリシー、利用規約、匿名データ削除は実装済みです。検索エンジンへ公開する前に残っている主な作業は以下です。
 
-- 年齢確認
-- プライバシー説明
-- 匿名行動データの利用目的・保存期間・削除方針
 - SEO公開対象ページとURL設計
 - `robots` / index制御の解除条件
-
-成人向け作品の閲覧行動を匿名IDで保存するため、データ利用方針は本公開前に利用者へ明示する前提です。
+- 作品 / シリーズ / サークル / ジャンル単位の公開ページ設計
+- 実機でのReader QAと法務文面の最終確認
