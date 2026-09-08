@@ -7,7 +7,7 @@ type Props = { active?: NavKey };
 function currentNav(): NavKey {
   const path = window.location.pathname.replace(/\/+$/, "") || "/";
   if (path === "/saved" || path === "/favorites") return "saved";
-  if (path === "/mypage") return "mypage";
+  if (path === "/mypage" || path === "/history") return "mypage";
   return "main";
 }
 
