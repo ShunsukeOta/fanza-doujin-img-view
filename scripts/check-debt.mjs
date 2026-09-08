@@ -90,6 +90,9 @@ const app = readFileSync("components/SwipePreviewApp.tsx", "utf8");
 if (/nextCursor === null\s*\|\|\s*!feedId/.test(app)) {
   fail("FANZA APIフォールバック時にfeedIdなしで追加取得できません。");
 }
+if (!app.includes('catalog.source === "database" ? catalog.apiTotal : 0')) {
+  fail("FANZA fallbackの同人フロア全件数をコミック総数として表示する回帰があります。");
+}
 for (const deadRetry of ["retryAttempt", "retryAt", "retryDelay", "ApiError"]) {
   if (app.includes(deadRetry)) fail(`実際に機能しない追加取得retryコード ${deadRetry} が残っています。`);
 }
