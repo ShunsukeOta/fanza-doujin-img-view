@@ -141,6 +141,11 @@ if (!setupDb.includes("comic-only-catalog-20260908") || !setupDb.includes("remov
 if (!setupDb.includes("LEFT JOIN work_genres") || !setupDb.includes("LEFT JOIN work_series")) {
   fail("コミック専用化migrationで孤立ジャンル・シリーズを整理していません。");
 }
+const comicMark = setupDb.indexOf("mark_migration($pdo, $comicOnlyMigration);");
+const comicDdl = setupDb.indexOf("ALTER TABLE works MODIFY asset_type");
+if (comicDdl >= 0 && (comicMark < 0 || comicMark < comicDdl)) {
+  fail("コミック専用化migrationが互換DDL完了前に適用済みmarkされています。");
+}
 
 const api = readFileSync("src/api.ts", "utf8");
 for (const deadApi of ["retryDelay", "retryAfterMs", "ApiError"]) {
