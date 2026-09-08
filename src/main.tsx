@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 
 import { AgeGate } from "@/components/AgeGate";
 import { ComingSoonFloorPage } from "@/components/ComingSoonFloorPage";
-import { FloorTabs } from "@/components/FloorTabs";
+import { FloorSwitcher } from "@/components/FloorSwitcher";
 import { HistoryPage } from "@/components/HistoryPage";
 import { PrivacyPolicyPage, TermsPage } from "@/components/LegalPages";
 import { MyPage } from "@/components/MyPage";
@@ -77,7 +77,7 @@ function MainExperience({ initialFilters, initialCid, skipOnboarding = false }: 
 
   return (
     <>
-      <FloorTabs activeFloor="comic" context="feed" overlay />
+      <FloorSwitcher activeFloor="comic" context="feed" overlay />
       <SwipePreviewApp initialFilters={initialFilters} initialCid={initialCid} />
     </>
   );
