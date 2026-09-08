@@ -6,11 +6,15 @@ AddType application/manifest+json .webmanifest
 <IfModule mod_rewrite.c>
   RewriteEngine On
 
-  RewriteRule ^api/(catalog|meta|diagnostics|debug|health|events|reactions|saved|history|me|work-details)\.php$ - [L]
-  RewriteRule ^api/(catalog|meta|diagnostics|debug|health|events|reactions|saved|history|me|work-details)/?$ api/$1.php [L,QSA]
+  RewriteRule ^api/(catalog|search|meta|diagnostics|debug|health|events|reactions|saved|history|me|work-details)\.php$ - [L]
+  RewriteRule ^api/(catalog|search|meta|diagnostics|debug|health|events|reactions|saved|history|me|work-details)/?$ api/$1.php [L,QSA]
   RewriteRule ^api/ - [R=404,L]
 
   RewriteRule ^favorites/?$ /saved [R=301,L]
+
+  RewriteRule ^work/([A-Za-z0-9_-]{1,128})/?$ work.php?cid=$1 [L,QSA]
+  RewriteCond %{QUERY_STRING} ^cid=([A-Za-z0-9_-]{1,128})$
+  RewriteRule ^$ work.php?cid=%1 [L,NE]
 
   RewriteCond %{REQUEST_FILENAME} -f [OR]
   RewriteCond %{REQUEST_FILENAME} -d
