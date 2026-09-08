@@ -12,9 +12,9 @@ AddType application/manifest+json .webmanifest
 
   RewriteRule ^favorites/?$ /saved [R=301,L]
 
-  RewriteRule ^work/([A-Za-z0-9_-]{1,128})/?$ work.php?cid=$1 [L,QSA]
   RewriteCond %{QUERY_STRING} ^cid=([A-Za-z0-9_-]{1,128})$
-  RewriteRule ^$ work.php?cid=%1 [L,NE]
+  RewriteRule ^$ /work/%1 [R=301,L,NE,QSD]
+  RewriteRule ^work/([A-Za-z0-9_-]{1,128})/?$ work.php?cid=$1 [L,QSA]
 
   RewriteCond %{REQUEST_FILENAME} -f [OR]
   RewriteCond %{REQUEST_FILENAME} -d
