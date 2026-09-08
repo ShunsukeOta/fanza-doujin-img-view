@@ -134,6 +134,9 @@ export function VideoWorkCard({ item, index, isActive, onToast, onVerticalSwipe 
     if (!isActive) {
       video?.pause();
       setPlaying(false);
+      setLoaded(false);
+      loadedRef.current = false;
+      loadedViewIdRef.current = "";
       endView();
       return;
     }
@@ -141,13 +144,11 @@ export function VideoWorkCard({ item, index, isActive, onToast, onVerticalSwipe 
     viewIdRef.current = createViewId();
     activeStartedAt.current = performance.now();
     endedTracked.current = false;
-    loadedViewIdRef.current = "";
     trackEvent({
       eventType: "work_impression",
       ...eventContext(),
       metadata: { mediaType: "video", floor: "amateur", embedPlayer: mode === "embed" },
     });
-    if (loadedRef.current) markLoaded();
 
     if (mode === "direct" && video) {
       if (video.ended) {
@@ -163,7 +164,7 @@ export function VideoWorkCard({ item, index, isActive, onToast, onVerticalSwipe 
       video?.pause();
       endView();
     };
-  }, [endView, eventContext, isActive, markLoaded, mode, muted]);
+  }, [endView, eventContext, isActive, mode, muted]);
 
   useEffect(() => () => endView(), [endView]);
 
@@ -179,18 +180,8 @@ export function VideoWorkCard({ item, index, isActive, onToast, onVerticalSwipe 
     setCurrentTime(duration);
     if (endedTracked.current) return;
     endedTracked.current = true;
-    trackEvent({
-      eventType: "sample_complete",
-      ...eventContext(),
-      readRatio: 1,
-      metadata: { mediaType: "video", floor: "amateur" },
-    });
-    trackEvent({
-      eventType: "cta_view",
-      ...eventContext(),
-      placement: "video_end",
-      metadata: { mediaType: "video", floor: "amateur" },
-    });
+    trackEvent({ eventType: "sample_complete", ...eventContext(), readRatio: 1, metadata: { mediaType: "video", floor: "amateur" } });
+    trackEvent({ eventType: "cta_view", ...eventContext(), placement: "video_end", metadata: { mediaType: "video", floor: "amateur" } });
   };
 
   const togglePlayback = () => {
@@ -247,12 +238,7 @@ export function VideoWorkCard({ item, index, isActive, onToast, onVerticalSwipe 
         await navigator.clipboard.writeText(url);
         onToast("共有リンクをコピーしました");
       } else return;
-      trackEvent({
-        eventType: "share",
-        ...eventContext(),
-        placement: "video_feed",
-        metadata: { floor: "amateur" },
-      });
+      trackEvent({ eventType: "share", ...eventContext(), placement: "video_feed", metadata: { floor: "amateur" } });
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
       onToast("共有できませんでした");
@@ -261,12 +247,7 @@ export function VideoWorkCard({ item, index, isActive, onToast, onVerticalSwipe 
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLElement>) => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
-    pointerStart.current = {
-      id: event.pointerId,
-      x: event.clientX,
-      y: event.clientY,
-      startedAt: performance.now(),
-    };
+    pointerStart.current = { id: event.pointerId, x: event.clientX, y: event.clientY, startedAt: performance.now() };
     pointerMoved.current = false;
     try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* noop */ }
   };
@@ -274,9 +255,7 @@ export function VideoWorkCard({ item, index, isActive, onToast, onVerticalSwipe 
   const handlePointerMove = (event: ReactPointerEvent<HTMLElement>) => {
     const start = pointerStart.current;
     if (!start || start.id !== event.pointerId) return;
-    if (Math.abs(event.clientY - start.y) > 10 || Math.abs(event.clientX - start.x) > 10) {
-      pointerMoved.current = true;
-    }
+    if (Math.abs(event.clientY - start.y) > 10 || Math.abs(event.clientX - start.x) > 10) pointerMoved.current = true;
   };
 
   const finishPointer = (event: ReactPointerEvent<HTMLElement>, allowTapPlayback: boolean) => {
@@ -291,9 +270,7 @@ export function VideoWorkCard({ item, index, isActive, onToast, onVerticalSwipe 
       onVerticalSwipe(dy < 0 ? 1 : -1);
       return;
     }
-    if (allowTapPlayback && !pointerMoved.current && Math.abs(dx) < 12 && Math.abs(dy) < 12) {
-      togglePlayback();
-    }
+    if (allowTapPlayback && !pointerMoved.current && Math.abs(dx) < 12 && Math.abs(dy) < 12) togglePlayback();
   };
 
   const canBuy = item.available !== false && validExternalUrl(item.affiliateUrl);
@@ -308,12 +285,14 @@ export function VideoWorkCard({ item, index, isActive, onToast, onVerticalSwipe 
     >
       <section
         className="video-stage"
-        onPointerDown={mode === "direct" ? handlePointerDown : undefined}
-        onPointerMove={mode === "direct" ? handlePointerMove : undefined}
-        onPointerUp={mode === "direct" ? (event) => finishPointer(event, true) : undefined}
+        onPointerDown={isActive && mode === "direct" ? handlePointerDown : undefined}
+        onPointerMove={isActive && mode === "direct" ? handlePointerMove : undefined}
+        onPointerUp={isActive && mode === "direct" ? (event) => finishPointer(event, true) : undefined}
         onPointerCancel={() => { pointerStart.current = null; }}
       >
-        {mode === "direct" ? (
+        {!isActive ? (
+          poster ? <img className="video-poster-fallback" src={poster} alt="" loading="lazy" decoding="async" /> : <div className="video-unavailable" />
+        ) : mode === "direct" ? (
           <video
             ref={videoRef}
             className="video-player"
@@ -321,7 +300,7 @@ export function VideoWorkCard({ item, index, isActive, onToast, onVerticalSwipe 
             poster={poster || undefined}
             playsInline
             muted={muted}
-            preload={isActive ? "auto" : "metadata"}
+            preload="auto"
             onLoadedData={onLoadedData}
             onDurationChange={(event) => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
             onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
@@ -336,7 +315,6 @@ export function VideoWorkCard({ item, index, isActive, onToast, onVerticalSwipe 
             title={`${item.title} サンプル動画`}
             allow="autoplay; fullscreen; picture-in-picture"
             allowFullScreen
-            loading={isActive ? "eager" : "lazy"}
             referrerPolicy="strict-origin-when-cross-origin"
             onLoad={markLoaded}
           />
@@ -346,48 +324,20 @@ export function VideoWorkCard({ item, index, isActive, onToast, onVerticalSwipe 
           <div className="video-unavailable">動画サンプルを表示できません</div>
         )}
 
-        {!loaded && mode !== "none" ? <div className="video-loading"><span className="spinner" /></div> : null}
+        {isActive && !loaded && mode !== "none" ? <div className="video-loading"><span className="spinner" /></div> : null}
 
-        {mode === "direct" ? (
+        {isActive && mode === "direct" ? (
           <>
-            <button
-              className={`video-play-toggle${playing ? " is-playing" : ""}`}
-              type="button"
-              onClick={(event) => { event.stopPropagation(); togglePlayback(); }}
-              aria-label={playing ? "一時停止" : "再生"}
-            >
-              <span aria-hidden="true">{playing ? "Ⅱ" : "▶"}</span>
-            </button>
-            <button
-              className="video-audio-toggle"
-              type="button"
-              onClick={(event) => { event.stopPropagation(); toggleMuted(); }}
-              aria-label={muted ? "音声をオン" : "ミュート"}
-            >
-              <span aria-hidden="true">{muted ? "MUTE" : "SOUND"}</span>
-            </button>
+            <button className={`video-play-toggle${playing ? " is-playing" : ""}`} type="button" onClick={(event) => { event.stopPropagation(); togglePlayback(); }} aria-label={playing ? "一時停止" : "再生"}><span aria-hidden="true">{playing ? "Ⅱ" : "▶"}</span></button>
+            <button className="video-audio-toggle" type="button" onClick={(event) => { event.stopPropagation(); toggleMuted(); }} aria-label={muted ? "音声をオン" : "ミュート"}><span aria-hidden="true">{muted ? "MUTE" : "SOUND"}</span></button>
             <div className="video-timeline" aria-hidden="true"><span style={{ width: `${progress * 100}%` }} /></div>
             <div className="video-time" aria-hidden="true">{formatTime(currentTime)} / {formatTime(duration)}</div>
           </>
-        ) : mode === "embed" ? (
+        ) : isActive && mode === "embed" ? (
           <>
             <span className="video-embed-badge">FANZA SAMPLE</span>
-            <div
-              className="video-swipe-zone video-swipe-zone--left"
-              aria-hidden="true"
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={(event) => finishPointer(event, false)}
-              onPointerCancel={() => { pointerStart.current = null; }}
-            />
-            <div
-              className="video-swipe-zone video-swipe-zone--right"
-              aria-hidden="true"
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={(event) => finishPointer(event, false)}
-              onPointerCancel={() => { pointerStart.current = null; }}
-            />
+            <div className="video-swipe-zone video-swipe-zone--left" aria-hidden="true" onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={(event) => finishPointer(event, false)} onPointerCancel={() => { pointerStart.current = null; }} />
+            <div className="video-swipe-zone video-swipe-zone--right" aria-hidden="true" onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={(event) => finishPointer(event, false)} onPointerCancel={() => { pointerStart.current = null; }} />
           </>
         ) : null}
       </section>
@@ -401,35 +351,17 @@ export function VideoWorkCard({ item, index, isActive, onToast, onVerticalSwipe 
           {item.price ? <span className="stat-chip">{formatPrice(item.price, item.priceValue ?? null)}</span> : null}
         </div>
         {canBuy ? (
-          <a
-            className="open-link"
-            href={item.affiliateUrl}
-            target="_blank"
-            rel="noopener noreferrer sponsored"
-            onClick={() => trackEvent({
-              eventType: "affiliate_click",
-              ...eventContext(),
-              placement: "video_feed",
-            }, true)}
-          >
-            FANZAで見る <ExternalIcon />
-          </a>
+          <a className="open-link" href={item.affiliateUrl} target="_blank" rel="noopener noreferrer sponsored" onClick={() => trackEvent({ eventType: "affiliate_click", ...eventContext(), placement: "video_feed" }, true)}>FANZAで見る <ExternalIcon /></a>
         ) : null}
       </div>
 
       <aside className="action-rail" aria-label="作品アクション">
-        <button className={`action-btn${liked ? " is-active" : ""}`} type="button" disabled={Boolean(reactionBusy)} onClick={() => void toggleReaction("like")}>
-          <span className="action-icon"><HeartIcon /></span><span className="action-label">いいね</span><span className="action-count">{formatCount(likeCount)}</span>
-        </button>
-        <button className={`action-btn${saved ? " is-active" : ""}`} type="button" disabled={Boolean(reactionBusy)} onClick={() => void toggleReaction("save")}>
-          <span className="action-icon"><BookmarkIcon /></span><span className="action-label">保存</span><span className="action-count">{formatCount(saveCount)}</span>
-        </button>
-        <button className="action-btn" type="button" onClick={() => void share()}>
-          <span className="action-icon"><ShareIcon /></span><span className="action-label">共有</span>
-        </button>
+        <button className={`action-btn${liked ? " is-active" : ""}`} type="button" disabled={Boolean(reactionBusy)} onClick={() => void toggleReaction("like")}><span className="action-icon"><HeartIcon /></span><span className="action-label">いいね</span><span className="action-count">{formatCount(likeCount)}</span></button>
+        <button className={`action-btn${saved ? " is-active" : ""}`} type="button" disabled={Boolean(reactionBusy)} onClick={() => void toggleReaction("save")}><span className="action-icon"><BookmarkIcon /></span><span className="action-label">保存</span><span className="action-count">{formatCount(saveCount)}</span></button>
+        <button className="action-btn" type="button" onClick={() => void share()}><span className="action-icon"><ShareIcon /></span><span className="action-label">共有</span></button>
       </aside>
 
-      {mode === "direct" && ended ? (
+      {isActive && mode === "direct" && ended ? (
         <div className="video-end-card">
           <strong>サンプルはここまで</strong>
           <button type="button" onClick={togglePlayback}>もう一度見る</button>
