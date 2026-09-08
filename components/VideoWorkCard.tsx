@@ -164,7 +164,7 @@ export function VideoWorkCard({ item, index, isActive, onToast, onVerticalSwipe 
       video?.pause();
       endView();
     };
-  }, [endView, eventContext, isActive, mode, muted]);
+  }, [endView, eventContext, isActive, mode]);
 
   useEffect(() => () => endView(), [endView]);
 
