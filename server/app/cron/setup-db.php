@@ -8,6 +8,7 @@ if (PHP_SAPI !== 'cli') {
 }
 
 require dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/src/ComicOnlyCleanup.php';
 
 $pdo = $database->connection();
 if (!$pdo) {
@@ -89,6 +90,15 @@ function rebuild_genre_scores(PDO $pdo): void
     );
 }
 
+$cleanup = \SwipePreview\ComicOnlyCleanup::run($pdo);
+fwrite(
+    STDOUT,
+    'コミック専用DB cleanup removed_works=' . $cleanup['removedWorks']
+    . ' removed_events=' . $cleanup['removedEvents']
+    . ' removed_states=' . $cleanup['removedStates']
+    . ' dropped_columns=' . $cleanup['droppedColumns'] . "\n",
+);
+
 $workColumns = [
     'product_url' => 'TEXT NULL AFTER title',
     'description' => 'LONGTEXT NULL AFTER affiliate_url',
@@ -128,6 +138,7 @@ foreach ($eventColumns as $name => $definition) {
 ensure_column($pdo, 'user_work_states', 'liked_at', 'DATETIME NULL AFTER saved');
 ensure_column($pdo, 'user_work_states', 'saved_at', 'DATETIME NULL AFTER liked_at');
 
+ensure_index($pdo, 'works', 'idx_works_feed', '(is_active, sample_count, review_count, rating)');
 ensure_index($pdo, 'works', 'idx_works_price', '(is_active, price_value)');
 ensure_index($pdo, 'works', 'idx_works_random', '(is_active, random_key, cid)');
 ensure_index($pdo, 'works', 'idx_works_refresh', '(is_active, next_refresh_at, cid)');
@@ -148,52 +159,6 @@ if ((int)$uniqueEventIndex->fetchColumn() === 0) {
     $pdo->exec('ALTER TABLE events ADD UNIQUE INDEX uq_events_event_id (event_id)');
 }
 
-// 作品タイプ機能廃止: 既存DBだけに存在する旧分類列を使って非コミックデータを1回だけ除去する。
-// 列自体は旧リリースへロールバックできるよう互換用に残し、残存値とDEFAULTをcomicへ固定する。
-$comicOnlyMigration = 'comic-only-catalog-20260908';
-if (!migration_applied($pdo, $comicOnlyMigration)) {
-    $removed = 0;
-    if (column_exists($pdo, 'works', 'asset_type')) {
-        $removed = (int)$pdo->query("SELECT COUNT(*) FROM works WHERE asset_type <> 'comic'")->fetchColumn();
-        $pdo->beginTransaction();
-        try {
-            $pdo->exec(
-                "DELETE e FROM events e JOIN works w ON w.cid = e.work_cid WHERE w.asset_type <> 'comic'"
-            );
-            $pdo->exec(
-                "DELETE s FROM user_work_states s JOIN works w ON w.cid = s.work_cid WHERE w.asset_type <> 'comic'"
-            );
-            $pdo->exec("DELETE FROM works WHERE asset_type <> 'comic'");
-            // works削除のCASCADE後、コミックと無関係になったジャンル・シリーズだけを整理する。
-            $pdo->exec(
-                'DELETE g FROM genres g LEFT JOIN work_genres wg ON wg.genre_id = g.id WHERE wg.genre_id IS NULL'
-            );
-            $pdo->exec(
-                'DELETE s FROM series s LEFT JOIN work_series ws ON ws.series_id = s.id WHERE ws.series_id IS NULL'
-            );
-            $pdo->exec('DELETE FROM feed_sessions');
-            rebuild_genre_scores($pdo);
-            $pdo->commit();
-        } catch (Throwable $error) {
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-            throw $error;
-        }
-
-        // DDLはトランザクション外。失敗した場合はmigration未完了のまま次回再実行する。
-        $pdo->exec("UPDATE works SET asset_type='comic'");
-        $pdo->exec("ALTER TABLE works MODIFY asset_type VARCHAR(16) NOT NULL DEFAULT 'comic'");
-        if (column_exists($pdo, 'works', 'asset_bucket')) {
-            $pdo->exec("UPDATE works SET asset_bucket='comic'");
-            $pdo->exec("ALTER TABLE works MODIFY asset_bucket VARCHAR(64) NOT NULL DEFAULT 'comic'");
-        }
-    }
-    mark_migration($pdo, $comicOnlyMigration);
-    fwrite(STDOUT, "コミック専用化 migration removed_non_comic={$removed}\n");
-}
-
-// 既存作品の初期化はNULL/未設定行だけを更新し、全件を毎デプロイ書き換えない。
 $pdo->exec('UPDATE works SET random_key = CRC32(cid) WHERE random_key = 0');
 $pdo->exec("UPDATE works SET availability_status = IF(is_active = 1, 'active', 'unavailable') WHERE availability_status = '' OR availability_status IS NULL");
 $pdo->exec('UPDATE works SET metadata_checked_at = last_seen_at WHERE metadata_checked_at IS NULL');
@@ -222,7 +187,6 @@ $pdo->exec(
     . "WHERE h.work_cid IS NULL AND (w.price <> '' OR w.price_value IS NOT NULL)"
 );
 
-// v2の誤読了率で作られた派生スコアを1回だけ破棄し、Like/Saveの現状態から再構築する。
 $rebuildId = 'recommendation-v3-rebuild-20260907';
 if (!migration_applied($pdo, $rebuildId)) {
     $pdo->beginTransaction();
