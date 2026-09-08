@@ -130,10 +130,16 @@ const sync = readFileSync("server/app/cron/fanza-sync.php", "utf8");
 if (!sync.includes("isComicItem") || !sync.includes("skippedNonComic")) {
   fail("同期処理がコミック以外を除外していません。");
 }
+if (sync.includes("fetchGenres")) {
+  fail("同期処理が同人フロア全体のジャンルを事前投入しています。コミック実データ由来に限定してください。");
+}
 
 const setupDb = readFileSync("server/app/cron/setup-db.php", "utf8");
 if (!setupDb.includes("comic-only-catalog-20260908") || !setupDb.includes("removed_non_comic")) {
   fail("既存DBの非コミック作品を整理するmigrationがありません。");
+}
+if (!setupDb.includes("LEFT JOIN work_genres") || !setupDb.includes("LEFT JOIN work_series")) {
+  fail("コミック専用化migrationで孤立ジャンル・シリーズを整理していません。");
 }
 
 const api = readFileSync("src/api.ts", "utf8");
