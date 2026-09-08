@@ -30,15 +30,10 @@ function boundedInt(
   return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback;
 }
 
-function boundedFloat(
-  params: URLSearchParams,
-  key: string,
-  fallback: number,
-  min: number,
-  max: number,
-): number {
-  const parsed = Number.parseFloat(params.get(key) ?? "");
-  return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback;
+function ratingFilter(params: URLSearchParams): number {
+  const raw = params.get("min_rating") ?? "";
+  if (!/^[1-5]$/.test(raw)) return 0;
+  return Number.parseInt(raw, 10);
 }
 
 function registerServiceWorker(): void {
@@ -98,7 +93,7 @@ const initialFilters: FilterValues = {
   genreId: (params.get("genre_id") ?? "").slice(0, 64),
   minSamples: boundedInt(params, "min_samples", 1, 1, 100),
   minReviews: boundedInt(params, "min_reviews", 0, 0, 100_000),
-  minRating: boundedFloat(params, "min_rating", 0, 0, 5),
+  minRating: ratingFilter(params),
   minPrice: boundedInt(params, "min_price", 0, 0, 10_000_000),
   maxPrice: boundedInt(params, "max_price", 0, 0, 10_000_000),
   query: (params.get("q") ?? "").slice(0, 100),
