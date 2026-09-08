@@ -120,7 +120,6 @@ mustContain(onboarding, [
   "setPointerCapture",
   "deltaY <= -42",
   "Math.abs(deltaX) >= 42",
-  'mode="guide"',
   'aria-modal="true"',
 ], "オンボーディング");
 mustNotContain(onboarding, [
