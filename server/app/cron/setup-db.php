@@ -164,6 +164,13 @@ if (!migration_applied($pdo, $comicOnlyMigration)) {
                 "DELETE s FROM user_work_states s JOIN works w ON w.cid = s.work_cid WHERE w.asset_type <> 'comic'"
             );
             $pdo->exec("DELETE FROM works WHERE asset_type <> 'comic'");
+            // works削除のCASCADE後、コミックと無関係になったジャンル・シリーズだけを整理する。
+            $pdo->exec(
+                'DELETE g FROM genres g LEFT JOIN work_genres wg ON wg.genre_id = g.id WHERE wg.genre_id IS NULL'
+            );
+            $pdo->exec(
+                'DELETE s FROM series s LEFT JOIN work_series ws ON ws.series_id = s.id WHERE ws.series_id IS NULL'
+            );
             $pdo->exec('DELETE FROM feed_sessions');
             rebuild_genre_scores($pdo);
             mark_migration($pdo, $comicOnlyMigration);
