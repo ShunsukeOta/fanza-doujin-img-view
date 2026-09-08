@@ -16,12 +16,21 @@
 }
 
 .video-player,
-.video-poster-fallback {
+.video-poster-fallback,
+.video-embed-player {
   width: 100%;
   height: 100%;
   display: block;
-  object-fit: contain;
   background: #050505;
+}
+
+.video-player,
+.video-poster-fallback {
+  object-fit: contain;
+}
+
+.video-embed-player {
+  border: 0;
 }
 
 .video-poster-fallback {
@@ -35,9 +44,11 @@
 
 .video-loading {
   position: absolute;
+  z-index: 4;
   inset: 0;
   display: grid;
   place-items: center;
+  background: #050505;
   pointer-events: none;
 }
 
@@ -101,6 +112,41 @@
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   cursor: pointer;
+}
+
+.video-embed-badge {
+  position: absolute;
+  z-index: 7;
+  top: calc(var(--header-h) + env(safe-area-inset-top) + 12px);
+  right: 12px;
+  padding: 6px 8px;
+  border: 1px solid #ffffff1f;
+  border-radius: var(--radius-pill);
+  background: #090909a8;
+  color: #bcbcbc;
+  font-size: 7px;
+  font-weight: 850;
+  letter-spacing: .08em;
+  pointer-events: none;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.video-swipe-zone {
+  position: absolute;
+  z-index: 8;
+  top: 0;
+  bottom: 0;
+  width: 36px;
+  touch-action: none;
+}
+
+.video-swipe-zone--left {
+  left: 0;
+}
+
+.video-swipe-zone--right {
+  right: 0;
 }
 
 .video-timeline {
@@ -194,6 +240,7 @@
 }
 
 .reader-focus .video-audio-toggle,
+.reader-focus .video-embed-badge,
 .reader-focus .video-timeline,
 .reader-focus .video-time,
 .reader-focus .video-end-card {
@@ -203,13 +250,24 @@
 }
 
 @media (max-width: 380px) {
-  .video-audio-toggle { right: 10px; }
+  .video-audio-toggle,
+  .video-embed-badge {
+    right: 10px;
+  }
+
+  .video-swipe-zone {
+    width: 30px;
+  }
+
   .video-timeline {
     left: 10px;
     right: 10px;
     bottom: calc(var(--global-nav-h) + var(--nav-safe-bottom) + 148px);
   }
-  .video-time { bottom: calc(var(--global-nav-h) + var(--nav-safe-bottom) + 156px); }
+
+  .video-time {
+    bottom: calc(var(--global-nav-h) + var(--nav-safe-bottom) + 156px);
+  }
 }
 
 @media (min-width: 760px) {
