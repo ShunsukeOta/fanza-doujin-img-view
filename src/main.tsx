@@ -8,7 +8,7 @@ import { MyPage } from "@/components/MyPage";
 import { Onboarding } from "@/components/Onboarding";
 import { SavedPage } from "@/components/SavedPage";
 import { SwipePreviewApp } from "@/components/SwipePreviewApp";
-import type { AssetType, FilterValues } from "@/lib/types";
+import type { FilterValues } from "@/lib/types";
 import "@/styles/globals.css";
 import "@/styles/navigation.css";
 import "@/styles/pages.css";
@@ -18,8 +18,6 @@ import "@/styles/accessibility.css";
 import { hasAgeVerification } from "@/src/ageVerification";
 import { startAnalytics } from "@/src/analytics";
 import { installMainResumeLifecycle, prepareMainResumeFallback } from "@/src/navigationState";
-
-const ASSET_TYPES = new Set<AssetType>(["all", "comic", "cg", "game", "voice", "other"]);
 
 function boundedInt(
   params: URLSearchParams,
@@ -90,9 +88,13 @@ if (!["/saved", "/mypage", "/history", "/favorites", "/privacy", "/terms"].inclu
 }
 
 const params = new URLSearchParams(window.location.search);
-const rawAsset = (params.get("asset_type") ?? params.get("category") ?? "all") as AssetType;
+if (params.has("asset_type") || params.has("category")) {
+  params.delete("asset_type");
+  params.delete("category");
+  const cleaned = params.toString();
+  window.history.replaceState(null, "", `${window.location.pathname}${cleaned ? `?${cleaned}` : ""}${window.location.hash}`);
+}
 const initialFilters: FilterValues = {
-  assetType: ASSET_TYPES.has(rawAsset) ? rawAsset : "all",
   genreId: (params.get("genre_id") ?? "").slice(0, 64),
   minSamples: boundedInt(params, "min_samples", 1, 1, 100),
   minReviews: boundedInt(params, "min_reviews", 0, 0, 100_000),
