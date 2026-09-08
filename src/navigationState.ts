@@ -5,8 +5,8 @@ const MAIN_RETURN_KEY = "swipe-preview:main-return-v3";
 const RESUME_REQUEST_KEY = "swipe-preview:resume-request-v3";
 const MAX_STATE_AGE_MS = 12 * 60 * 60 * 1000;
 
-type SubpagePath = "/saved" | "/mypage";
-export type NavOrigin = "main" | "saved" | "mypage";
+type SubpagePath = "/saved" | "/mypage" | "/history";
+export type NavOrigin = "main" | "saved" | "mypage" | "history";
 
 type MainReturnState = {
   resumeUrl: string;
@@ -40,7 +40,7 @@ function readState(): MainReturnState | null {
       && typeof parsed.cid === "string"
       && typeof parsed.pageIndex === "number"
       && typeof parsed.isCta === "boolean"
-      && (parsed.subpage === "/saved" || parsed.subpage === "/mypage")
+      && (parsed.subpage === "/saved" || parsed.subpage === "/mypage" || parsed.subpage === "/history")
       && typeof parsed.historySteps === "number"
       && parsed.historySteps >= 1
       && typeof parsed.savedAt === "number"

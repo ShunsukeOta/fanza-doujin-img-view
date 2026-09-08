@@ -71,7 +71,6 @@ $baseFilters = [
     'query' => '',
 ];
 
-// Native prepared statement + LIKEエスケープ。% と _ をワイルドカードとして扱わない。
 $literalFilters = [...$baseFilters, 'query' => '100%_SPECIAL'];
 $literal = $catalogService->catalog($literalFilters, '', 0, 6, '', $uid);
 assert_test(count($literal['items']) === 1, '特殊文字を含む作品名検索が1件にならない');
@@ -85,11 +84,9 @@ $maker = $catalogService->catalog([...$baseFilters, 'query' => '監査サーク�
 assert_test(count($maker['items']) === 1, 'サークル名検索が1件にならない');
 assert_test(($maker['items'][0]['cid'] ?? '') === 'audit_003', 'サークル名検索のCIDが不正');
 
-// 直接CID + 検索条件でもcidMatchesDatabaseFiltersがnative prepareで失敗しない。
 $direct = $catalogService->catalog($literalFilters, '', 0, 6, 'audit_002', $uid);
 assert_test(($direct['items'][0]['cid'] ?? '') === 'audit_002', '直接CIDが先頭に固定されていない');
 
-// feed_id + cursor の固定順序。2ページで重複せず、同じfeed_idを維持する。
 $first = $catalogService->catalog($baseFilters, '', 0, 6, '', $uid);
 assert_test(is_string($first['feedId']) && $first['feedId'] !== '', 'feedIdが発行されていない');
 assert_test(is_int($first['nextCursor']), '1ページ目のnextCursorがない');
@@ -101,12 +98,11 @@ $firstCids = array_column($first['items'], 'cid');
 $secondCids = array_column($second['items'], 'cid');
 assert_test(array_intersect($firstCids, $secondCids) === [], '固定feedの1・2ページに重複がある');
 
-// 保存時価格より現在価格が下がったケースを作る。現在価格履歴はNOW()なので保存時刻より後になる。
-$history = $pdo->prepare(
+$historyPrice = $pdo->prepare(
     'INSERT INTO work_price_history (work_cid, price, price_value, observed_at) '
     . 'VALUES (?, ?, ?, DATE_SUB(NOW(), INTERVAL 4 HOUR))'
 );
-$history->execute(['audit_001', '1,500円', 1500]);
+$historyPrice->execute(['audit_001', '1,500円', 1500]);
 
 $state = $pdo->prepare(
     'INSERT INTO user_work_states (anonymous_user_id, work_cid, liked, saved, liked_at, saved_at, updated_at) '
@@ -129,5 +125,43 @@ $savedSecond = $userLibraryService->saved($uid, 2, (string)$savedFirst['nextCurs
 assert_test(count($savedSecond['items']) === 1, '保存2ページ目が1件ではない');
 assert_test(($savedSecond['items'][0]['cid'] ?? '') === 'audit_003', '保存カーソルの続きが不正');
 assert_test($savedSecond['hasMore'] === false, '保存最終ページでhasMoreがfalseではない');
+
+$eventInsert = $pdo->prepare(
+    "INSERT INTO events (event_id, anonymous_user_id, session_id, work_cid, event_type, created_at) "
+    . "VALUES (?, ?, ?, ?, 'work_impression', DATE_SUB(NOW(), INTERVAL ? MINUTE))"
+);
+$eventInsert->execute(['22222222-2222-4222-8222-222222222221', $uid, '33333333-3333-4333-8333-333333333333', 'audit_001', 1]);
+$eventInsert->execute(['22222222-2222-4222-8222-222222222222', $uid, '33333333-3333-4333-8333-333333333333', 'audit_002', 2]);
+$eventInsert->execute(['22222222-2222-4222-8222-222222222223', $uid, '33333333-3333-4333-8333-333333333333', 'audit_003', 3]);
+
+$historyFirst = $userLibraryService->history($uid, 2);
+assert_test($historyFirst['total'] === 3, '閲覧履歴件数が3件ではない');
+assert_test(count($historyFirst['items']) === 2, '閲覧履歴1ページ目が2件ではない');
+assert_test(($historyFirst['items'][0]['cid'] ?? '') === 'audit_001', '閲覧履歴が最新順ではない');
+assert_test(is_string($historyFirst['nextCursor']) && $historyFirst['nextCursor'] !== '', '閲覧履歴カーソルが発行されていない');
+
+$historySecond = $userLibraryService->history($uid, 2, (string)$historyFirst['nextCursor']);
+assert_test(count($historySecond['items']) === 1, '閲覧履歴2ページ目が1件ではない');
+assert_test(($historySecond['items'][0]['cid'] ?? '') === 'audit_003', '閲覧履歴カーソルの続きが不正');
+assert_test($historySecond['hasMore'] === false, '閲覧履歴最終ページでhasMoreがfalseではない');
+
+$profile = $userLibraryService->profile($uid);
+assert_test(($profile['stats']['saved'] ?? 0) === 3, 'profileの保存件数が不正');
+assert_test(($profile['stats']['viewed'] ?? 0) === 3, 'profileの閲覧件数が不正');
+assert_test(count($profile['recentHistory'] ?? []) === 3, 'profileの最近見た作品が不正');
+
+assert_test($userLibraryService->deleteProfile($uid) === true, '匿名プロフィールを削除できない');
+$userCount = $pdo->prepare('SELECT COUNT(*) FROM anonymous_users WHERE id = ?');
+$userCount->execute([$uid]);
+assert_test((int)$userCount->fetchColumn() === 0, '匿名ユーザー行が残っている');
+$eventCount = $pdo->prepare('SELECT COUNT(*) FROM events WHERE anonymous_user_id = ?');
+$eventCount->execute([$uid]);
+assert_test((int)$eventCount->fetchColumn() === 0, '削除後にイベントが残っている');
+$stateCount = $pdo->prepare('SELECT COUNT(*) FROM user_work_states WHERE anonymous_user_id = ?');
+$stateCount->execute([$uid]);
+assert_test((int)$stateCount->fetchColumn() === 0, '削除後に保存・いいね状態が残っている');
+$feedCount = $pdo->prepare('SELECT COUNT(*) FROM feed_sessions WHERE anonymous_user_id = ?');
+$feedCount->execute([$uid]);
+assert_test((int)$feedCount->fetchColumn() === 0, '削除後に固定feedが残っている');
 
 fwrite(STDOUT, "integration tests: OK\n");

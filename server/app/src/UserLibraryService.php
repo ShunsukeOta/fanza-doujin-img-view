@@ -32,10 +32,9 @@ final class UserLibraryService
         $where = 's.anonymous_user_id = :uid AND s.saved = 1';
         $params = [':uid' => $uid];
         if ($cursorData !== null) {
-            // Native prepared statementでは同じ名前付きプレースホルダを再利用しない。
             $where .= ' AND (s.saved_at < :saved_before OR (s.saved_at = :saved_equal AND s.work_cid < :cursor_cid))';
-            $params[':saved_before'] = $cursorData['savedAt'];
-            $params[':saved_equal'] = $cursorData['savedAt'];
+            $params[':saved_before'] = $cursorData['date'];
+            $params[':saved_equal'] = $cursorData['date'];
             $params[':cursor_cid'] = $cursorData['cid'];
         }
 
@@ -89,6 +88,69 @@ final class UserLibraryService
         ];
     }
 
+    public function history(string $uid, int $limit = 24, string $cursor = ''): array
+    {
+        $pdo = $this->requirePdo();
+        $this->ensureUser($pdo, $uid);
+        $safeLimit = max(1, min(50, $limit));
+        $cursorData = $this->decodeCursor($cursor);
+
+        $count = $pdo->prepare(
+            "SELECT COUNT(DISTINCT work_cid) FROM events "
+            . "WHERE anonymous_user_id = ? AND event_type IN ('work_impression', 'impression') AND work_cid <> ''"
+        );
+        $count->execute([$uid]);
+        $total = (int)$count->fetchColumn();
+
+        $cursorWhere = '';
+        $params = [':uid' => $uid];
+        if ($cursorData !== null) {
+            $cursorWhere = 'WHERE (h.viewed_at < :viewed_before '
+                . 'OR (h.viewed_at = :viewed_equal AND h.work_cid < :cursor_cid))';
+            $params[':viewed_before'] = $cursorData['date'];
+            $params[':viewed_equal'] = $cursorData['date'];
+            $params[':cursor_cid'] = $cursorData['cid'];
+        }
+
+        $stmt = $pdo->prepare(
+            'SELECT h.work_cid, h.viewed_at FROM ('
+            . 'SELECT work_cid, MAX(created_at) AS viewed_at FROM events '
+            . "WHERE anonymous_user_id = :uid AND event_type IN ('work_impression', 'impression') AND work_cid <> '' "
+            . 'GROUP BY work_cid'
+            . ") h {$cursorWhere} ORDER BY h.viewed_at DESC, h.work_cid DESC LIMIT {$safeLimit}"
+        );
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll();
+        $cids = array_map(static fn(array $row): string => (string)$row['work_cid'], $rows);
+        $workMap = $this->works->feedItemsByCids($cids);
+        $items = [];
+
+        foreach ($rows as $row) {
+            $cid = (string)$row['work_cid'];
+            if (!isset($workMap[$cid])) {
+                continue;
+            }
+            $item = $workMap[$cid];
+            $item['viewedAt'] = (string)($row['viewed_at'] ?? '');
+            $items[] = $item;
+        }
+
+        $nextCursor = null;
+        if (count($rows) === $safeLimit) {
+            $last = end($rows);
+            if (is_array($last) && ($last['viewed_at'] ?? '') !== '') {
+                $nextCursor = $this->encodeCursor((string)$last['viewed_at'], (string)$last['work_cid']);
+            }
+        }
+
+        return [
+            'items' => $items,
+            'total' => $total,
+            'nextCursor' => $nextCursor,
+            'hasMore' => $nextCursor !== null,
+        ];
+    }
+
     public function profile(string $uid): array
     {
         $pdo = $this->requirePdo();
@@ -103,6 +165,12 @@ final class UserLibraryService
         );
         $savedStmt->execute([$uid]);
         $saved = (int)$savedStmt->fetchColumn();
+
+        $likedStmt = $pdo->prepare(
+            'SELECT COUNT(*) FROM user_work_states WHERE anonymous_user_id = ? AND liked = 1'
+        );
+        $likedStmt->execute([$uid]);
+        $liked = (int)$likedStmt->fetchColumn();
 
         $viewedStmt = $pdo->prepare(
             "SELECT COUNT(DISTINCT work_cid) FROM events "
@@ -128,9 +196,18 @@ final class UserLibraryService
 
         return [
             'createdAt' => $user['created_at'] ?? null,
-            'stats' => ['saved' => $saved, 'viewed' => $viewed],
+            'stats' => ['saved' => $saved, 'liked' => $liked, 'viewed' => $viewed],
             'topGenres' => $topGenres,
+            'recentHistory' => $this->history($uid, 4)['items'],
         ];
+    }
+
+    public function deleteProfile(string $uid): bool
+    {
+        $pdo = $this->requirePdo();
+        $stmt = $pdo->prepare('DELETE FROM anonymous_users WHERE id = ?');
+        $stmt->execute([$uid]);
+        return $stmt->rowCount() > 0;
     }
 
     private function encodeCursor(string $date, string $cid): string
@@ -162,7 +239,7 @@ final class UserLibraryService
         ) {
             return null;
         }
-        return ['savedAt' => $parts[0], 'cid' => $parts[1]];
+        return ['date' => $parts[0], 'cid' => $parts[1]];
     }
 
     private function ensureUser(PDO $pdo, string $uid): void
