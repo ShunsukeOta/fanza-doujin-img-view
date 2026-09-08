@@ -28,7 +28,21 @@ jobs:
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$SHIN_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_shin"
           chmod 600 "$HOME/.ssh/id_shin"
-          ssh-keyscan -T 10 -p 10022 -H wp983575.wpx.jp > "$HOME/.ssh/known_hosts"
+          : > "$HOME/.ssh/known_hosts"
+          for attempt in 1 2 3 4 5; do
+            tmp_hosts="$(mktemp)"
+            if timeout 20s ssh-keyscan -T 10 -p 10022 -H wp983575.wpx.jp > "$tmp_hosts" 2>/dev/null && [ -s "$tmp_hosts" ]; then
+              cat "$tmp_hosts" >> "$HOME/.ssh/known_hosts"
+              rm -f "$tmp_hosts"
+              break
+            fi
+            rm -f "$tmp_hosts"
+            if [ "$attempt" -eq 5 ]; then
+              echo "SSHホスト鍵を取得できませんでした。" >&2
+              exit 1
+            fi
+            sleep $((attempt * 3))
+          done
           chmod 600 "$HOME/.ssh/known_hosts"
 
       - name: 新着・重要作品・旧作品を保守

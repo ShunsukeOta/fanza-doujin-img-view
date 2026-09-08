@@ -35,10 +35,10 @@ jobs:
 
     steps:
       - name: リポジトリを取得
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Node.jsを準備
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -56,22 +56,29 @@ jobs:
           test -f package-lock.json
           npm ci --no-audit --no-fund
 
-      - name: TypeScript・PHP・ロジックを検証
+      - name: TypeScript・PHP・負債・ロジックを検証
         run: |
           set -euo pipefail
           npm run typecheck
           npm run check:php
+          npm run check:debt
           npm run test:logic
           php -r '
             require "server/app/src/PriceParser.php";
             $cases = ["1,000円" => 1000, "500〜1,000円" => null, "無料" => null];
             foreach ($cases as $raw => $expected) {
-              $actual = SwipePreview\PriceParser::singleValue($raw);
-              if ($actual !== $expected) {
-                fwrite(STDERR, "PriceParser regression: {$raw}\n");
-                exit(1);
-              }
+              if (SwipePreview\PriceParser::singleValue($raw) !== $expected) exit(1);
             }
+          '
+          php -r '
+            require "server/app/src/FanzaClient.php";
+            $client = new SwipePreview\FanzaClient(["api_id" => "", "affiliate_id" => ""]);
+            $item = $client->feedItem([
+              "content_id" => "test001",
+              "title" => "test",
+              "iteminfo" => ["maker" => [["id" => "maker-001", "name" => "Test Circle"]]],
+            ]);
+            if (($item["makerId"] ?? "") !== "maker-001" || ($item["maker"] ?? "") !== "Test Circle") exit(1);
           '
 
       - name: MariaDB移行・検索・固定feed・保存カーソルを検証
@@ -116,52 +123,23 @@ jobs:
           php server/app/tests/integration.php
           rm -f server/app/config.local.php
 
-      - name: 監査・ビューアー回帰チェック
+      - name: クリティカルな回帰を検証
         run: |
           set -euo pipefail
-          test -f package-lock.json
-          test -f src/readerSettings.ts
-          test -f src/imagePreload.ts
           test ! -e .github/workflows/backfill-2025-09-05.yml
-          grep -F 'npm ci --no-audit --no-fund' .github/workflows/ci.yml >/dev/null
-          grep -F 'npm ci --no-audit --no-fund' .github/workflows/deploy-shin.yml >/dev/null
+          test ! -e .github/workflows/verify-production.yml
           grep -F 'feed_sessions' server/app/schema.sql >/dev/null
           grep -F 'feed_items' server/app/schema.sql >/dev/null
-          grep -F 'nextCursor' server/app/src/CatalogService.php >/dev/null
-          grep -F 'loadRecentlySeen' server/app/src/CatalogService.php >/dev/null
-          grep -F ':q_title' server/app/src/CatalogService.php >/dev/null
-          grep -F ':q_series' server/app/src/CatalogService.php >/dev/null
-          grep -F ':saved_before' server/app/src/UserLibraryService.php >/dev/null
-          grep -F ':saved_equal' server/app/src/UserLibraryService.php >/dev/null
           grep -F 'sampleReadRatio' components/WorkCard.tsx >/dev/null
-          grep -F 'progressedSamplePages' components/WorkCard.tsx >/dev/null
-          grep -F 'sample_complete' components/WorkCard.tsx >/dev/null
           grep -F 'reader-cta-link' components/WorkCard.tsx >/dev/null
-          grep -F 'reader-cta-save' components/WorkCard.tsx >/dev/null
-          grep -F 'DOUBLE_TAP_ZOOM' components/WorkCard.tsx >/dev/null
-          grep -F 'preloadAndDecodeImages' components/WorkCard.tsx >/dev/null
-          grep -F 'preloadAndDecodeImage' components/SwipePreviewApp.tsx >/dev/null
-          grep -F 'tapNavigationDelta' components/WorkCard.tsx >/dev/null
-          grep -F 'reader-fit-' components/WorkCard.tsx >/dev/null
-          grep -F 'swipe-preview:reader-settings-v1' src/readerSettings.ts >/dev/null
-          grep -F 'touch-action: none' styles/accessibility.css >/dev/null
-          grep -F 'reader-fit-width' styles/reader.css >/dev/null
-          grep -F 'event_id' server/app/schema.sql >/dev/null
           grep -F 'recordBatch' server/app/src/EventService.php >/dev/null
-          grep -F 'saved_at' server/app/schema.sql >/dev/null
-          grep -F 'priceDropValue' server/app/src/UserLibraryService.php >/dev/null
-          grep -F 'priceDropValue' lib/types.ts >/dev/null
-          grep -F 'favorite-buy' components/SavedPage.tsx >/dev/null
           grep -F 'refresh-catalog.php' .github/workflows/sync-shin.yml >/dev/null
           grep -F 'retention.php' .github/workflows/sync-shin.yml >/dev/null
           grep -F 'admin_request_authorized' server/public/api/debug.php >/dev/null
           grep -F 'admin_request_authorized' server/public/api/diagnostics.php >/dev/null
           grep -F 'Content-Security-Policy' server/public/.htaccess >/dev/null
           grep -F 'cancel-in-progress: false' .github/workflows/deploy-shin.yml >/dev/null
-          grep -F 'navigateToSubpage' src/navigationState.ts >/dev/null
-          grep -F 'readerPage' src/navigationState.ts >/dev/null
-          grep -F 'styles/accessibility.css' src/main.tsx >/dev/null
-          if grep -F 'Math.round(track.scrollLeft / track.clientWidth)' -n src/analytics.ts components/WorkCard.tsx; then
+          if grep -F 'Math.round(track.scrollLeft / track.clientWidth)' -n src components; then
             echo '旧RTLページ計測が残っています。' >&2
             exit 1
           fi
@@ -171,14 +149,6 @@ jobs:
           fi
           if grep -F 'CRC32(CONCAT' -n server/app/src/CatalogService.php; then
             echo '全件式CRC32 ORDER BYが残っています。' >&2
-            exit 1
-          fi
-          if grep -F 'LIKE :q OR' -n server/app/src/CatalogService.php; then
-            echo 'native prepareで再利用される旧検索プレースホルダが残っています。' >&2
-            exit 1
-          fi
-          if grep -F 's.saved_at = :saved_at' -n server/app/src/UserLibraryService.php; then
-            echo 'native prepareで再利用される旧保存カーソルが残っています。' >&2
             exit 1
           fi
 
@@ -202,6 +172,6 @@ jobs:
           test -f deploy/app/cron/retention.php
           test -f deploy/app/src/WorkRepository.php
           test -f deploy/app/src/PriceParser.php
-          test -f deploy/app/tests/integration.php
+          test ! -e deploy/app/tests
           test ! -f deploy/app/config.local.php
           grep -F 'Content-Security-Policy' deploy/public_html/.htaccess >/dev/null

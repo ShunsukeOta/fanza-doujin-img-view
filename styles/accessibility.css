@@ -1,25 +1,24 @@
-/*
- * 1本指の縦横移動・画像パン・2本指ピンチはWorkCardのPointer Eventsで統一する。
- * ブラウザ標準のページズームではなく、現在の漫画画像だけを拡大する。
- */
-.feed,
-.manga-reader-track,
-.reader-image-stage {
-  touch-action: none !important;
-}
-
 .feed:focus-visible,
 .manga-reader-track:focus-visible,
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
-select:focus-visible {
+select:focus-visible,
+textarea:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: 2px;
 }
 
-.feed-item-virtual {
-  pointer-events: none;
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {

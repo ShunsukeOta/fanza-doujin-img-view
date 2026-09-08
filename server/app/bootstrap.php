@@ -18,7 +18,9 @@ require_once __DIR__ . '/src/EventService.php';
 require_once __DIR__ . '/src/UserLibraryService.php';
 
 $configPath = __DIR__ . '/config.local.php';
-$config = is_file($configPath) ? require $configPath : require __DIR__ . '/config.example.php';
+$config = is_file($configPath)
+    ? require $configPath
+    : require __DIR__ . '/config.example.php';
 if (!is_array($config)) {
     throw new RuntimeException('サーバー設定ファイルが不正です。');
 }
@@ -40,7 +42,10 @@ function json_response(array $payload, int $status = 200, array $headers = []): 
     foreach ($headers as $name => $value) {
         header($name . ': ' . $value);
     }
-    echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+    echo json_encode(
+        $payload,
+        JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE,
+    );
     exit;
 }
 
@@ -61,22 +66,28 @@ function public_error_message(Throwable $error, string $fallback): string
 function read_int(string $key, int $fallback, int $min, int $max): int
 {
     $raw = $_GET[$key] ?? null;
-    if ($raw === null || $raw === '' || filter_var($raw, FILTER_VALIDATE_INT) === false) return $fallback;
+    if ($raw === null || $raw === '' || filter_var($raw, FILTER_VALIDATE_INT) === false) {
+        return $fallback;
+    }
     return max($min, min($max, (int)$raw));
 }
 
 function read_float(string $key, float $fallback, float $min, float $max): float
 {
     $raw = $_GET[$key] ?? null;
-    if ($raw === null || $raw === '' || !is_numeric($raw)) return $fallback;
+    if ($raw === null || $raw === '' || !is_numeric($raw)) {
+        return $fallback;
+    }
     return max($min, min($max, (float)$raw));
 }
 
 function request_filters(): array
 {
     $assetType = trim((string)($_GET['asset_type'] ?? $_GET['category'] ?? 'all'));
-    if (!in_array($assetType, ['all', 'comic', 'cg', 'game', 'voice', 'other'], true)) $assetType = 'all';
-    $query = mb_substr(trim((string)($_GET['q'] ?? '')), 0, 100);
+    if (!in_array($assetType, ['all', 'comic', 'cg', 'game', 'voice', 'other'], true)) {
+        $assetType = 'all';
+    }
+
     return [
         'minSamples' => read_int('min_samples', 1, 1, 100),
         'minReviews' => read_int('min_reviews', 0, 0, 100000),
@@ -85,7 +96,7 @@ function request_filters(): array
         'maxPrice' => read_int('max_price', 0, 0, 10000000),
         'assetType' => $assetType,
         'genreId' => mb_substr(trim((string)($_GET['genre_id'] ?? '')), 0, 64),
-        'query' => $query,
+        'query' => mb_substr(trim((string)($_GET['q'] ?? '')), 0, 100),
     ];
 }
 
@@ -100,8 +111,13 @@ function uuid_v4(): string
 function anonymous_identity(): array
 {
     global $config;
-    $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
-    $profileRetentionDays = max(30, min(730, (int)($config['app']['profile_retention_days'] ?? 180)));
+
+    $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+    $profileRetentionDays = max(
+        30,
+        min(730, (int)($config['app']['profile_retention_days'] ?? 180)),
+    );
     $cookieOptions = [
         'expires' => time() + 86400 * $profileRetentionDays,
         'path' => '/',
@@ -111,21 +127,32 @@ function anonymous_identity(): array
     ];
 
     $userId = (string)($_COOKIE['fp_uid'] ?? '');
-    if (preg_match('/^[a-f0-9-]{36}$/i', $userId) !== 1) $userId = uuid_v4();
-    // 継続利用中は期限を毎回延長し、発行日から固定180日で別ユーザー化しない。
+    if (preg_match('/^[a-f0-9-]{36}$/i', $userId) !== 1) {
+        $userId = uuid_v4();
+    }
+    // 継続利用中は期限を毎回延長し、発行日から固定日数で別ユーザー化しない。
     setcookie('fp_uid', $userId, $cookieOptions);
 
     $sessionId = (string)($_COOKIE['fp_sid'] ?? '');
-    if (preg_match('/^[a-f0-9-]{36}$/i', $sessionId) !== 1) $sessionId = uuid_v4();
-    setcookie('fp_sid', $sessionId, [...$cookieOptions, 'expires' => time() + 60 * 60 * 8]);
+    if (preg_match('/^[a-f0-9-]{36}$/i', $sessionId) !== 1) {
+        $sessionId = uuid_v4();
+    }
+    setcookie('fp_sid', $sessionId, [
+        ...$cookieOptions,
+        'expires' => time() + 60 * 60 * 8,
+    ]);
+
     return [$userId, $sessionId];
 }
 
 function admin_request_authorized(): bool
 {
     global $config;
+
     $expected = trim((string)($config['app']['admin_token'] ?? ''));
-    if ($expected === '') return false;
+    if ($expected === '') {
+        return false;
+    }
     $provided = trim((string)($_SERVER['HTTP_X_ADMIN_TOKEN'] ?? ''));
     return $provided !== '' && hash_equals($expected, $provided);
 }
@@ -133,5 +160,11 @@ function admin_request_authorized(): bool
 function enforce_json_body_limit(int $maxBytes = 65536): void
 {
     $length = (int)($_SERVER['CONTENT_LENGTH'] ?? 0);
-    if ($length > $maxBytes) json_response(['error' => 'リクエストが大きすぎます。'], 413, ['Cache-Control' => 'no-store']);
+    if ($length > $maxBytes) {
+        json_response(
+            ['error' => 'リクエストが大きすぎます。'],
+            413,
+            ['Cache-Control' => 'no-store'],
+        );
+    }
 }

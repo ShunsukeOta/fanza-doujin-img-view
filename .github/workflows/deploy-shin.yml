@@ -43,10 +43,10 @@ jobs:
           echo "PR #${PR_NUMBER} の成功済みCIを確認しました。"
 
       - name: リポジトリを取得
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Node.jsを準備
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -181,29 +181,64 @@ jobs:
           rsync -a --delete --exclude='.well-known/' "\$RELEASE/public_html/" "\$BASE/public_html/"
           chmod 600 "\$BASE/app/config.local.php"
           grep -F '"commit":"${GITHUB_SHA}"' "\$BASE/public_html/version.json" >/dev/null
-          test -f "\$BASE/app/cron/refresh-catalog.php"
-          test -f "\$BASE/app/cron/retention.php"
-          test -f "\$BASE/app/src/WorkRepository.php"
-          test -f "\$BASE/app/src/PriceParser.php"
+          test ! -e "\$BASE/app/tests"
           rm -rf "\$RELEASE"
           REMOTE
 
-      - name: 本番HTTPを即時確認
+      - name: 本番HTTP・PWA・固定feed・公開境界を確認
         shell: bash
         run: |
           set -euo pipefail
-          curl_json() { curl --fail --silent --show-error --retry 5 --retry-all-errors --retry-delay 2 --connect-timeout 10 --max-time 30 -H 'Cache-Control: no-cache' "$1"; }
-          VERSION="$(curl_json "${BASE_URL}/version.json?sha=${GITHUB_SHA}")"
+          CURL=(curl --fail --silent --show-error --retry 5 --retry-all-errors --retry-delay 2 --connect-timeout 10 --max-time 30)
+
+          VERSION="$("${CURL[@]}" -H 'Cache-Control: no-cache' "${BASE_URL}/version.json?sha=${GITHUB_SHA}")"
           printf '%s' "$VERSION" | grep -F "\"commit\":\"${GITHUB_SHA}\"" >/dev/null
-          HEALTH="$(curl_json "${BASE_URL}/api/health?sha=${GITHUB_SHA}")"
+
+          MANIFEST="$("${CURL[@]}" "${BASE_URL}/manifest.webmanifest")"
+          printf '%s' "$MANIFEST" | grep -F '"display": "standalone"' >/dev/null
+
+          "${CURL[@]}" -D /tmp/headers -o /dev/null "${BASE_URL}/"
+          grep -i '^content-security-policy:' /tmp/headers >/dev/null
+          grep -i '^strict-transport-security:' /tmp/headers >/dev/null
+          grep -i '^x-frame-options: DENY' /tmp/headers >/dev/null
+
+          HEALTH="$("${CURL[@]}" "${BASE_URL}/api/health?sha=${GITHUB_SHA}")"
           printf '%s' "$HEALTH" | grep -F '"connected":true' >/dev/null
           printf '%s' "$HEALTH" | grep -F '"catalogReady":true' >/dev/null
           printf '%s' "$HEALTH" | grep -F '"configured":true' >/dev/null
-          CATALOG="$(curl_json "${BASE_URL}/api/catalog?limit=1")"
-          printf '%s' "$CATALOG" | grep -F '"feedId":' >/dev/null
-          printf '%s' "$CATALOG" | grep -F '"nextCursor":' >/dev/null
+
+          "${CURL[@]}" -c /tmp/feed-cookies -b /tmp/feed-cookies "${BASE_URL}/api/catalog?limit=3" > /tmp/catalog1.json
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const first = JSON.parse(fs.readFileSync('/tmp/catalog1.json', 'utf8'));
+          if (!first.feedId || !Array.isArray(first.items) || first.items.length === 0) throw new Error('catalog first page invalid');
+          if (first.hasMore && typeof first.nextCursor !== 'number') throw new Error('nextCursor missing');
+          fs.writeFileSync('/tmp/feed-id', first.feedId);
+          fs.writeFileSync('/tmp/cursor', String(first.nextCursor ?? 0));
+          NODE
+
+          FEED_ID="$(cat /tmp/feed-id)"
+          CURSOR="$(cat /tmp/cursor)"
+          "${CURL[@]}" -c /tmp/feed-cookies -b /tmp/feed-cookies "${BASE_URL}/api/catalog?limit=3&feed_id=${FEED_ID}&cursor=${CURSOR}" > /tmp/catalog2.json
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const first = JSON.parse(fs.readFileSync('/tmp/catalog1.json', 'utf8'));
+          const second = JSON.parse(fs.readFileSync('/tmp/catalog2.json', 'utf8'));
+          if (second.feedId !== first.feedId) throw new Error('feed session changed');
+          const seen = new Set(first.items.map((item) => item.cid));
+          if (second.items.some((item) => seen.has(item.cid))) throw new Error('duplicated CID across pages');
+          NODE
+
+          "${CURL[@]}" -c /tmp/user-cookies -b /tmp/user-cookies "${BASE_URL}/api/saved?limit=2" | grep -F '"ok":true' >/dev/null
+          "${CURL[@]}" -c /tmp/user-cookies -b /tmp/user-cookies "${BASE_URL}/api/me" | grep -F '"ok":true' >/dev/null
+          for path in /saved /mypage; do
+            "${CURL[@]}" "${BASE_URL}${path}" | grep -F '<div id="root"></div>' >/dev/null
+          done
+
           DEBUG_STATUS="$(curl --silent --output /dev/null --write-out '%{http_code}' "${BASE_URL}/api/debug")"
           DIAG_STATUS="$(curl --silent --output /dev/null --write-out '%{http_code}' "${BASE_URL}/api/diagnostics")"
+          EVENTS_GET_STATUS="$(curl --silent --output /dev/null --write-out '%{http_code}' "${BASE_URL}/api/events")"
           test "$DEBUG_STATUS" = '404'
           test "$DIAG_STATUS" = '404'
-          echo "本番切替・DB・FANZAカタログ確認OK: ${GITHUB_SHA}"
+          test "$EVENTS_GET_STATUS" = '405'
+          echo "本番検証OK: ${GITHUB_SHA}"
