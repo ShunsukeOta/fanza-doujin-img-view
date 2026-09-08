@@ -100,17 +100,24 @@ function continueSubpageNavigation(subpage: SubpagePath): void {
   safeSet(MAIN_RETURN_KEY, JSON.stringify({ ...state, subpage, historySteps: state.historySteps + 1, savedAt: Date.now() }));
 }
 
-export function navigateToSubpage(subpage: SubpagePath, origin: NavOrigin): void {
+function fallbackMainPath(): string {
+  const floor = new URLSearchParams(window.location.search).get("floor");
+  if (floor === "amateur") return "/amateur";
+  if (floor === "actress") return "/actress";
+  return "/";
+}
+
+export function navigateToSubpage(subpage: SubpagePath, origin: NavOrigin, target = subpage): void {
   if (origin === "main") rememberMainBeforeSubpage(subpage);
   else continueSubpageNavigation(subpage);
-  window.location.assign(subpage);
+  window.location.assign(target);
 }
 
 export function resumeMainFromSubpage(): void {
   const state = readState();
   const path = window.location.pathname.replace(/\/+$/, "") || "/";
   if (!state || state.subpage !== path) {
-    window.location.assign("/");
+    window.location.assign(fallbackMainPath());
     return;
   }
   safeSet(RESUME_REQUEST_KEY, "1");
