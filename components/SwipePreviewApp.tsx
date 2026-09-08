@@ -14,7 +14,7 @@ import { FocusModeToggle } from "@/components/FocusModeToggle";
 import { GlobalNav } from "@/components/GlobalNav";
 import { FilterIcon } from "@/components/icons";
 import { WorkCard } from "@/components/WorkCard";
-import type { AssetType, CatalogResponse, FeedItem, FilterValues, MetaResponse } from "@/lib/types";
+import type { CatalogResponse, FeedItem, FilterValues, MetaResponse } from "@/lib/types";
 import { fetchJson } from "@/src/api";
 import { preloadAndDecodeImage } from "@/src/imagePreload";
 import { formatPrice } from "@/src/price";
@@ -25,16 +25,7 @@ import {
   type ReaderSettings,
 } from "@/src/readerSettings";
 
-const ASSET_LABELS: Record<AssetType, string> = {
-  all: "すべて",
-  comic: "コミック系",
-  cg: "CG・イラスト系",
-  game: "ゲーム系",
-  voice: "ボイス・音声系",
-  other: "その他・不明",
-};
 const DEFAULT_FILTERS: FilterValues = {
-  assetType: "all",
   genreId: "",
   minSamples: 1,
   minReviews: 0,
@@ -54,7 +45,6 @@ function buildCatalogQuery(
   options: { feedId?: string | null; cursor?: number; limit?: number; cid?: string } = {},
 ) {
   const params = new URLSearchParams({
-    asset_type: filters.assetType,
     genre_id: filters.genreId,
     min_samples: String(filters.minSamples),
     min_reviews: String(filters.minReviews),
@@ -72,7 +62,6 @@ function buildCatalogQuery(
 
 function buildPageQuery(filters: FilterValues, cid = "") {
   const params = new URLSearchParams();
-  if (filters.assetType !== "all") params.set("asset_type", filters.assetType);
   if (filters.genreId) params.set("genre_id", filters.genreId);
   if (filters.minSamples !== 1) params.set("min_samples", String(filters.minSamples));
   if (filters.minReviews) params.set("min_reviews", String(filters.minReviews));
@@ -373,11 +362,8 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
     await loadInitial(next);
   };
 
-  const updateSelect = (key: "assetType" | "genreId") => (event: ChangeEvent<HTMLSelectElement>) => {
-    setDraftFilters((old) => ({
-      ...old,
-      [key]: key === "assetType" ? event.target.value as AssetType : event.target.value,
-    }));
+  const updateGenre = (event: ChangeEvent<HTMLSelectElement>) => {
+    setDraftFilters((old) => ({ ...old, genreId: event.target.value }));
   };
 
   const updateNumber = (
@@ -399,7 +385,6 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
   const activeCondition = useMemo(() => {
     const parts: string[] = [];
     if (filters.query) parts.push(`「${filters.query}」`);
-    if (filters.assetType !== "all") parts.push(ASSET_LABELS[filters.assetType]);
     if (activeGenre) parts.push(activeGenre);
     if (filters.minPrice && filters.maxPrice) {
       parts.push(`${formatPrice("", filters.minPrice)}〜${formatPrice("", filters.maxPrice)}`);
@@ -408,7 +393,7 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
     if (filters.minSamples > 1) parts.push(`サンプル${filters.minSamples}枚以上`);
     if (filters.minReviews) parts.push(`レビュー${filters.minReviews}件以上`);
     if (filters.minRating) parts.push(`評価${filters.minRating}以上`);
-    return parts.length ? parts.join(" / ") : "すべての作品";
+    return parts.length ? parts.join(" / ") : "すべてのコミック";
   }, [activeGenre, filters]);
 
   const handleFeedKey = (event: ReactKeyboardEvent<HTMLElement>) => {
@@ -457,7 +442,7 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
         ref={feedRef}
         className="feed"
         id="feed"
-        aria-label="作品フィード"
+        aria-label="同人コミックフィード"
         tabIndex={0}
         onKeyDown={handleFeedKey}
         onWheel={handleWheel}
@@ -478,13 +463,13 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
           <section className="empty-state">
             <div className="empty-card loading-card">
               <div className="spinner" aria-hidden="true" />
-              <h2>作品を読み込んでいます</h2>
+              <h2>コミックを読み込んでいます</h2>
             </div>
           </section>
         ) : catalogError ? (
           <section className="empty-state">
             <div className="empty-card">
-              <h2>作品を取得できませんでした</h2>
+              <h2>コミックを取得できませんでした</h2>
               <p>{catalogError}</p>
               <button className="btn btn-primary" type="button" onClick={() => void loadInitial(filters, initialCid)}>再試行</button>
             </div>
@@ -492,7 +477,7 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
         ) : items.length === 0 ? (
           <section className="empty-state">
             <div className="empty-card">
-              <h2>表示できる作品がありません</h2>
+              <h2>表示できるコミックがありません</h2>
               <p>絞り込み条件を変更してください。</p>
               <button className="btn btn-primary" type="button" onClick={() => setSheetOpen(true)}>絞り込み</button>
             </div>
@@ -529,7 +514,7 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
 
       {loadingMore ? (
         <div className="feed-loading-more" aria-live="polite">
-          <span className="mini-spinner" aria-hidden="true" /> 次の作品を準備中
+          <span className="mini-spinner" aria-hidden="true" /> 次のコミックを準備中
         </div>
       ) : null}
       {loadMoreError ? (
@@ -553,7 +538,7 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
         id="filterSheet"
         role="dialog"
         aria-modal="true"
-        aria-label="作品とビューアーを設定"
+        aria-label="コミックとビューアーを設定"
         aria-hidden={!sheetOpen}
       >
         <div className="sheet-handle" />
@@ -630,17 +615,9 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
                 onChange={(event) => setDraftFilters((old) => ({ ...old, query: event.target.value }))}
               />
             </div>
-            <div className="field">
-              <label htmlFor="asset_type">作品タイプ</label>
-              <select id="asset_type" value={draftFilters.assetType} onChange={updateSelect("assetType")}>
-                {(meta?.assetTypes ?? Object.entries(ASSET_LABELS).map(([key, label]) => ({ key: key as AssetType, label }))).map((definition) => (
-                  <option value={definition.key} key={definition.key}>{definition.label}</option>
-                ))}
-              </select>
-            </div>
-            <div className="field">
+            <div className="field field--full">
               <label htmlFor="genre_id">ジャンル</label>
-              <select id="genre_id" value={draftFilters.genreId} onChange={updateSelect("genreId")}>
+              <select id="genre_id" value={draftFilters.genreId} onChange={updateGenre}>
                 <option value="">すべて</option>
                 {meta?.genres.map((genre) => <option value={genre.id} key={genre.id}>{genre.name}</option>)}
               </select>
