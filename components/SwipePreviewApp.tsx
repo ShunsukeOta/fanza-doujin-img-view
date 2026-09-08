@@ -21,7 +21,9 @@ import { formatPrice } from "@/src/price";
 import {
   applyReaderControlsVisibility,
   loadReaderSettings,
+  readerSettingsEqual,
   saveReaderSettings,
+  subscribeReaderSettings,
   type ReaderSettings,
 } from "@/src/readerSettings";
 
@@ -37,6 +39,7 @@ const DEFAULT_FILTERS: FilterValues = {
 const INITIAL_LIMIT = 6;
 const PREFETCH_THRESHOLD = 3;
 const WINDOW_RADIUS = 4;
+const RATING_OPTIONS = [1, 2, 3, 4, 5] as const;
 
 type Props = { initialFilters: FilterValues; initialCid: string };
 
@@ -83,6 +86,12 @@ function mergeUniqueItems(current: FeedItem[], incoming: FeedItem[]): FeedItem[]
   return [...current, ...additions];
 }
 
+function parseDraftInt(raw: string, fallback: number, min: number, max: number): number {
+  const parsed = Number.parseInt(raw.trim(), 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, parsed));
+}
+
 export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
   const feedRef = useRef<HTMLElement | null>(null);
   const filterButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -101,6 +110,8 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
   const [items, setItems] = useState<FeedItem[]>([]);
   const [filters, setFilters] = useState(initialFilters);
   const [draftFilters, setDraftFilters] = useState(initialFilters);
+  const [draftMinSamples, setDraftMinSamples] = useState(() => initialFilters.minSamples === 1 ? "" : String(initialFilters.minSamples));
+  const [draftMinReviews, setDraftMinReviews] = useState(() => initialFilters.minReviews === 0 ? "" : String(initialFilters.minReviews));
   const [readerSettings, setReaderSettings] = useState<ReaderSettings>(() => loadReaderSettings());
   const [feedId, setFeedId] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<number | null>(0);
@@ -128,6 +139,10 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
   const toggleReaderControls = useCallback(() => {
     setReaderSettings((current) => ({ ...current, controlsHidden: !current.controlsHidden }));
   }, []);
+
+  useEffect(() => subscribeReaderSettings((next) => {
+    setReaderSettings((current) => readerSettingsEqual(current, next) ? current : next);
+  }), []);
 
   useEffect(() => {
     saveReaderSettings(readerSettings);
@@ -355,11 +370,25 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
   const applyFilters = async (event: FormEvent) => {
     event.preventDefault();
     if (draftFilters.minPrice > 0 && draftFilters.maxPrice > 0 && draftFilters.maxPrice < draftFilters.minPrice) return;
-    const next = { ...draftFilters, query: draftFilters.query.trim() };
+    const next: FilterValues = {
+      ...draftFilters,
+      minSamples: parseDraftInt(draftMinSamples, 1, 1, 100),
+      minReviews: parseDraftInt(draftMinReviews, 0, 0, 100_000),
+      query: draftFilters.query.trim(),
+    };
+    setDraftFilters(next);
+    setDraftMinSamples(next.minSamples === 1 ? "" : String(next.minSamples));
+    setDraftMinReviews(next.minReviews === 0 ? "" : String(next.minReviews));
     setFilters(next);
     setSheetOpen(false);
     replaceUrl(next);
     await loadInitial(next);
+  };
+
+  const resetDraftFilters = () => {
+    setDraftFilters(DEFAULT_FILTERS);
+    setDraftMinSamples("");
+    setDraftMinReviews("");
   };
 
   const updateGenre = (event: ChangeEvent<HTMLSelectElement>) => {
@@ -367,14 +396,14 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
   };
 
   const updateNumber = (
-    key: "minSamples" | "minReviews" | "minRating" | "minPrice" | "maxPrice",
+    key: "minPrice" | "maxPrice",
   ) => (event: ChangeEvent<HTMLInputElement>) => {
     const raw = event.target.value.trim();
-    if (!raw && (key === "minPrice" || key === "maxPrice")) {
+    if (!raw) {
       setDraftFilters((old) => ({ ...old, [key]: 0 }));
       return;
     }
-    const value = key === "minRating" ? Number.parseFloat(raw) : Number.parseInt(raw, 10);
+    const value = Number.parseInt(raw, 10);
     if (Number.isFinite(value)) setDraftFilters((old) => ({ ...old, [key]: value }));
   };
 
@@ -548,7 +577,7 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
         </div>
 
         <section className="reader-settings-panel" aria-labelledby="reader_settings_title">
-          <h2 id="reader_settings_title">ビューアー</h2>
+          <h2 id="reader_settings_title">ビューアー設定</h2>
           <div className="reader-setting-row">
             <span>画像表示</span>
             <div className="reader-segmented" role="group" aria-label="画像表示方式">
@@ -599,7 +628,6 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
               onChange={(event) => updateReaderSettings({ tapNavigation: event.target.checked })}
             />
           </label>
-          <p className="reader-settings-note">ダブルタップで拡大・解除、2本指ピンチで1〜4倍に拡大できます。設定はこの端末に保存されます。</p>
         </section>
 
         <form onSubmit={applyFilters}>
@@ -634,20 +662,61 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
             {priceInvalid ? <div className="filter-error field--full">価格上限は価格下限以上にしてください。</div> : null}
             <div className="field">
               <label htmlFor="min_samples">最低サンプル枚数</label>
-              <input id="min_samples" type="number" min="1" max="100" value={draftFilters.minSamples} onChange={updateNumber("minSamples")} />
+              <input
+                id="min_samples"
+                type="number"
+                inputMode="numeric"
+                min="1"
+                max="100"
+                placeholder="未指定（1）"
+                value={draftMinSamples}
+                onChange={(event) => setDraftMinSamples(event.target.value)}
+              />
             </div>
             <div className="field">
               <label htmlFor="min_reviews">最低レビュー件数</label>
-              <input id="min_reviews" type="number" min="0" max="100000" value={draftFilters.minReviews} onChange={updateNumber("minReviews")} />
+              <input
+                id="min_reviews"
+                type="number"
+                inputMode="numeric"
+                min="0"
+                max="100000"
+                placeholder="未指定（0）"
+                value={draftMinReviews}
+                onChange={(event) => setDraftMinReviews(event.target.value)}
+              />
             </div>
             <div className="field field--full">
-              <label htmlFor="min_rating">最低平均評価</label>
-              <input id="min_rating" type="number" min="0" max="5" step="0.1" value={draftFilters.minRating} onChange={updateNumber("minRating")} />
+              <label id="min_rating_label">
+                最低平均評価（{draftFilters.minRating ? `${draftFilters.minRating}以上` : "未指定"}）
+              </label>
+              <div className="rating-filter" role="group" aria-labelledby="min_rating_label">
+                {RATING_OPTIONS.map((rating) => {
+                  const selected = draftFilters.minRating === rating;
+                  const filled = draftFilters.minRating >= rating;
+                  return (
+                    <button
+                      key={rating}
+                      type="button"
+                      className={`${filled ? "is-filled" : ""}${selected ? " is-selected" : ""}`.trim()}
+                      aria-pressed={selected}
+                      aria-label={`最低評価${rating}以上${selected ? "を解除" : "に設定"}`}
+                      onClick={() => setDraftFilters((old) => ({
+                        ...old,
+                        minRating: selected ? 0 : rating,
+                      }))}
+                    >
+                      <strong aria-hidden="true">★</strong>
+                      <span>{rating}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
           <div className="filter-summary">現在: {activeCondition}</div>
           <div className="sheet-actions">
-            <button className="btn btn-secondary" type="button" onClick={() => setDraftFilters(DEFAULT_FILTERS)}>絞り込み解除</button>
+            <button className="btn btn-secondary" type="button" onClick={resetDraftFilters}>絞り込み解除</button>
             <button className="btn btn-primary" type="submit" disabled={loading || priceInvalid}>{loading ? "取得中…" : "この条件で見る"}</button>
           </div>
         </form>
