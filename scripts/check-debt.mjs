@@ -42,6 +42,11 @@ for (const required of [
   ".favorite-actions :is(button, a)",
   ".reader-fit-width",
   ".reader-cta-link",
+  ".age-gate",
+  ".legal-shell",
+  ".settings-list",
+  ".history-list",
+  ".profile-danger-zone",
 ]) {
   if (!css.includes(required)) fail(`必須スタイル ${required} がありません。`);
 }
@@ -50,6 +55,15 @@ const main = readFileSync("src/main.tsx", "utf8");
 for (const removed of removedStyles) {
   const importPath = `@/${removed}`;
   if (main.includes(importPath)) fail(`削除済みCSS ${importPath} をimportしています。`);
+}
+if (!main.includes("hasAgeVerification") || !main.includes("<AgeGate")) {
+  fail("成人向け画面の年齢確認ゲートがありません。");
+}
+if (!main.includes('pathname === "/privacy"') || !main.includes('pathname === "/terms"')) {
+  fail("プライバシーポリシーまたは利用規約ルートがありません。");
+}
+if (!main.includes('pathname === "/history"')) {
+  fail("閲覧履歴ページのルートがありません。");
 }
 
 const imagePreload = readFileSync("src/imagePreload.ts", "utf8");
@@ -60,6 +74,7 @@ if (!reactions.includes("MAX_REACTION_QUERY_CIDS = 50")) fail("リアクショ�
 
 const navigation = readFileSync("src/navigationState.ts", "utf8");
 if (!navigation.includes("scrollLeftForLogicalPage")) fail("復帰位置が読む方向を考慮していません。");
+if (!navigation.includes('"/history"')) fail("閲覧履歴が画面復帰ナビゲーションへ統合されていません。");
 
 const fanza = readFileSync("server/app/src/FanzaClient.php", "utf8");
 if (!fanza.includes("'makerId' =>")) fail("maker_idを正規化結果へ渡していません。");
@@ -84,5 +99,17 @@ const workRepository = readFileSync("server/app/src/WorkRepository.php", "utf8")
 if (/upsertNormalized\(array \$item,\s*string \$source/.test(workRepository)) {
   fail("WorkRepository::upsertNormalized に未使用のsource引数が残っています。");
 }
+
+const meApi = readFileSync("server/public/api/me.php", "utf8");
+if (!meApi.includes("'DELETE'") || !meApi.includes("deleteProfile") || !meApi.includes("clear_anonymous_identity")) {
+  fail("匿名データ削除APIが完全に接続されていません。");
+}
+
+const historyApi = readFileSync("server/public/api/history.php", "utf8");
+if (!historyApi.includes("userLibraryService->history")) fail("閲覧履歴APIがUserLibraryServiceへ接続されていません。");
+
+const htaccess = readFileSync("server/public/.htaccess", "utf8");
+const router = readFileSync("server/public/router.php", "utf8");
+if (!htaccess.includes("history") || !router.includes("history")) fail("閲覧履歴APIのルーティングが不足しています。");
 
 if (!process.exitCode) console.log("debt check: OK");
