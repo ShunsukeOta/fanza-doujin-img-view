@@ -17,6 +17,7 @@ return [
     ],
     'app' => [
         'timezone' => 'Asia/Tokyo',
+        'public_origin' => '',
         'event_retention_days' => 60,
         'profile_retention_days' => 180,
         'sync_pages' => 5,
