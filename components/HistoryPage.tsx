@@ -98,7 +98,16 @@ export function HistoryPage() {
     <div className="subpage-shell">
       <header className="subpage-header">
         <div>
-          <button className="subpage-back-link" type="button" onClick={() => navigateToSubpage("/mypage", "history")}>← マイページ</button>
+          <a
+            className="subpage-back-link"
+            href="/mypage"
+            onClick={(event) => {
+              event.preventDefault();
+              navigateToSubpage("/mypage", "history");
+            }}
+          >
+            ← マイページ
+          </a>
           <h1>閲覧履歴</h1>
         </div>
         <button className="subpage-refresh" type="button" onClick={() => void load()} disabled={loading}>再読込</button>
