@@ -109,59 +109,105 @@ jobs:
           PHP
           php server/app/cron/setup-db.php
           php server/app/cron/setup-db.php
-          php -r '
-            $config = require "server/app/config.local.php";
-            $dsn = sprintf("mysql:host=%s;port=%d;dbname=%s;charset=%s", $config["db"]["host"], $config["db"]["port"], $config["db"]["name"], $config["db"]["charset"]);
-            $pdo = new PDO($dsn, $config["db"]["user"], $config["db"]["password"], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES => false]);
-            foreach (["works", "feed_sessions", "feed_items", "events", "app_migrations", "sync_runs"] as $table) {
-              $stmt = $pdo->prepare("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?");
+          php <<'PHP'
+          <?php
+          $config = require 'server/app/config.local.php';
+          $dsn = sprintf(
+              'mysql:host=%s;port=%d;dbname=%s;charset=%s',
+              $config['db']['host'],
+              $config['db']['port'],
+              $config['db']['name'],
+              $config['db']['charset'],
+          );
+          $pdo = new PDO($dsn, $config['db']['user'], $config['db']['password'], [
+              PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+              PDO::ATTR_EMULATE_PREPARES => false,
+          ]);
+          foreach (['works', 'feed_sessions', 'feed_items', 'events', 'app_migrations', 'sync_runs'] as $table) {
+              $stmt = $pdo->prepare(
+                  'SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?'
+              );
               $stmt->execute([$table]);
               if ((int)$stmt->fetchColumn() !== 1) exit(1);
-            }
-            foreach (["recommendation-v3-rebuild-20260907", "comic-only-catalog-20260908"] as $migration) {
-              $stmt = $pdo->prepare("SELECT 1 FROM app_migrations WHERE id = ?");
+          }
+          foreach (['recommendation-v3-rebuild-20260907', 'comic-only-catalog-20260908'] as $migration) {
+              $stmt = $pdo->prepare('SELECT 1 FROM app_migrations WHERE id = ?');
               $stmt->execute([$migration]);
               if (!$stmt->fetchColumn()) exit(1);
-            }
-            foreach (["asset_type", "asset_bucket"] as $column) {
-              $stmt = $pdo->prepare("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'works' AND column_name = ?");
-              $stmt->execute([$column]);
+          }
+          foreach (['asset_type', 'asset_bucket'] as $column) {
+              $stmt = $pdo->prepare(
+                  'SELECT COUNT(*) FROM information_schema.columns '
+                  . 'WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?'
+              );
+              $stmt->execute(['works', $column]);
               if ((int)$stmt->fetchColumn() !== 0) exit(1);
-            }
-          '
+          }
+          PHP
           php server/app/tests/integration.php
 
           # 旧バージョンのasset列がある本番DBを再現し、非コミック削除・孤立メタ整理・互換列固定を検証する。
-          php -r '
-            $config = require "server/app/config.local.php";
-            $dsn = sprintf("mysql:host=%s;port=%d;dbname=%s;charset=%s", $config["db"]["host"], $config["db"]["port"], $config["db"]["name"], $config["db"]["charset"]);
-            $pdo = new PDO($dsn, $config["db"]["user"], $config["db"]["password"], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
-            $pdo->exec("ALTER TABLE works ADD COLUMN asset_bucket VARCHAR(64) NOT NULL DEFAULT 'comic' AFTER price_value, ADD COLUMN asset_type VARCHAR(16) NOT NULL DEFAULT 'comic' AFTER asset_bucket");
-            $pdo->exec("DELETE FROM app_migrations WHERE id = 'comic-only-catalog-20260908'");
-            $pdo->exec("UPDATE works SET asset_bucket='cg', asset_type='cg' WHERE cid='audit_014'");
-            $pdo->exec("INSERT INTO genres (id,name,ruby) VALUES ('legacy_cg_genre','旧CG専用','') ON DUPLICATE KEY UPDATE name=VALUES(name)");
-            $pdo->exec("INSERT INTO series (id,name,ruby) VALUES ('legacy_cg_series','旧CGシリーズ','') ON DUPLICATE KEY UPDATE name=VALUES(name)");
-            $pdo->exec("INSERT IGNORE INTO work_genres (work_cid,genre_id) VALUES ('audit_014','legacy_cg_genre')");
-            $pdo->exec("INSERT IGNORE INTO work_series (work_cid,series_id) VALUES ('audit_014','legacy_cg_series')");
-          '
+          php <<'PHP'
+          <?php
+          $config = require 'server/app/config.local.php';
+          $dsn = sprintf(
+              'mysql:host=%s;port=%d;dbname=%s;charset=%s',
+              $config['db']['host'],
+              $config['db']['port'],
+              $config['db']['name'],
+              $config['db']['charset'],
+          );
+          $pdo = new PDO($dsn, $config['db']['user'], $config['db']['password'], [
+              PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+          ]);
+          $pdo->exec(
+              "ALTER TABLE works "
+              . "ADD COLUMN asset_bucket VARCHAR(64) NOT NULL DEFAULT 'comic' AFTER price_value, "
+              . "ADD COLUMN asset_type VARCHAR(16) NOT NULL DEFAULT 'comic' AFTER asset_bucket"
+          );
+          $pdo->exec("DELETE FROM app_migrations WHERE id = 'comic-only-catalog-20260908'");
+          $pdo->exec("UPDATE works SET asset_bucket='cg', asset_type='cg' WHERE cid='audit_014'");
+          $pdo->exec(
+              "INSERT INTO genres (id,name,ruby) VALUES ('legacy_cg_genre','旧CG専用','') "
+              . 'ON DUPLICATE KEY UPDATE name=VALUES(name)'
+          );
+          $pdo->exec(
+              "INSERT INTO series (id,name,ruby) VALUES ('legacy_cg_series','旧CGシリーズ','') "
+              . 'ON DUPLICATE KEY UPDATE name=VALUES(name)'
+          );
+          $pdo->exec("INSERT IGNORE INTO work_genres (work_cid,genre_id) VALUES ('audit_014','legacy_cg_genre')");
+          $pdo->exec("INSERT IGNORE INTO work_series (work_cid,series_id) VALUES ('audit_014','legacy_cg_series')");
+          PHP
           php server/app/cron/setup-db.php
           php server/app/cron/setup-db.php
-          php -r '
-            $config = require "server/app/config.local.php";
-            $dsn = sprintf("mysql:host=%s;port=%d;dbname=%s;charset=%s", $config["db"]["host"], $config["db"]["port"], $config["db"]["name"], $config["db"]["charset"]);
-            $pdo = new PDO($dsn, $config["db"]["user"], $config["db"]["password"], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
-            if ((int)$pdo->query("SELECT COUNT(*) FROM works WHERE cid='audit_014'")->fetchColumn() !== 0) exit(1);
-            if ((int)$pdo->query("SELECT COUNT(*) FROM works WHERE cid='audit_013'")->fetchColumn() !== 1) exit(1);
-            if ((int)$pdo->query("SELECT COUNT(*) FROM genres WHERE id='legacy_cg_genre'")->fetchColumn() !== 0) exit(1);
-            if ((int)$pdo->query("SELECT COUNT(*) FROM series WHERE id='legacy_cg_series'")->fetchColumn() !== 0) exit(1);
-            if (!(bool)$pdo->query("SELECT 1 FROM app_migrations WHERE id='comic-only-catalog-20260908'")->fetchColumn()) exit(1);
-            foreach (["asset_type", "asset_bucket"] as $column) {
-              $stmt = $pdo->prepare("SELECT column_default FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'works' AND column_name = ?");
-              $stmt->execute([$column]);
-              if ((string)$stmt->fetchColumn() !== "comic") exit(1);
-            }
-            if ((int)$pdo->query("SELECT COUNT(*) FROM works WHERE asset_type <> 'comic' OR asset_bucket <> 'comic'")->fetchColumn() !== 0) exit(1);
-          '
+          php <<'PHP'
+          <?php
+          $config = require 'server/app/config.local.php';
+          $dsn = sprintf(
+              'mysql:host=%s;port=%d;dbname=%s;charset=%s',
+              $config['db']['host'],
+              $config['db']['port'],
+              $config['db']['name'],
+              $config['db']['charset'],
+          );
+          $pdo = new PDO($dsn, $config['db']['user'], $config['db']['password'], [
+              PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+          ]);
+          if ((int)$pdo->query("SELECT COUNT(*) FROM works WHERE cid='audit_014'")->fetchColumn() !== 0) exit(1);
+          if ((int)$pdo->query("SELECT COUNT(*) FROM works WHERE cid='audit_013'")->fetchColumn() !== 1) exit(1);
+          if ((int)$pdo->query("SELECT COUNT(*) FROM genres WHERE id='legacy_cg_genre'")->fetchColumn() !== 0) exit(1);
+          if ((int)$pdo->query("SELECT COUNT(*) FROM series WHERE id='legacy_cg_series'")->fetchColumn() !== 0) exit(1);
+          if (!(bool)$pdo->query("SELECT 1 FROM app_migrations WHERE id='comic-only-catalog-20260908'")->fetchColumn()) exit(1);
+          foreach (['asset_type', 'asset_bucket'] as $column) {
+              $stmt = $pdo->prepare(
+                  'SELECT column_default FROM information_schema.columns '
+                  . 'WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?'
+              );
+              $stmt->execute(['works', $column]);
+              if ((string)$stmt->fetchColumn() !== 'comic') exit(1);
+          }
+          if ((int)$pdo->query("SELECT COUNT(*) FROM works WHERE asset_type <> 'comic' OR asset_bucket <> 'comic'")->fetchColumn() !== 0) exit(1);
+          PHP
           rm -f server/app/config.local.php
 
       - name: クリティカルな回帰を検証
