@@ -10,7 +10,7 @@ export type FloorDefinition = {
 export const FLOORS: readonly FloorDefinition[] = [
   { key: "comic", label: "同人漫画", available: true },
   { key: "actress", label: "女優動画", available: false },
-  { key: "amateur", label: "素人動画", available: true },
+  { key: "amateur", label: "素人動画", available: false },
 ] as const;
 
 export function normalizeFloor(value: string | null | undefined): FloorKey {

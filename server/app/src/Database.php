@@ -65,19 +65,17 @@ final class Database
         return $this->lastError;
     }
 
-    public function hasUsableCatalog(string $floorKey = 'comic'): bool
+    public function hasUsableCatalog(): bool
     {
         $pdo = $this->connection();
         if (!$pdo) {
             return false;
         }
-        $floorKey = $floorKey === 'amateur' ? 'amateur' : 'comic';
 
         try {
-            $sql = $floorKey === 'amateur'
-                ? "SELECT 1 FROM works WHERE floor_key='amateur' AND is_active=1 AND sample_movie_url IS NOT NULL AND sample_movie_url<>'' LIMIT 1"
-                : "SELECT 1 FROM works WHERE floor_key='comic' AND is_active=1 AND sample_count>0 LIMIT 1";
-            return (bool)$pdo->query($sql)->fetchColumn();
+            return (bool)$pdo
+                ->query('SELECT 1 FROM works WHERE is_active = 1 AND sample_count > 0 LIMIT 1')
+                ->fetchColumn();
         } catch (Throwable $error) {
             $this->lastError = $error->getMessage();
             return false;

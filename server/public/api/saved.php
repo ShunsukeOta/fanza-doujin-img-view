@@ -14,16 +14,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
 try {
     [$anonymousUserId] = anonymous_identity();
     $cursor = mb_substr(trim((string)($_GET['cursor'] ?? '')), 0, 256);
-    $floorKey = (string)($_GET['floor'] ?? '') === 'amateur' ? 'amateur' : 'comic';
     $result = $userLibraryService->saved(
         $anonymousUserId,
         read_int('limit', 24, 1, 50),
         $cursor,
-        $floorKey,
     );
 
     json_response(
-        ['ok' => true, ...$result, 'floorKey' => $floorKey, 'generatedAt' => date(DATE_ATOM)],
+        ['ok' => true, ...$result, 'generatedAt' => date(DATE_ATOM)],
         200,
         ['Cache-Control' => 'private, no-store'],
     );

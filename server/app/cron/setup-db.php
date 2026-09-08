@@ -90,10 +90,8 @@ function rebuild_genre_scores(PDO $pdo): void
 }
 
 $workColumns = [
-    'floor_key' => "VARCHAR(16) NOT NULL DEFAULT 'comic' AFTER cid",
     'product_url' => 'TEXT NULL AFTER title',
     'description' => 'LONGTEXT NULL AFTER affiliate_url',
-    'sample_movie_url' => 'TEXT NULL AFTER sample_images_json',
     'full_page_count' => 'INT UNSIGNED NULL AFTER sample_count',
     'volume' => "VARCHAR(128) NOT NULL DEFAULT '' AFTER full_page_count",
     'price_value' => 'INT UNSIGNED NULL AFTER price',
@@ -130,7 +128,6 @@ foreach ($eventColumns as $name => $definition) {
 ensure_column($pdo, 'user_work_states', 'liked_at', 'DATETIME NULL AFTER saved');
 ensure_column($pdo, 'user_work_states', 'saved_at', 'DATETIME NULL AFTER liked_at');
 
-ensure_index($pdo, 'works', 'idx_works_floor_feed', '(floor_key, is_active, sample_count, review_count, rating)');
 ensure_index($pdo, 'works', 'idx_works_price', '(is_active, price_value)');
 ensure_index($pdo, 'works', 'idx_works_random', '(is_active, random_key, cid)');
 ensure_index($pdo, 'works', 'idx_works_refresh', '(is_active, next_refresh_at, cid)');
@@ -167,6 +164,7 @@ if (!migration_applied($pdo, $comicOnlyMigration)) {
                 "DELETE s FROM user_work_states s JOIN works w ON w.cid = s.work_cid WHERE w.asset_type <> 'comic'"
             );
             $pdo->exec("DELETE FROM works WHERE asset_type <> 'comic'");
+            // works削除のCASCADE後、コミックと無関係になったジャンル・シリーズだけを整理する。
             $pdo->exec(
                 'DELETE g FROM genres g LEFT JOIN work_genres wg ON wg.genre_id = g.id WHERE wg.genre_id IS NULL'
             );
@@ -183,6 +181,7 @@ if (!migration_applied($pdo, $comicOnlyMigration)) {
             throw $error;
         }
 
+        // DDLはトランザクション外。失敗した場合はmigration未完了のまま次回再実行する。
         $pdo->exec("UPDATE works SET asset_type='comic'");
         $pdo->exec("ALTER TABLE works MODIFY asset_type VARCHAR(16) NOT NULL DEFAULT 'comic'");
         if (column_exists($pdo, 'works', 'asset_bucket')) {
@@ -194,26 +193,8 @@ if (!migration_applied($pdo, $comicOnlyMigration)) {
     fwrite(STDOUT, "コミック専用化 migration removed_non_comic={$removed}\n");
 }
 
-// 作品テーブルを「コミック専用」からフロア共通カタログへ拡張する。
-// 既存行はすべてcomicとして引き継ぎ、旧固定Feedだけを破棄してフロア混在を防ぐ。
-$multiFloorMigration = 'multi-floor-amateur-video-20260908';
-if (!migration_applied($pdo, $multiFloorMigration)) {
-    $pdo->beginTransaction();
-    try {
-        $pdo->exec("UPDATE works SET floor_key='comic' WHERE floor_key='' OR floor_key IS NULL");
-        $pdo->exec('DELETE FROM feed_sessions');
-        mark_migration($pdo, $multiFloorMigration);
-        $pdo->commit();
-    } catch (Throwable $error) {
-        if ($pdo->inTransaction()) {
-            $pdo->rollBack();
-        }
-        throw $error;
-    }
-    fwrite(STDOUT, "複数フロア対応 migration OK\n");
-}
-
-$pdo->exec('UPDATE works SET random_key = CRC32(CONCAT(floor_key, \'|\', cid)) WHERE random_key = 0');
+// 既存作品の初期化はNULL/未設定行だけを更新し、全件を毎デプロイ書き換えない。
+$pdo->exec('UPDATE works SET random_key = CRC32(cid) WHERE random_key = 0');
 $pdo->exec("UPDATE works SET availability_status = IF(is_active = 1, 'active', 'unavailable') WHERE availability_status = '' OR availability_status IS NULL");
 $pdo->exec('UPDATE works SET metadata_checked_at = last_seen_at WHERE metadata_checked_at IS NULL');
 $pdo->exec('UPDATE works SET price_checked_at = last_seen_at WHERE price_checked_at IS NULL');
@@ -241,6 +222,7 @@ $pdo->exec(
     . "WHERE h.work_cid IS NULL AND (w.price <> '' OR w.price_value IS NOT NULL)"
 );
 
+// v2の誤読了率で作られた派生スコアを1回だけ破棄し、Like/Saveの現状態から再構築する。
 $rebuildId = 'recommendation-v3-rebuild-20260907';
 if (!migration_applied($pdo, $rebuildId)) {
     $pdo->beginTransaction();

@@ -145,7 +145,7 @@ jobs:
             "wp983575@wp983575.wpx.jp:wp983575.wpx.jp/.releases/${GITHUB_SHA}/app/config.local.php"
           rm -f /tmp/config.local.php
 
-      - name: 本番切替前にDB移行と素人動画同期を完了
+      - name: 本番切替前にDB移行を完了
         shell: bash
         run: |
           set -euo pipefail
@@ -163,11 +163,6 @@ jobs:
               "set -eu; APP=\"\$HOME/wp983575.wpx.jp/.releases/${GITHUB_SHA}/app\"; /usr/bin/php8.3 \"\$APP/cron/fanza-sync.php\" --pages=20 --sort=date"
           else
             echo "既存作品DB ${WORKS} 件を維持します。"
-            echo "素人動画フロアの最新作品を本番切替前に同期します。"
-            ssh -i "$HOME/.ssh/id_shin" -p 10022 \
-              -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
-              wp983575@wp983575.wpx.jp \
-              "set -eu; APP=\"\$HOME/wp983575.wpx.jp/.releases/${GITHUB_SHA}/app\"; /usr/bin/php8.3 \"\$APP/cron/fanza-sync.php\" --pages=5 --sort=date --floor=amateur"
           fi
 
       - name: 移行成功後に本番へ切り替え
@@ -190,7 +185,7 @@ jobs:
           rm -rf "\$RELEASE"
           REMOTE
 
-      - name: 本番HTTP・PWA・固定feed・検索・共有URL・動画フロア・公開境界を確認
+      - name: 本番HTTP・PWA・固定feed・検索・共有URL・公開境界を確認
         shell: bash
         run: |
           set -euo pipefail
@@ -240,18 +235,6 @@ jobs:
           SEARCH="$("${CURL[@]}" -c /tmp/user-cookies -b /tmp/user-cookies "${BASE_URL}/api/search?limit=3&sort=popular")"
           printf '%s' "$SEARCH" | grep -F '"ok":true' >/dev/null
           printf '%s' "$SEARCH" | grep -F '"items":[' >/dev/null
-
-          "${CURL[@]}" -c /tmp/video-cookies -b /tmp/video-cookies "${BASE_URL}/api/catalog?floor=amateur&limit=1" > /tmp/amateur-catalog.json
-          node --input-type=module <<'NODE'
-          import fs from 'node:fs';
-          const catalog = JSON.parse(fs.readFileSync('/tmp/amateur-catalog.json', 'utf8'));
-          if (!Array.isArray(catalog.items) || catalog.items.length === 0) throw new Error('amateur catalog is empty');
-          const item = catalog.items[0];
-          if (item.floorKey !== 'amateur' || item.mediaType !== 'video' || !item.sampleMovieUrl) throw new Error('amateur catalog item invalid');
-          NODE
-          AMATEUR_SEARCH="$("${CURL[@]}" -c /tmp/video-cookies -b /tmp/video-cookies "${BASE_URL}/api/search?floor=amateur&limit=1&sort=popular")"
-          printf '%s' "$AMATEUR_SEARCH" | grep -F '"ok":true' >/dev/null
-          printf '%s' "$AMATEUR_SEARCH" | grep -F '"floorKey":"amateur"' >/dev/null
 
           WORK_HTML="$("${CURL[@]}" "${BASE_URL}/work/${WORK_CID}")"
           printf '%s' "$WORK_HTML" | grep -F 'property="og:title"' >/dev/null

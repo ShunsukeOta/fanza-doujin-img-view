@@ -13,7 +13,6 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
 
 try {
     [$anonymousUserId] = anonymous_identity();
-    $floorKey = (string)($_GET['floor'] ?? '') === 'amateur' ? 'amateur' : 'comic';
     $filters = [
         ...request_filters(),
         'maker' => mb_substr(trim((string)($_GET['maker'] ?? '')), 0, 100),
@@ -25,7 +24,6 @@ try {
         read_int('limit', 24, 1, 24),
         mb_substr(trim((string)($_GET['sort'] ?? 'popular')), 0, 32),
         $anonymousUserId,
-        $floorKey,
     );
 
     json_response($result, 200, ['Cache-Control' => 'private, no-store']);

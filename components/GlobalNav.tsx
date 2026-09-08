@@ -1,5 +1,5 @@
 import { BookmarkIcon, FeedSwipeIcon, SearchIcon, UserIcon } from "@/components/icons";
-import { floorContextPath, floorFromLocation } from "@/src/floors";
+import { floorContextPath, floorFeedPath, floorFromLocation } from "@/src/floors";
 import { navigateToSubpage, resumeMainFromSubpage, type NavOrigin } from "@/src/navigationState";
 
 type NavKey = "saved" | "main" | "search" | "mypage";
@@ -31,13 +31,18 @@ export function GlobalNav({ active = currentNav() }: Props) {
   const floor = floorFromLocation();
 
   const goMain = () => {
+    if (floor !== "comic") {
+      window.location.assign(floorFeedPath(floor));
+      return;
+    }
     if (origin !== "main") resumeMainFromSubpage();
   };
 
   const goSubpage = (path: "/saved" | "/search") => {
     const target = floorContextPath(floor, path === "/saved" ? "saved" : "search");
     if (`${currentPath()}${window.location.search}` === target) return;
-    navigateToSubpage(path, origin, target);
+    if (floor === "comic") navigateToSubpage(path, origin);
+    else window.location.assign(target);
   };
 
   return (
@@ -76,7 +81,10 @@ export function GlobalNav({ active = currentNav() }: Props) {
         className={`global-nav-item${active === "mypage" ? " is-active" : ""}`}
         type="button"
         onClick={() => {
-          if (currentPath() !== "/mypage") navigateToSubpage("/mypage", origin);
+          if (currentPath() !== "/mypage") {
+            if (floor === "comic") navigateToSubpage("/mypage", origin);
+            else window.location.assign("/mypage");
+          }
         }}
         aria-label="マイページ"
         aria-current={currentPath() === "/mypage" ? "page" : undefined}

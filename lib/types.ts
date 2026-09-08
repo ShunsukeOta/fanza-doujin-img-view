@@ -1,8 +1,4 @@
-export type FeedFloorKey = "comic" | "amateur";
-export type FeedMediaType = "comic" | "video";
-
 export type FloorInfo = {
-  key?: string;
   siteCode: string;
   siteName: string;
   serviceCode: string;
@@ -24,12 +20,9 @@ export type ReactionSummary = {
 
 export type FeedItem = {
   cid: string;
-  floorKey?: FeedFloorKey;
-  mediaType?: FeedMediaType;
   title: string;
   affiliateUrl: string;
   images: string[];
-  sampleMovieUrl?: string;
   sampleCount: number;
   fullPageCount?: number | null;
   reviews: number;
@@ -40,10 +33,8 @@ export type FeedItem = {
   makerId?: string;
   price: string;
   priceValue?: number | null;
-  savedAt?: string;
   savedPriceValue?: number | null;
   priceDropValue?: number | null;
-  viewedAt?: string;
   available?: boolean;
   availabilityStatus?: string;
   feedId?: string | null;
