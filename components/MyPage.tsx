@@ -37,8 +37,13 @@ function formatDate(value: string | null): string {
 }
 
 function clearClientAppState(): void {
-  for (const storage of [window.localStorage, window.sessionStorage]) {
+  const storages = [
+    () => window.localStorage,
+    () => window.sessionStorage,
+  ];
+  for (const getStorage of storages) {
     try {
+      const storage = getStorage();
       const keys = Array.from({ length: storage.length }, (_, index) => storage.key(index))
         .filter((key): key is string => Boolean(key?.startsWith("swipe-preview:")));
       keys.forEach((key) => storage.removeItem(key));
