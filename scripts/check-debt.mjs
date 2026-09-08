@@ -109,6 +109,9 @@ for (const removed of ["assetType", "assetTypes", "asset_type", "assetLabel", "a
 if (!catalog.includes("LIVE_MAX_PAGES") || !catalog.includes("isComicItem")) {
   fail("FANZA fallbackがコミックだけを複数ページ走査する実装になっていません。");
 }
+if (!catalog.includes("stoppedInsidePage")) {
+  fail("FANZA fallbackが部分ページでlimit到達した際のcursor継続を保護していません。");
+}
 
 const workRepository = readFileSync("server/app/src/WorkRepository.php", "utf8");
 if (/upsertNormalized\(array \$item,\s*string \$source/.test(workRepository)) {
