@@ -16,7 +16,7 @@ final class WorkRepository
     ) {
     }
 
-    public function upsertNormalized(array $item, string $source = 'sync'): array
+    public function upsertNormalized(array $item): array
     {
         $pdo = $this->requirePdo();
         $cid = trim((string)($item['cid'] ?? ''));
@@ -107,7 +107,7 @@ final class WorkRepository
     {
         $normalized = $this->fanza->normalizeCid($cid);
         $raw = $this->fanza->fetchItem($normalized, $this->fanza->resolveDoujinFloor());
-        return $this->upsertNormalized($this->fanza->feedItem($raw), 'direct');
+        return $this->upsertNormalized($this->fanza->feedItem($raw));
     }
 
     public function refreshCid(string $cid): array

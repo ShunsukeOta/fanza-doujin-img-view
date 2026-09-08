@@ -115,7 +115,7 @@ try {
                 if (trim((string)($item['cid'] ?? '')) === '') {
                     continue;
                 }
-                $workRepository->upsertNormalized($item, 'sync');
+                $workRepository->upsertNormalized($item);
                 $processed++;
             }
 

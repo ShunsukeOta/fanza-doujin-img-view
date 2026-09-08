@@ -56,7 +56,7 @@ function test_item(int $index): array
 }
 
 for ($index = 1; $index <= 14; $index++) {
-    $workRepository->upsertNormalized(test_item($index), 'test');
+    $workRepository->upsertNormalized(test_item($index));
 }
 
 $uid = '11111111-1111-4111-8111-111111111111';
