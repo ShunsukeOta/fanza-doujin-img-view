@@ -173,7 +173,6 @@ if (!migration_applied($pdo, $comicOnlyMigration)) {
             );
             $pdo->exec('DELETE FROM feed_sessions');
             rebuild_genre_scores($pdo);
-            mark_migration($pdo, $comicOnlyMigration);
             $pdo->commit();
         } catch (Throwable $error) {
             if ($pdo->inTransaction()) {
@@ -182,16 +181,15 @@ if (!migration_applied($pdo, $comicOnlyMigration)) {
             throw $error;
         }
 
-        // DDLはトランザクション外。新コードはこれらの列を参照しない。
+        // DDLはトランザクション外。失敗した場合はmigration未完了のまま次回再実行する。
         $pdo->exec("UPDATE works SET asset_type='comic'");
         $pdo->exec("ALTER TABLE works MODIFY asset_type VARCHAR(16) NOT NULL DEFAULT 'comic'");
         if (column_exists($pdo, 'works', 'asset_bucket')) {
             $pdo->exec("UPDATE works SET asset_bucket='comic'");
             $pdo->exec("ALTER TABLE works MODIFY asset_bucket VARCHAR(64) NOT NULL DEFAULT 'comic'");
         }
-    } else {
-        mark_migration($pdo, $comicOnlyMigration);
     }
+    mark_migration($pdo, $comicOnlyMigration);
     fwrite(STDOUT, "コミック専用化 migration removed_non_comic={$removed}\n");
 }
 
