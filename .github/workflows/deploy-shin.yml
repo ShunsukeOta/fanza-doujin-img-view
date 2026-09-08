@@ -136,7 +136,7 @@ jobs:
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
           const escapePhp = (value = '') => `'${String(value).replaceAll('\\', '\\\\').replaceAll("'", "\\'")}'`;
-          const config = `<?php\ndeclare(strict_types=1);\nreturn [\n  'dmm' => [\n    'api_id' => ${escapePhp(process.env.DMM_API_ID)},\n    'affiliate_id' => ${escapePhp(process.env.DMM_AFFILIATE_ID)},\n  ],\n  'db' => [\n    'host' => 'localhost',\n    'port' => 3306,\n    'name' => ${escapePhp(process.env.SHIN_DB_NAME)},\n    'user' => ${escapePhp(process.env.SHIN_DB_USER)},\n    'password' => ${escapePhp(process.env.SHIN_DB_PASSWORD)},\n    'charset' => 'utf8mb4',\n  ],\n  'app' => [\n    'timezone' => 'Asia/Tokyo',\n    'event_retention_days' => 60,\n    'profile_retention_days' => 180,\n    'sync_pages' => 5,\n    'admin_token' => ${escapePhp(process.env.SHIN_ADMIN_TOKEN || '')},\n  ],\n];\n`;
+          const config = `<?php\ndeclare(strict_types=1);\nreturn [\n  'dmm' => [\n    'api_id' => ${escapePhp(process.env.DMM_API_ID)},\n    'affiliate_id' => ${escapePhp(process.env.DMM_AFFILIATE_ID)},\n  ],\n  'db' => [\n    'host' => 'localhost',\n    'port' => 3306,\n    'name' => ${escapePhp(process.env.SHIN_DB_NAME)},\n    'user' => ${escapePhp(process.env.SHIN_DB_USER)},\n    'password' => ${escapePhp(process.env.SHIN_DB_PASSWORD)},\n    'charset' => 'utf8mb4',\n  ],\n  'app' => [\n    'timezone' => 'Asia/Tokyo',\n    'public_origin' => 'https://wp983575.wpx.jp',\n    'event_retention_days' => 60,\n    'profile_retention_days' => 180,\n    'sync_pages' => 5,\n    'admin_token' => ${escapePhp(process.env.SHIN_ADMIN_TOKEN || '')},\n  ],\n];\n`;
           fs.writeFileSync('/tmp/config.local.php', config, { mode: 0o600 });
           NODE
           rsync -az \
@@ -185,7 +185,7 @@ jobs:
           rm -rf "\$RELEASE"
           REMOTE
 
-      - name: 本番HTTP・PWA・固定feed・公開境界を確認
+      - name: 本番HTTP・PWA・固定feed・検索・共有URL・公開境界を確認
         shell: bash
         run: |
           set -euo pipefail
@@ -215,10 +215,13 @@ jobs:
           if (first.hasMore && typeof first.nextCursor !== 'number') throw new Error('nextCursor missing');
           fs.writeFileSync('/tmp/feed-id', first.feedId);
           fs.writeFileSync('/tmp/cursor', String(first.nextCursor ?? 0));
+          fs.writeFileSync('/tmp/work-cid', String(first.items[0].cid ?? ''));
           NODE
 
           FEED_ID="$(cat /tmp/feed-id)"
           CURSOR="$(cat /tmp/cursor)"
+          WORK_CID="$(cat /tmp/work-cid)"
+          test -n "$WORK_CID"
           "${CURL[@]}" -c /tmp/feed-cookies -b /tmp/feed-cookies "${BASE_URL}/api/catalog?limit=3&feed_id=${FEED_ID}&cursor=${CURSOR}" > /tmp/catalog2.json
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
@@ -229,9 +232,22 @@ jobs:
           if (second.items.some((item) => seen.has(item.cid))) throw new Error('duplicated CID across pages');
           NODE
 
+          SEARCH="$("${CURL[@]}" -c /tmp/user-cookies -b /tmp/user-cookies "${BASE_URL}/api/search?limit=3&sort=popular")"
+          printf '%s' "$SEARCH" | grep -F '"ok":true' >/dev/null
+          printf '%s' "$SEARCH" | grep -F '"items":[' >/dev/null
+
+          WORK_HTML="$("${CURL[@]}" "${BASE_URL}/work/${WORK_CID}")"
+          printf '%s' "$WORK_HTML" | grep -F 'property="og:title"' >/dev/null
+          printf '%s' "$WORK_HTML" | grep -F 'property="og:image"' >/dev/null
+          printf '%s' "$WORK_HTML" | grep -F "rel=\"canonical\" href=\"${BASE_URL}/work/${WORK_CID}\"" >/dev/null
+          printf '%s' "$WORK_HTML" | grep -F '<div id="root"></div>' >/dev/null
+
+          REDIRECT_LOCATION="$(curl --silent --head --output /dev/null --write-out '%{redirect_url}' "${BASE_URL}/?cid=${WORK_CID}")"
+          test "$REDIRECT_LOCATION" = "${BASE_URL}/work/${WORK_CID}"
+
           "${CURL[@]}" -c /tmp/user-cookies -b /tmp/user-cookies "${BASE_URL}/api/saved?limit=2" | grep -F '"ok":true' >/dev/null
           "${CURL[@]}" -c /tmp/user-cookies -b /tmp/user-cookies "${BASE_URL}/api/me" | grep -F '"ok":true' >/dev/null
-          for path in /saved /mypage; do
+          for path in /saved /search /mypage /actress /amateur; do
             "${CURL[@]}" "${BASE_URL}${path}" | grep -F '<div id="root"></div>' >/dev/null
           done
 
