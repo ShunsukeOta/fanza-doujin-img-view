@@ -23,27 +23,37 @@ final class WorkRepository
         if ($cid === '' || preg_match('/^[A-Za-z0-9_-]{1,128}$/', $cid) !== 1) {
             throw new RuntimeException('作品CIDが不正です。');
         }
+        $floorKey = ($item['floorKey'] ?? 'comic') === 'amateur' ? 'amateur' : 'comic';
+        $sampleMovieUrl = trim((string)($item['sampleMovieUrl'] ?? ''));
+        if ($floorKey === 'amateur' && !preg_match('~^https?://~i', $sampleMovieUrl)) {
+            throw new RuntimeException('素人動画のサンプルURLが不正です。');
+        }
 
         $price = trim((string)($item['price'] ?? ''));
         $priceValue = PriceParser::singleValue($price);
-        $randomKey = (int)sprintf('%u', crc32($cid));
+        $randomKey = (int)sprintf('%u', crc32($floorKey . '|' . $cid));
         $releaseDate = $this->dateValue((string)($item['releaseDate'] ?? ''));
-        $detailsStatus = isset($item['fullPageCount']) && is_int($item['fullPageCount']) ? 'known' : 'unknown';
+        $detailsStatus = $floorKey === 'comic' && isset($item['fullPageCount']) && is_int($item['fullPageCount'])
+            ? 'known'
+            : ($floorKey === 'amateur' ? 'known' : 'unknown');
 
         $pdo->beginTransaction();
         try {
-            $existing = $pdo->prepare('SELECT price, price_value FROM works WHERE cid = ? FOR UPDATE');
+            $existing = $pdo->prepare('SELECT floor_key, price, price_value FROM works WHERE cid = ? FOR UPDATE');
             $existing->execute([$cid]);
             $previous = $existing->fetch();
+            if (is_array($previous) && (string)($previous['floor_key'] ?? 'comic') !== $floorKey) {
+                throw new RuntimeException('同一CIDが別フロアですでに登録されています。');
+            }
 
             $stmt = $pdo->prepare(
                 'INSERT INTO works '
-                . '(cid, title, product_url, affiliate_url, description, sample_images_json, sample_count, full_page_count, volume, review_count, rating, price, price_value, release_date, maker, maker_id, random_key, is_active, availability_status, first_seen_at, last_seen_at, metadata_checked_at, price_checked_at, availability_checked_at, details_checked_at, details_status, next_refresh_at, refresh_fail_count) '
-                . 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, \'active\', NOW(), NOW(), NOW(), NOW(), NOW(), NOW(), ?, DATE_ADD(NOW(), INTERVAL 7 DAY), 0) '
+                . '(cid, floor_key, title, product_url, affiliate_url, description, sample_images_json, sample_movie_url, sample_count, full_page_count, volume, review_count, rating, price, price_value, release_date, maker, maker_id, random_key, is_active, availability_status, first_seen_at, last_seen_at, metadata_checked_at, price_checked_at, availability_checked_at, details_checked_at, details_status, next_refresh_at, refresh_fail_count) '
+                . 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, \'active\', NOW(), NOW(), NOW(), NOW(), NOW(), NOW(), ?, DATE_ADD(NOW(), INTERVAL 7 DAY), 0) '
                 . 'ON DUPLICATE KEY UPDATE '
-                . 'title=VALUES(title), product_url=COALESCE(NULLIF(VALUES(product_url), \'\'), product_url), affiliate_url=COALESCE(NULLIF(VALUES(affiliate_url), \'\'), affiliate_url), '
+                . 'floor_key=VALUES(floor_key), title=VALUES(title), product_url=COALESCE(NULLIF(VALUES(product_url), \'\'), product_url), affiliate_url=COALESCE(NULLIF(VALUES(affiliate_url), \'\'), affiliate_url), '
                 . 'description=CASE WHEN VALUES(description) IS NULL OR VALUES(description)=\'\' THEN description ELSE VALUES(description) END, '
-                . 'sample_images_json=VALUES(sample_images_json), sample_count=VALUES(sample_count), '
+                . 'sample_images_json=VALUES(sample_images_json), sample_movie_url=VALUES(sample_movie_url), sample_count=VALUES(sample_count), '
                 . 'full_page_count=COALESCE(VALUES(full_page_count), full_page_count), volume=CASE WHEN VALUES(volume)<>\'\' THEN VALUES(volume) ELSE volume END, '
                 . 'review_count=VALUES(review_count), rating=VALUES(rating), '
                 . 'price=CASE WHEN VALUES(price)<>\'\' THEN VALUES(price) ELSE price END, price_value=CASE WHEN VALUES(price)<>\'\' THEN VALUES(price_value) ELSE price_value END, '
@@ -55,11 +65,13 @@ final class WorkRepository
             );
             $stmt->execute([
                 $cid,
+                $floorKey,
                 (string)($item['title'] ?? ''),
                 (string)($item['productUrl'] ?? ''),
                 (string)($item['affiliateUrl'] ?? ''),
                 trim((string)($item['description'] ?? '')) ?: null,
                 json_encode(array_values(array_filter((array)($item['images'] ?? []), 'is_string')), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+                $sampleMovieUrl !== '' ? $sampleMovieUrl : null,
                 max(0, (int)($item['sampleCount'] ?? 0)),
                 isset($item['fullPageCount']) && is_int($item['fullPageCount']) ? $item['fullPageCount'] : null,
                 (string)($item['volume'] ?? ''),
@@ -101,23 +113,28 @@ final class WorkRepository
         return $saved;
     }
 
-    public function fetchAndUpsert(string $cid): array
+    public function fetchAndUpsert(string $cid, string $floorKey = 'comic'): array
     {
+        $floorKey = $this->fanza->normalizeFloorKey($floorKey);
         $normalized = $this->fanza->normalizeCid($cid);
-        $raw = $this->fanza->fetchItem($normalized, $this->fanza->resolveDoujinFloor());
-        return $this->upsertNormalized($this->fanza->feedItem($raw));
+        $raw = $this->fanza->fetchItem($normalized, $this->fanza->resolveFloor($floorKey));
+        return $this->upsertNormalized($this->fanza->feedItem($raw, $floorKey));
     }
 
     public function refreshCid(string $cid): array
     {
         $pdo = $this->requirePdo();
+        $floorStmt = $pdo->prepare('SELECT floor_key FROM works WHERE cid = ? LIMIT 1');
+        $floorStmt->execute([$cid]);
+        $floorKey = (string)($floorStmt->fetchColumn() ?: 'comic');
         try {
-            $item = $this->fetchAndUpsert($cid);
+            $item = $this->fetchAndUpsert($cid, $floorKey);
             return ['status' => 'updated', 'item' => $item];
         } catch (Throwable $error) {
             $message = $error->getMessage();
-            $notDisplayable = str_contains($message, '現在のFANZA同人APIでは取得できません')
-                || str_contains($message, 'コミック作品ではありません');
+            $notDisplayable = str_contains($message, '現在のFANZA APIでは取得できません')
+                || str_contains($message, 'コミック作品ではありません')
+                || str_contains($message, '表示可能な動画サンプルがありません');
             $pdo->beginTransaction();
             try {
                 $stmt = $pdo->prepare('SELECT refresh_fail_count FROM works WHERE cid = ? FOR UPDATE');
@@ -163,7 +180,7 @@ final class WorkRepository
         $pdo = $this->requirePdo();
         $placeholders = implode(',', array_fill(0, count($cids), '?'));
         $stmt = $pdo->prepare(
-            'SELECT cid,title,affiliate_url,sample_images_json,sample_count,full_page_count,review_count,rating,price,price_value,maker,maker_id,is_active,availability_status '
+            'SELECT cid,floor_key,title,affiliate_url,sample_images_json,sample_movie_url,sample_count,full_page_count,review_count,rating,price,price_value,maker,maker_id,is_active,availability_status '
             . 'FROM works WHERE cid IN (' . $placeholders . ')'
         );
         $stmt->execute($cids);
@@ -178,11 +195,15 @@ final class WorkRepository
             if (!is_array($row)) continue;
             $images = json_decode((string)$row['sample_images_json'], true);
             $images = is_array($images) ? array_values(array_filter($images, 'is_string')) : [];
+            $floorKey = (string)($row['floor_key'] ?? 'comic') === 'amateur' ? 'amateur' : 'comic';
             $result[$cid] = [
                 'cid' => $cid,
+                'floorKey' => $floorKey,
+                'mediaType' => $floorKey === 'amateur' ? 'video' : 'comic',
                 'title' => (string)$row['title'],
                 'affiliateUrl' => (string)$row['affiliate_url'],
                 'images' => $images,
+                'sampleMovieUrl' => (string)($row['sample_movie_url'] ?? ''),
                 'sampleCount' => (int)$row['sample_count'],
                 'fullPageCount' => $row['full_page_count'] === null ? null : (int)$row['full_page_count'],
                 'reviews' => (int)$row['review_count'],
