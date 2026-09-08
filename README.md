@@ -4,8 +4,6 @@ FANZA同人の**コミック作品だけ**を対象に、TikTok / Shortsのよ�
 
 現在の本番構成は **React 19 + Vite 7 + TypeScript / PHP 8.3 / MariaDB / シンレンタルサーバー** です。Node.jsは開発・CI・ビルド時だけ使用し、本番Webサーバーには常駐させません。
 
-> 2026-09-08時点。AV / 素人系動画を追加する前段として、旧「作品タイプ」機能を廃止し、現行カタログを同人コミック専用へ再設計しています。
-
 ## 現在のステータス
 
 - 本番環境へ継続デプロイ中
@@ -23,22 +21,14 @@ FANZA同人の**コミック作品だけ**を対象に、TikTok / Shortsのよ�
 
 ## コミック専用化の方針
 
-以前はFANZA同人フロア内の作品を `comic / cg / game / voice / other` に分類し、ユーザーが「作品タイプ」を選択できる設計でした。この分類・フィルターは廃止しました。
-
-現在は次の境界でコミック専用を保証します。
+アプリケーションのDomain invariantは **「`works` に存在する作品 = FANZA同人コミック」** です。作品種別やフロアをDB列・URL・UIで持たず、コミック以外を入口で除外します。
 
 1. FANZA APIレスポンスを取り込む前に `FanzaClient::isComicItem()` で `/digital/comic/` 系の作品だけを許可する
 2. 新着同期では非コミック作品を保存しない
 3. DB障害時のライブフォールバックでも非コミック作品をスキップする
 4. 直接CID指定で非コミックを指定してもReaderへ混入させない
-5. 既存DBのCG・ゲーム・音声・その他作品は一度だけmigrationで削除する
-6. 非コミック削除で孤立したジャンル・シリーズを整理する
-7. 古い固定Feedを破棄し、コミックだけで推薦Feedを再生成する
-8. 作品タイプ用のフロント型・URLパラメータ・UI・APIフィルターを廃止する
-
-既存本番DBに存在する旧 `asset_type / asset_bucket` 列は、旧リリースへ安全にロールバックできるよう**互換列として一時的に残します**。残存値とDEFAULTは`comic`へ固定し、新コードからは一切参照しません。新規DBの`schema.sql`には旧列を作成しません。これはexpand-contract migrationの互換期間です。
-
-migrationは非コミック削除・孤立メタデータ整理・互換列DDLがすべて成功した後に適用済みとしてmarkします。途中失敗時は次回実行で安全に再試行できます。
+5. `works` schemaに作品種別・動画URL用の列を持たない
+6. 検索・保存・推薦・履歴・行動計測も同じコミックカタログだけを参照する
 
 旧URLの `asset_type` / `category` パラメータはフロントで削除し、カタログ条件として使用しません。
 
@@ -62,13 +52,15 @@ migrationは非コミック削除・孤立メタデータ整理・互換列DDL�
 - 匿名データ削除
 - PWA / Service Worker
 - 3ステップのオンボーディング
-- メイン ↔ 保存済み / マイページ / 閲覧履歴間の閲覧位置復帰
+- メイン ↔ 検索 / 保存済み / マイページ / 閲覧履歴間の閲覧位置復帰
 
 ## 画面
 
 | Path | 内容 |
 | --- | --- |
 | `/` | メインの縦スワイプ・コミックFeed |
+| `/work/{cid}` | 共有用作品URL / 対象作品Reader |
+| `/search` | コミック詳細検索 |
 | `/saved` | 保存済みコミック |
 | `/mypage` | 匿名ユーザーのマイページ |
 | `/history` | 閲覧履歴 |
@@ -124,6 +116,7 @@ React Routerは使用せず、`src/main.tsx`でpathnameを判定して画面を�
 React / Vite
   ↓
 /api/catalog       コミックFeed
+/api/search        コミック詳細検索
 /api/meta          ジャンル
 /api/events        行動イベント
 /api/reactions     いいね・保存状態
@@ -166,13 +159,13 @@ recommender versionは **`rules-v3.2-comic`** です。
 
 DBへ接続できない、または表示可能なDB作品がない場合はFANZA APIからライブ取得します。
 
-同人フロアにはコミック以外も含まれるため、フォールバックでは最大複数APIページを走査し、`isComicItem()`を通過したコミックだけをFeedへ返します。`feedId`は`null`となり、`nextCursor`で続きを取得します。1回のAPIレスポンス途中で表示件数へ到達した場合も、未走査部分を飛ばさないcursor計算にしています。
+FANZA同人APIにはコミック以外も含まれるため、フォールバックでは最大複数APIページを走査し、`isComicItem()`を通過したコミックだけをFeedへ返します。`feedId`は`null`となり、`nextCursor`で続きを取得します。1回のAPIレスポンス途中で表示件数へ到達した場合も、未走査部分を飛ばさないcursor計算にしています。
 
-FANZAの`total_count`は同人フロア全体の件数なので、フォールバック中はコミック総数として画面へ表示しません。画面上は現在読み込めているコミック件数を使用します。
+FANZAの`total_count`は同人API全体の件数なので、フォールバック中はコミック総数として画面へ表示しません。画面上は現在読み込めているコミック件数を使用します。
 
 ## FANZA同期
 
-新着同期はFANZA同人フロアのレスポンスをそのままDBへ入れません。
+新着同期はFANZA同人APIのレスポンスをそのままDBへ入れません。
 
 ```text
 FANZA ItemList
@@ -188,7 +181,7 @@ isComicItem(raw)
      MariaDB
 ```
 
-`genres / series`も同人フロア全体のマスターを事前投入せず、実際に取り込んだコミックの`iteminfo`から保存します。これによりCG・ゲーム・音声だけで使われるメタデータが再混入しません。
+`genres / series`もAPI全体のマスターを事前投入せず、実際に取り込んだコミックの`iteminfo`から保存します。これによりCG・ゲーム・音声だけで使われるメタデータが混入しません。
 
 作品保守は3系統です。
 
@@ -214,7 +207,7 @@ isComicItem(raw)
 - `sync_runs`: 同期・巡回更新履歴
 - `app_migrations`: 一度だけ行うmigration管理
 
-新規DBの`works`には作品タイプ列を持ちません。現フェーズでは「worksに存在する作品 = 同人コミック」をDomain invariantとします。
+`works`に作品タイプ列や動画URL列はありません。コミック以外は保存前に除外します。
 
 IPアドレスや実名情報はアプリDBへ保存しません。イベント生ログは初期設定60日、匿名ユーザーと派生データは最終行動から180日で整理します。
 
@@ -264,22 +257,19 @@ npm run build:shin
 
 `check:debt`では既存のReader・年齢確認・履歴・削除等の回帰に加え、以下も検査します。
 
-- `AssetType` / `assetType` / 作品タイプUIの再混入
-- CatalogServiceへの`asset_type`分岐の再混入
-- WorkRepositoryへの旧作品タイプ列依存の再混入
-- 新規schemaへの`asset_type / asset_bucket`復活
+- フロア切替・動画Reader・動画CSSの再混入
+- `floor_key / sample_movie_url / asset_type / asset_bucket`のschema再混入
+- CatalogService / WorkRepository / APIへの作品種別分岐の再混入
 - FANZAコミック判定の欠落
 - 同期時の非コミックスキップ欠落
-- 同人フロア全体ジャンルの同期処理への再混入
-- 既存DBコミック専用化migration / 孤立メタ整理の欠落
-- migration完了markが互換DDLより先に立つ回帰
 - FANZA fallbackの複数ページ・部分ページcursor処理の欠落
+- 詳細検索・作品共有URL・固定Feedの主要回帰
 
 ## CI
 
 Pull RequestではTypeScript、全PHP構文、debt check、Readerロジック、MariaDB migration、検索、固定Feed、保存cursor、閲覧履歴cursor、匿名データ削除、価格差額、本番build、成果物への秘密情報混入をまとめて確認します。
 
-MariaDB 11.4をCI service containerとして使用します。新規schemaの再実行安全性に加え、旧`asset_type / asset_bucket`列を持つDBをCI内で再現し、非コミック削除、孤立ジャンル・シリーズ削除、互換列の`comic`固定、migration再実行を検証します。
+MariaDB 11.4をCI service containerとして使用し、schema再実行の安全性とコミック専用のDomain invariantを確認します。
 
 ## 本番デプロイ
 
@@ -298,7 +288,7 @@ DB migration
   ↓
 app / public_html切替
   ↓
-本番HTTP / PWA / fixed feed / public boundary検証
+本番HTTP / PWA / fixed feed / search / public boundary検証
 ```
 
 ## 本公開前に残っている主な事項
@@ -308,9 +298,7 @@ app / public_html切替
 主な残作業:
 
 - Reader実機QA
-- 作品単位共有URL / 動的OGP
+- 作品単位共有URL / 動的OGPの実機確認
 - PWA追加訴求の段階設計
 - SEO公開ページ / URL / index設計
 - X / 既存SEOサイトからの市場検証
-
-AV / 素人系動画の追加は、同人コミック版の市場検証後に別カテゴリとして設計します。現時点では動画のための`category / media_kind`を先回りして既存Domainへ持ち込みません。
