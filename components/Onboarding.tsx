@@ -21,15 +21,10 @@ type Step = {
   description: string;
 };
 
-type GestureAxis = "vertical" | "horizontal";
-
 type ActiveGesture = {
-  axis: GestureAxis;
   pointerId: number;
   startX: number;
   startY: number;
-  lastX: number;
-  lastY: number;
 };
 
 const STEPS: Step[] = [
@@ -69,12 +64,9 @@ function FeedPractice({ practiced, onPracticed }: { practiced: boolean; onPracti
   const pointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
     gestureRef.current = {
-      axis: "vertical",
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
-      lastX: event.clientX,
-      lastY: event.clientY,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
     event.currentTarget.classList.add("is-dragging");
@@ -83,8 +75,6 @@ function FeedPractice({ practiced, onPracticed }: { practiced: boolean; onPracti
   const pointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const gesture = gestureRef.current;
     if (!gesture || gesture.pointerId !== event.pointerId) return;
-    gesture.lastX = event.clientX;
-    gesture.lastY = event.clientY;
     const deltaY = clamp(event.clientY - gesture.startY, -72, 24);
     event.currentTarget.style.setProperty("--practice-y", `${deltaY}px`);
   };
@@ -92,7 +82,7 @@ function FeedPractice({ practiced, onPracticed }: { practiced: boolean; onPracti
   const finishPointer = (event: ReactPointerEvent<HTMLDivElement>) => {
     const gesture = gestureRef.current;
     if (!gesture || gesture.pointerId !== event.pointerId) return;
-    const deltaY = gesture.lastY - gesture.startY;
+    const deltaY = event.clientY - gesture.startY;
     gestureRef.current = null;
     resetOffset(event.currentTarget);
     if (deltaY <= -42) onPracticed();
@@ -159,12 +149,9 @@ function ReaderPractice({ practiced, onPracticed }: { practiced: boolean; onPrac
   const pointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
     gestureRef.current = {
-      axis: "horizontal",
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
-      lastX: event.clientX,
-      lastY: event.clientY,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
     event.currentTarget.classList.add("is-dragging");
@@ -173,8 +160,6 @@ function ReaderPractice({ practiced, onPracticed }: { practiced: boolean; onPrac
   const pointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const gesture = gestureRef.current;
     if (!gesture || gesture.pointerId !== event.pointerId) return;
-    gesture.lastX = event.clientX;
-    gesture.lastY = event.clientY;
     const deltaX = clamp(event.clientX - gesture.startX, -72, 72);
     event.currentTarget.style.setProperty("--practice-x", `${deltaX}px`);
   };
@@ -182,7 +167,7 @@ function ReaderPractice({ practiced, onPracticed }: { practiced: boolean; onPrac
   const finishPointer = (event: ReactPointerEvent<HTMLDivElement>) => {
     const gesture = gestureRef.current;
     if (!gesture || gesture.pointerId !== event.pointerId) return;
-    const deltaX = gesture.lastX - gesture.startX;
+    const deltaX = event.clientX - gesture.startX;
     gestureRef.current = null;
     resetOffset(event.currentTarget);
     if (Math.abs(deltaX) >= 42) onPracticed();
