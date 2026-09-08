@@ -20,6 +20,7 @@ import "@/styles/accessibility.css";
 import { hasAgeVerification } from "@/src/ageVerification";
 import { startAnalytics } from "@/src/analytics";
 import { installMainResumeLifecycle, prepareMainResumeFallback } from "@/src/navigationState";
+import { hasCompletedOnboarding, markOnboardingComplete } from "@/src/onboardingState";
 
 function boundedInt(
   params: URLSearchParams,
@@ -62,15 +63,21 @@ type MainExperienceProps = {
 };
 
 function MainExperience({ initialFilters, initialCid, skipOnboarding = false }: MainExperienceProps) {
-  // 一時仕様: 通常のFeedは新規表示するたびに案内。作品共有URLは対象作品へ直接入る。
-  const [onboardingComplete, setOnboardingComplete] = useState(skipOnboarding);
+  const [onboardingComplete, setOnboardingComplete] = useState(
+    () => skipOnboarding || hasCompletedOnboarding(),
+  );
 
   useEffect(() => {
     if (onboardingComplete) installMainResumeLifecycle();
   }, [onboardingComplete]);
 
+  const completeOnboarding = () => {
+    markOnboardingComplete();
+    setOnboardingComplete(true);
+  };
+
   if (!onboardingComplete) {
-    return <Onboarding onComplete={() => setOnboardingComplete(true)} />;
+    return <Onboarding mode="first-run" onComplete={completeOnboarding} />;
   }
 
   return <SwipePreviewApp initialFilters={initialFilters} initialCid={initialCid} />;
