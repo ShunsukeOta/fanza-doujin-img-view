@@ -3,101 +3,9 @@
   --nav-safe-bottom: env(safe-area-inset-bottom);
 }
 
-/*
- * Home Screen PWA ではブラウザ下部ツールバーが存在しないため、
- * グローバルナビ自身に safe-area 分の空白を追加しない。
- * Safari通常表示では従来どおり env(safe-area-inset-bottom) を維持する。
- */
+/* Home Screen PWAにはSafari下部ツールバーがないため、ナビ内へ追加safe-areaを作らない。 */
 @media (display-mode: standalone), (display-mode: fullscreen) {
-  :root {
-    --nav-safe-bottom: 0px;
-  }
-}
-
-.app-header {
-  justify-content: flex-end;
-}
-
-/* Shorts型ジェスチャーはWorkCard側で縦横とも制御する。 */
-.preview-track {
-  touch-action: none;
-  overscroll-behavior: none;
-}
-
-.preview-page,
-.feed-item {
-  scroll-snap-stop: normal;
-}
-
-.preview-page {
-  padding-bottom: calc(160px + var(--global-nav-h) + var(--nav-safe-bottom));
-}
-
-.item-info,
-.action-rail {
-  bottom: calc(var(--global-nav-h) + 10px + var(--nav-safe-bottom));
-}
-
-.item-gradient {
-  height: 52%;
-}
-
-.action-rail {
-  right: 8px;
-  gap: 5px;
-}
-
-.action-btn {
-  width: 46px;
-  gap: 1px;
-}
-
-.action-btn:disabled {
-  opacity: 0.72;
-  cursor: wait;
-}
-
-.action-icon {
-  width: 37px;
-  height: 37px;
-}
-
-.action-btn svg {
-  width: 18px;
-  height: 18px;
-}
-
-.debug-action .action-icon {
-  width: 34px;
-  height: 34px;
-}
-
-.debug-action svg {
-  width: 16px;
-  height: 16px;
-}
-
-.action-count {
-  min-width: 24px;
-  max-width: 46px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: #fff;
-  font-size: 9px;
-  font-weight: 800;
-  line-height: 1.05;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.icon-btn.is-filtered {
-  border-color: #ffffff52;
-  background: #242424e8;
-}
-
-.feed-loading-more,
-.toast {
-  bottom: calc(var(--global-nav-h) + 12px + var(--nav-safe-bottom));
+  :root { --nav-safe-bottom: 0px; }
 }
 
 .global-nav {
@@ -112,8 +20,8 @@
   grid-template-columns: 1fr 58px 1fr;
   align-items: center;
   gap: 6px;
+  border-top: 1px solid var(--border);
   background: var(--bg);
-  border-top: 1px solid #ffffff14;
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
 }
@@ -121,10 +29,10 @@
 .global-nav-item,
 .global-nav-main {
   border: 0;
-  background: none;
-  color: #8e8e8e;
   display: grid;
   place-items: center;
+  background: transparent;
+  color: #8e8e8e;
   cursor: pointer;
 }
 
@@ -147,7 +55,6 @@
   stroke-linejoin: round;
 }
 
-/* 見た目はアイコンだけ。ラベルはARIAで保持する。 */
 .global-nav-item span {
   display: none;
 }
@@ -157,15 +64,9 @@
   height: 34px;
   justify-self: center;
   border-radius: 10px;
-  background: #ff2d55 !important;
-  background-image: none !important;
+  background: var(--accent);
   color: #fff;
   box-shadow: 0 6px 16px #ff2d5538;
-}
-
-.global-nav-main[aria-current="page"] {
-  background: #ff2d55 !important;
-  background-image: none !important;
 }
 
 .global-nav-main svg {
@@ -174,27 +75,10 @@
   stroke-width: 2;
 }
 
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
 @media (max-width: 380px) {
   .global-nav {
     padding-left: 10px;
     padding-right: 10px;
-  }
-
-  .item-info,
-  .action-rail {
-    bottom: calc(var(--global-nav-h) + 8px + var(--nav-safe-bottom));
   }
 }
 
