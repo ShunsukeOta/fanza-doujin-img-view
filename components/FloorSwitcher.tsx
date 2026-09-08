@@ -7,9 +7,10 @@ type Props = {
   activeFloor: FloorKey;
   context: FloorContext;
   overlay?: boolean;
+  onFloorChange?: (floor: FloorKey) => void;
 };
 
-export function FloorSwitcher({ activeFloor, context, overlay = false }: Props) {
+export function FloorSwitcher({ activeFloor, context, overlay = false, onFloorChange }: Props) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -87,17 +88,17 @@ export function FloorSwitcher({ activeFloor, context, overlay = false }: Props) 
                 role="menuitem"
                 aria-current={active ? "page" : undefined}
                 onClick={(event) => {
-                  if (active) event.preventDefault();
+                  if (active) {
+                    event.preventDefault();
+                  } else if (floor.available && onFloorChange) {
+                    event.preventDefault();
+                    onFloorChange(floor.key);
+                  }
                   setOpen(false);
                 }}
                 key={floor.key}
               >
-                <span className="floor-switcher-option-mark" aria-hidden="true">
-                  <i />
-                  <i />
-                  <i />
-                  <i />
-                </span>
+                <span className="floor-switcher-option-mark" aria-hidden="true"><i /><i /></span>
                 <span className="floor-switcher-option-copy">
                   <strong>{floor.label}</strong>
                   <small>{floor.available ? "表示できます" : "近日対応予定"}</small>
