@@ -56,17 +56,6 @@ function parse_sync_date(string $raw, bool $end = false): ?DateTimeImmutable
 
 try {
     $floor = $fanza->resolveDoujinFloor();
-    $genreUpsert = $pdo->prepare(
-        'INSERT INTO genres (id, name, ruby) VALUES (?, ?, ?) '
-        . 'ON DUPLICATE KEY UPDATE name = VALUES(name), ruby = VALUES(ruby)'
-    );
-    foreach ($fanza->fetchGenres((string)$floor['floorId']) as $genre) {
-        $genreUpsert->execute([
-            (string)$genre['id'],
-            (string)$genre['name'],
-            (string)($genre['ruby'] ?? ''),
-        ]);
-    }
 
     $ranges = [];
     $start = parse_sync_date($since);
@@ -120,6 +109,7 @@ try {
                 if (trim((string)($item['cid'] ?? '')) === '') {
                     continue;
                 }
+                // genres / series はコミック作品のiteminfoからWorkRepositoryがupsertする。
                 $workRepository->upsertNormalized($item);
                 $processed++;
             }
