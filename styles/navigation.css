@@ -19,7 +19,7 @@
   border: 1px solid #ffffff1f;
   border-radius: 19px;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: stretch;
   gap: 4px;
   transform: translateX(-50%);
@@ -32,7 +32,7 @@
 .global-nav-item {
   min-width: 0;
   min-height: 48px;
-  padding: 5px 8px 4px;
+  padding: 5px 5px 4px;
   border: 0;
   border-radius: 15px;
   display: flex;
@@ -97,10 +97,12 @@
   .global-nav {
     width: calc(100% - 14px);
     bottom: calc(6px + var(--nav-safe-bottom));
+    gap: 2px;
   }
 
   .global-nav-item {
-    padding-inline: 4px;
+    padding-inline: 2px;
+    font-size: 8px;
   }
 }
 
