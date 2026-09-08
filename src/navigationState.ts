@@ -107,7 +107,7 @@ function fallbackMainPath(): string {
   return "/";
 }
 
-export function navigateToSubpage(subpage: SubpagePath, origin: NavOrigin, target = subpage): void {
+export function navigateToSubpage(subpage: SubpagePath, origin: NavOrigin, target: string = subpage): void {
   if (origin === "main") rememberMainBeforeSubpage(subpage);
   else continueSubpageNavigation(subpage);
   window.location.assign(target);
