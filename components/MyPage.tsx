@@ -9,7 +9,9 @@ import { fetchJson } from "@/src/api";
 import { navigateToSubpage, openWorkInMain } from "@/src/navigationState";
 import {
   loadReaderSettings,
+  readerSettingsEqual,
   saveReaderSettings,
+  subscribeReaderSettings,
   type ReaderSettings,
 } from "@/src/readerSettings";
 
@@ -90,12 +92,16 @@ export function MyPage() {
     void load();
   }, [load]);
 
+  useEffect(() => subscribeReaderSettings((next) => {
+    setReaderSettings((current) => readerSettingsEqual(current, next) ? current : next);
+  }), []);
+
+  useEffect(() => {
+    saveReaderSettings(readerSettings);
+  }, [readerSettings]);
+
   const updateReader = (patch: Partial<ReaderSettings>) => {
-    setReaderSettings((current) => {
-      const next = { ...current, ...patch };
-      saveReaderSettings(next);
-      return next;
-    });
+    setReaderSettings((current) => ({ ...current, ...patch }));
   };
 
   const deleteAnonymousData = async () => {
