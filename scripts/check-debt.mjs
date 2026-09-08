@@ -81,6 +81,9 @@ if (!main.includes('pathname === "/search"') || !main.includes("<SearchPage")) {
 if (!main.includes("workCidFromPath") || !main.includes("<FloorTabs")) {
   fail("作品単位URLまたはFeedフロア切替がMainへ統合されていません。");
 }
+if (!main.includes('skipOnboarding={pathWorkCid !== ""}')) {
+  fail("共有作品URLが通常Feed用オンボーディングを迂回してReaderへ直行しません。");
+}
 
 const imagePreload = readFileSync("src/imagePreload.ts", "utf8");
 if (!imagePreload.includes("MAX_DECODE_CACHE")) fail("画像decodeキャッシュの上限がありません。");
@@ -240,8 +243,12 @@ const historyApi = readFileSync("server/public/api/history.php", "utf8");
 if (!historyApi.includes("userLibraryService->history")) fail("閲覧履歴APIがUserLibraryServiceへ接続されていません。");
 
 const searchApi = readFileSync("server/public/api/search.php", "utf8");
+if (!searchApi.includes("searchService->search")) {
+  fail("詳細検索APIがSearchServiceへ接続されていません。");
+}
+const searchService = readFileSync("server/app/src/SearchService.php", "utf8");
 for (const required of ["maker_query", "series_query", "genre_id", "price_asc", "feedItemsByCids"]) {
-  if (!searchApi.includes(required)) fail(`詳細検索APIに ${required} がありません。`);
+  if (!searchService.includes(required)) fail(`SearchServiceに ${required} がありません。`);
 }
 
 const workPage = readFileSync("server/public/work.php", "utf8");
@@ -254,6 +261,7 @@ const router = readFileSync("server/public/router.php", "utf8");
 if (!htaccess.includes("history") || !router.includes("history")) fail("閲覧履歴APIのルーティングが不足しています。");
 if (!htaccess.includes("search") || !router.includes("search")) fail("詳細検索APIのルーティングが不足しています。");
 if (!htaccess.includes("work.php?cid=") || !router.includes("/work/")) fail("作品単位URLのルーティングが不足しています。");
+if (!htaccess.includes("R=301") || !htaccess.includes("QSD")) fail("旧cid共有URLがcanonical作品URLへ301統一されていません。");
 if (!htaccess.includes("fonts.googleapis.com") || !htaccess.includes("fonts.gstatic.com")) {
   fail("Noto Sans JP配信元がCSPで許可されていません。");
 }
