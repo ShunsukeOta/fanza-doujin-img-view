@@ -1,4 +1,4 @@
-import { StrictMode, type ReactNode, useState } from "react";
+import { StrictMode, type ReactNode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 import { MyPage } from "@/components/MyPage";
@@ -58,6 +58,10 @@ function MainExperience({ initialFilters, initialCid }: MainExperienceProps) {
   // 一時仕様: 閲覧済みフラグを保存せず、メインページを新規表示するたびに必ず出す。
   const [onboardingComplete, setOnboardingComplete] = useState(false);
 
+  useEffect(() => {
+    if (onboardingComplete) installMainResumeLifecycle();
+  }, [onboardingComplete]);
+
   if (!onboardingComplete) {
     return <Onboarding onComplete={() => setOnboardingComplete(true)} />;
   }
@@ -98,5 +102,4 @@ if (pathname === "/favorites") {
   else app = <MainExperience initialFilters={initialFilters} initialCid={params.get("cid") ?? ""} />;
 
   createRoot(root).render(<StrictMode>{app}</StrictMode>);
-  if (pathname !== "/saved" && pathname !== "/mypage") installMainResumeLifecycle();
 }
