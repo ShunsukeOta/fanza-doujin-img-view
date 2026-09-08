@@ -95,6 +95,8 @@ export function FloorSwitcher({ activeFloor, context, overlay = false }: Props) 
                 <span className="floor-switcher-option-mark" aria-hidden="true">
                   <i />
                   <i />
+                  <i />
+                  <i />
                 </span>
                 <span className="floor-switcher-option-copy">
                   <strong>{floor.label}</strong>
