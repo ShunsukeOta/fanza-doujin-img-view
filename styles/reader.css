@@ -222,12 +222,18 @@
   z-index: 12;
   top: 50%;
   left: 50%;
+  max-width: calc(100vw - 28px);
   transform: translate(-50%, -50%);
-  padding: 8px 11px;
+  padding: 8px 12px;
   border-radius: var(--radius-pill);
   background: #00000094;
   color: #ddd;
-  font-size: 11px;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+  word-break: keep-all;
   pointer-events: none;
   opacity: 0;
 }
@@ -337,16 +343,16 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
+  gap: 12px;
 }
 
 .action-btn {
-  width: 46px;
+  width: 48px;
   padding: 0;
   border: 0;
   display: grid;
   justify-items: center;
-  gap: 1px;
+  gap: 2px;
   background: transparent;
   color: #fff;
   cursor: pointer;
@@ -355,8 +361,9 @@
 .action-btn:disabled { opacity: .72; }
 
 .action-icon {
-  width: 37px;
-  height: 37px;
+  width: 38px;
+  height: 38px;
+  margin-bottom: 1px;
   border: 1px solid #ffffff21;
   border-radius: 50%;
   display: grid;
@@ -384,12 +391,12 @@
 .action-count {
   color: #ddd;
   font-size: 9px;
-  line-height: 1.05;
+  line-height: 1.15;
 }
 
 .action-count {
   min-width: 24px;
-  max-width: 46px;
+  max-width: 48px;
   overflow: hidden;
   color: #fff;
   font-weight: 800;
@@ -723,13 +730,6 @@
 .reader-setting-toggle small { color: #777; font-size: 9px; }
 .reader-setting-toggle input { width: 38px; height: 22px; flex: 0 0 auto; accent-color: #f1f1f1; }
 
-.reader-settings-note {
-  margin: 10px 0 0;
-  color: #707070;
-  font-size: 9px;
-  line-height: 1.65;
-}
-
 @media (max-width: 380px) {
   .header-actions { margin-right: 45px; }
   .focus-mode-toggle { right: 10px; }
@@ -737,7 +737,7 @@
   .reader-cta { padding: 20px 16px 16px; }
   .item-info,
   .action-rail { bottom: calc(var(--global-nav-h) + 8px + var(--nav-safe-bottom)); }
-  .action-rail { right: 5px; }
+  .action-rail { right: 5px; gap: 10px; }
 }
 
 @media (min-width: 760px) {
