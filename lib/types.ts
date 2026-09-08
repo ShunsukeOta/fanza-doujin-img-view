@@ -1,5 +1,3 @@
-export type AssetType = "all" | "comic" | "cg" | "game" | "voice" | "other";
-
 export type FloorInfo = {
   siteCode: string;
   siteName: string;
@@ -11,7 +9,6 @@ export type FloorInfo = {
 };
 
 export type Genre = { id: string; name: string; ruby: string };
-export type AssetTypeDefinition = { key: AssetType; label: string };
 
 export type ReactionSummary = {
   cid: string;
@@ -38,9 +35,6 @@ export type FeedItem = {
   priceValue?: number | null;
   savedPriceValue?: number | null;
   priceDropValue?: number | null;
-  assetBucket: string;
-  assetType: Exclude<AssetType, "all">;
-  assetLabel: string;
   available?: boolean;
   availabilityStatus?: string;
   feedId?: string | null;
@@ -70,12 +64,10 @@ export type CatalogResponse = {
 export type MetaResponse = {
   floor: FloorInfo;
   genres: Genre[];
-  assetTypes: AssetTypeDefinition[];
   recommenderVersion?: string;
 };
 
 export type FilterValues = {
-  assetType: AssetType;
   genreId: string;
   minSamples: number;
   minReviews: number;
