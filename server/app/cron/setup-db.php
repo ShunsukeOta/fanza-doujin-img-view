@@ -32,14 +32,19 @@ foreach ($statements as $statement) {
     }
 }
 
-function ensure_column(PDO $pdo, string $table, string $column, string $definition): void
+function column_exists(PDO $pdo, string $table, string $column): bool
 {
     $stmt = $pdo->prepare(
         'SELECT COUNT(*) FROM information_schema.columns '
         . 'WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?'
     );
     $stmt->execute([$table, $column]);
-    if ((int)$stmt->fetchColumn() === 0) {
+    return (int)$stmt->fetchColumn() > 0;
+}
+
+function ensure_column(PDO $pdo, string $table, string $column, string $definition): void
+{
+    if (!column_exists($pdo, $table, $column)) {
         $pdo->exec("ALTER TABLE `{$table}` ADD COLUMN `{$column}` {$definition}");
     }
 }
@@ -67,6 +72,21 @@ function mark_migration(PDO $pdo, string $id): void
 {
     $stmt = $pdo->prepare('INSERT IGNORE INTO app_migrations (id, applied_at) VALUES (?, NOW())');
     $stmt->execute([$id]);
+}
+
+function rebuild_genre_scores(PDO $pdo): void
+{
+    $pdo->exec('DELETE FROM user_genre_scores');
+    $pdo->exec(
+        'INSERT INTO user_genre_scores (anonymous_user_id, genre_id, score, updated_at) '
+        . 'SELECT s.anonymous_user_id, wg.genre_id, '
+        . 'LEAST(20, GREATEST(-12, SUM((s.liked * 4 + s.saved * 5) / SQRT(gc.genre_count)))), NOW() '
+        . 'FROM user_work_states s '
+        . 'JOIN work_genres wg ON wg.work_cid = s.work_cid '
+        . 'JOIN (SELECT work_cid, COUNT(*) AS genre_count FROM work_genres GROUP BY work_cid) gc ON gc.work_cid = s.work_cid '
+        . 'WHERE s.liked = 1 OR s.saved = 1 '
+        . 'GROUP BY s.anonymous_user_id, wg.genre_id'
+    );
 }
 
 $workColumns = [
@@ -128,7 +148,47 @@ if ((int)$uniqueEventIndex->fetchColumn() === 0) {
     $pdo->exec('ALTER TABLE events ADD UNIQUE INDEX uq_events_event_id (event_id)');
 }
 
-// 既存作品の初期化はNULL/未設定行だけを更新し、約12万件を毎デプロイ書き換えない。
+// 作品タイプ機能廃止: 既存DBだけに存在する旧分類列を使って非コミックデータを1回だけ除去する。
+// 列自体は旧リリースへロールバックできるよう互換用に残し、残存値とDEFAULTをcomicへ固定する。
+$comicOnlyMigration = 'comic-only-catalog-20260908';
+if (!migration_applied($pdo, $comicOnlyMigration)) {
+    $removed = 0;
+    if (column_exists($pdo, 'works', 'asset_type')) {
+        $removed = (int)$pdo->query("SELECT COUNT(*) FROM works WHERE asset_type <> 'comic'")->fetchColumn();
+        $pdo->beginTransaction();
+        try {
+            $pdo->exec(
+                "DELETE e FROM events e JOIN works w ON w.cid = e.work_cid WHERE w.asset_type <> 'comic'"
+            );
+            $pdo->exec(
+                "DELETE s FROM user_work_states s JOIN works w ON w.cid = s.work_cid WHERE w.asset_type <> 'comic'"
+            );
+            $pdo->exec("DELETE FROM works WHERE asset_type <> 'comic'");
+            $pdo->exec('DELETE FROM feed_sessions');
+            rebuild_genre_scores($pdo);
+            mark_migration($pdo, $comicOnlyMigration);
+            $pdo->commit();
+        } catch (Throwable $error) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $error;
+        }
+
+        // DDLはトランザクション外。新コードはこれらの列を参照しない。
+        $pdo->exec("UPDATE works SET asset_type='comic'");
+        $pdo->exec("ALTER TABLE works MODIFY asset_type VARCHAR(16) NOT NULL DEFAULT 'comic'");
+        if (column_exists($pdo, 'works', 'asset_bucket')) {
+            $pdo->exec("UPDATE works SET asset_bucket='comic'");
+            $pdo->exec("ALTER TABLE works MODIFY asset_bucket VARCHAR(64) NOT NULL DEFAULT 'comic'");
+        }
+    } else {
+        mark_migration($pdo, $comicOnlyMigration);
+    }
+    fwrite(STDOUT, "コミック専用化 migration removed_non_comic={$removed}\n");
+}
+
+// 既存作品の初期化はNULL/未設定行だけを更新し、全件を毎デプロイ書き換えない。
 $pdo->exec('UPDATE works SET random_key = CRC32(cid) WHERE random_key = 0');
 $pdo->exec("UPDATE works SET availability_status = IF(is_active = 1, 'active', 'unavailable') WHERE availability_status = '' OR availability_status IS NULL");
 $pdo->exec('UPDATE works SET metadata_checked_at = last_seen_at WHERE metadata_checked_at IS NULL');
@@ -162,17 +222,7 @@ $rebuildId = 'recommendation-v3-rebuild-20260907';
 if (!migration_applied($pdo, $rebuildId)) {
     $pdo->beginTransaction();
     try {
-        $pdo->exec('DELETE FROM user_genre_scores');
-        $pdo->exec(
-            'INSERT INTO user_genre_scores (anonymous_user_id, genre_id, score, updated_at) '
-            . 'SELECT s.anonymous_user_id, wg.genre_id, '
-            . 'LEAST(20, GREATEST(-12, SUM((s.liked * 4 + s.saved * 5) / SQRT(gc.genre_count)))), NOW() '
-            . 'FROM user_work_states s '
-            . 'JOIN work_genres wg ON wg.work_cid = s.work_cid '
-            . 'JOIN (SELECT work_cid, COUNT(*) AS genre_count FROM work_genres GROUP BY work_cid) gc ON gc.work_cid = s.work_cid '
-            . 'WHERE s.liked = 1 OR s.saved = 1 '
-            . 'GROUP BY s.anonymous_user_id, wg.genre_id'
-        );
+        rebuild_genre_scores($pdo);
         mark_migration($pdo, $rebuildId);
         $pdo->commit();
     } catch (Throwable $error) {
