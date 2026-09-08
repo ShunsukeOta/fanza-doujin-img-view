@@ -26,6 +26,10 @@ for (const path of [
   "components/FloorTabs.tsx",
   "components/ComingSoonFloorPage.tsx",
   "src/floors.ts",
+  "components/Onboarding.tsx",
+  "styles/onboarding.css",
+  "src/onboardingState.ts",
+  "docs/onboarding-implementation.md",
 ]) {
   if (existsSync(path)) fail(`廃止済みファイル ${path} が残っています。`);
 }
@@ -35,7 +39,6 @@ const styleFiles = [
   "styles/navigation.css",
   "styles/pages.css",
   "styles/reader.css",
-  "styles/onboarding.css",
   "styles/discovery.css",
   "styles/accessibility.css",
 ];
@@ -59,6 +62,7 @@ mustNotContain(css, [
   ".video-feed-item",
   ".video-embed-player",
   ".video-swipe-zone",
+  ".onboarding",
 ], "CSS");
 mustContain(css, [
   ".feed-load-error",
@@ -88,10 +92,8 @@ mustContain(main, [
   'pathname === "/search"',
   "<SearchPage",
   "workCidFromPath",
-  'skipOnboarding={pathWorkCid !== ""}',
-  "hasCompletedOnboarding",
-  "markOnboardingComplete",
-  '<Onboarding mode="first-run"',
+  "installMainResumeLifecycle",
+  "<SwipePreviewApp",
 ], "Main");
 mustNotContain(main, [
   "FloorSwitcher",
@@ -100,54 +102,17 @@ mustNotContain(main, [
   'pathname === "/amateur"',
   'pathname === "/actress"',
   'styles/video.css',
-  "新規表示するたびに案内",
-], "Main");
-
-if (!existsSync("src/onboardingState.ts")) fail("オンボーディング完了状態の永続化がありません。");
-const onboardingState = read("src/onboardingState.ts");
-mustContain(onboardingState, [
-  'swipe-preview:onboarding-v2',
+  "Onboarding",
+  "onboardingState",
+  "onboarding.css",
   "hasCompletedOnboarding",
   "markOnboardingComplete",
-  "localStorage",
-  "sessionStorage",
-], "オンボーディング状態");
-
-const onboarding = read("components/Onboarding.tsx");
-mustContain(onboarding, [
-  "FeedPractice",
-  "ReaderPractice",
-  "setPointerCapture",
-  "deltaY <= -42",
-  "Math.abs(deltaX) >= 42",
-  'aria-modal="true"',
-], "オンボーディング");
-mustNotContain(onboarding, [
-  "key={stepIndex}",
-  "handlePointerDown",
-  "handlePointerUp",
-  "onboarding-floating-reaction",
-], "オンボーディング");
-
-const onboardingCss = read("styles/onboarding.css");
-mustContain(onboardingCss, [
-  ".onboarding-practice--feed",
-  ".onboarding-practice--reader",
-  "touch-action: none",
-  "contain: layout paint",
-  "@media (prefers-reduced-motion: reduce)",
-], "オンボーディングCSS");
-mustNotContain(onboardingCss, [
-  "perspective:",
-  "backdrop-filter",
-  "onboarding-floating-reaction",
-  "onboarding-enter",
-  "onboarding-float",
-  "transform: scale(.88)",
-], "オンボーディングCSS");
+  "skipOnboarding",
+], "Main");
 
 const myPage = read("components/MyPage.tsx");
-mustContain(myPage, ['<Onboarding mode="guide"', "上下スワイプ・ページ送り・保存方法を確認"], "マイページ操作ガイド");
+mustContain(myPage, ["subscribeReaderSettings", "readerSettingsEqual"], "マイページ");
+mustNotContain(myPage, ["Onboarding", "guideOpen", "setGuideOpen", "操作ガイド"], "マイページ");
 
 const app = read("components/SwipePreviewApp.tsx");
 mustContain(app, ["WorkCard", "subscribeReaderSettings", "draftMinSamples", "RATING_OPTIONS", "ビューアー設定"], "Feed");
@@ -256,5 +221,10 @@ const historyApi = read("server/public/api/history.php");
 if (!historyApi.includes("userLibraryService->history")) fail("閲覧履歴APIがUserLibraryServiceへ接続されていません。");
 const api = read("src/api.ts");
 mustNotContain(api, ["retryDelay", "retryAfterMs", "ApiError"], "API補助実装");
+
+const readme = read("README.md");
+const shareDesign = read("docs/share-search-design.md");
+mustNotContain(readme, ["オンボーディング", "操作ガイド", "onboarding"], "README");
+mustNotContain(shareDesign, ["オンボーディング", "onboarding"], "共有・検索設計書");
 
 if (!process.exitCode) console.log("debt check: OK");

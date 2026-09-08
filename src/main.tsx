@@ -5,7 +5,6 @@ import { AgeGate } from "@/components/AgeGate";
 import { HistoryPage } from "@/components/HistoryPage";
 import { PrivacyPolicyPage, TermsPage } from "@/components/LegalPages";
 import { MyPage } from "@/components/MyPage";
-import { Onboarding } from "@/components/Onboarding";
 import { SavedPage } from "@/components/SavedPage";
 import { SearchPage } from "@/components/SearchPage";
 import { SwipePreviewApp } from "@/components/SwipePreviewApp";
@@ -14,13 +13,11 @@ import "@/styles/globals.css";
 import "@/styles/navigation.css";
 import "@/styles/pages.css";
 import "@/styles/reader.css";
-import "@/styles/onboarding.css";
 import "@/styles/discovery.css";
 import "@/styles/accessibility.css";
 import { hasAgeVerification } from "@/src/ageVerification";
 import { startAnalytics } from "@/src/analytics";
 import { installMainResumeLifecycle, prepareMainResumeFallback } from "@/src/navigationState";
-import { hasCompletedOnboarding, markOnboardingComplete } from "@/src/onboardingState";
 
 function boundedInt(
   params: URLSearchParams,
@@ -59,26 +56,12 @@ function workCidFromPath(pathname: string): string {
 type MainExperienceProps = {
   initialFilters: FilterValues;
   initialCid: string;
-  skipOnboarding?: boolean;
 };
 
-function MainExperience({ initialFilters, initialCid, skipOnboarding = false }: MainExperienceProps) {
-  const [onboardingComplete, setOnboardingComplete] = useState(
-    () => skipOnboarding || hasCompletedOnboarding(),
-  );
-
+function MainExperience({ initialFilters, initialCid }: MainExperienceProps) {
   useEffect(() => {
-    if (onboardingComplete) installMainResumeLifecycle();
-  }, [onboardingComplete]);
-
-  const completeOnboarding = () => {
-    markOnboardingComplete();
-    setOnboardingComplete(true);
-  };
-
-  if (!onboardingComplete) {
-    return <Onboarding mode="first-run" onComplete={completeOnboarding} />;
-  }
+    installMainResumeLifecycle();
+  }, []);
 
   return <SwipePreviewApp initialFilters={initialFilters} initialCid={initialCid} />;
 }
@@ -119,8 +102,7 @@ const initialFilters: FilterValues = {
   maxPrice: boundedInt(params, "max_price", 0, 0, 10_000_000),
   query: (params.get("q") ?? "").slice(0, 100),
 };
-const pathWorkCid = workCidFromPath(pathname);
-const workCid = pathWorkCid || (params.get("cid") ?? "");
+const workCid = workCidFromPath(pathname) || (params.get("cid") ?? "");
 
 const root = document.getElementById("root");
 if (!root) throw new Error("#root が見つかりません。");
@@ -139,13 +121,7 @@ if (pathname === "/favorites") {
     else if (pathname === "/search") protectedPage = <SearchPage />;
     else if (pathname === "/mypage") protectedPage = <MyPage />;
     else if (pathname === "/history") protectedPage = <HistoryPage />;
-    else protectedPage = (
-      <MainExperience
-        initialFilters={initialFilters}
-        initialCid={workCid}
-        skipOnboarding={pathWorkCid !== ""}
-      />
-    );
+    else protectedPage = <MainExperience initialFilters={initialFilters} initialCid={workCid} />;
     app = <ProtectedExperience>{protectedPage}</ProtectedExperience>;
   }
 
