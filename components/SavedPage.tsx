@@ -168,9 +168,7 @@ export function SavedPage() {
                       ) : (
                         <div className="favorite-noimage">NO IMAGE</div>
                       )}
-                      <span className="favorite-type">
-                        {item.available === false ? "販売終了" : "コミック"}
-                      </span>
+                      {item.available === false ? <span className="favorite-type">販売終了</span> : null}
                       <button
                         className="favorite-save-toggle"
                         type="button"
