@@ -1,6 +1,9 @@
 import { StrictMode, type ReactNode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 
+import { AgeGate } from "@/components/AgeGate";
+import { HistoryPage } from "@/components/HistoryPage";
+import { PrivacyPolicyPage, TermsPage } from "@/components/LegalPages";
 import { MyPage } from "@/components/MyPage";
 import { Onboarding } from "@/components/Onboarding";
 import { SavedPage } from "@/components/SavedPage";
@@ -12,6 +15,7 @@ import "@/styles/pages.css";
 import "@/styles/reader.css";
 import "@/styles/onboarding.css";
 import "@/styles/accessibility.css";
+import { hasAgeVerification } from "@/src/ageVerification";
 import { startAnalytics } from "@/src/analytics";
 import { installMainResumeLifecycle, prepareMainResumeFallback } from "@/src/navigationState";
 
@@ -66,8 +70,22 @@ function MainExperience({ initialFilters, initialCid }: MainExperienceProps) {
   return <SwipePreviewApp initialFilters={initialFilters} initialCid={initialCid} />;
 }
 
+function ProtectedExperience({ children }: { children: ReactNode }) {
+  const [verified, setVerified] = useState(() => hasAgeVerification());
+
+  useEffect(() => {
+    if (verified) startAnalytics();
+  }, [verified]);
+
+  if (!verified) {
+    return <AgeGate onVerified={() => setVerified(true)} />;
+  }
+
+  return children;
+}
+
 const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
-if (pathname !== "/saved" && pathname !== "/mypage" && pathname !== "/favorites") {
+if (!["/saved", "/mypage", "/history", "/favorites", "/privacy", "/terms"].includes(pathname)) {
   prepareMainResumeFallback();
 }
 
@@ -88,15 +106,21 @@ const root = document.getElementById("root");
 if (!root) throw new Error("#root が見つかりません。");
 
 registerServiceWorker();
-startAnalytics();
 
 if (pathname === "/favorites") {
   window.location.replace("/saved");
 } else {
   let app: ReactNode;
-  if (pathname === "/saved") app = <SavedPage />;
-  else if (pathname === "/mypage") app = <MyPage />;
-  else app = <MainExperience initialFilters={initialFilters} initialCid={params.get("cid") ?? ""} />;
+  if (pathname === "/privacy") app = <PrivacyPolicyPage />;
+  else if (pathname === "/terms") app = <TermsPage />;
+  else {
+    let protectedPage: ReactNode;
+    if (pathname === "/saved") protectedPage = <SavedPage />;
+    else if (pathname === "/mypage") protectedPage = <MyPage />;
+    else if (pathname === "/history") protectedPage = <HistoryPage />;
+    else protectedPage = <MainExperience initialFilters={initialFilters} initialCid={params.get("cid") ?? ""} />;
+    app = <ProtectedExperience>{protectedPage}</ProtectedExperience>;
+  }
 
   createRoot(root).render(<StrictMode>{app}</StrictMode>);
 }
