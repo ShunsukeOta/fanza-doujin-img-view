@@ -16,7 +16,7 @@ jobs:
   build:
     if: ${{ github.event_name == 'workflow_dispatch' || !contains(github.event.pull_request.title, '[skip ci]') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 12
     services:
       mariadb:
         image: mariadb:11.4
@@ -70,32 +70,18 @@ jobs:
               if (SwipePreview\PriceParser::singleValue($raw) !== $expected) exit(1);
             }
           '
-          php <<'PHP'
-          <?php
-          require 'server/app/src/FanzaClient.php';
-          $client = new SwipePreview\FanzaClient(['api_id' => '', 'affiliate_id' => '']);
-          $comic = $client->feedItem([
-              'content_id' => 'test001',
-              'title' => 'test',
-              'imageURL' => ['large' => 'https://pics.dmm.co.jp/digital/comic/test/testpl.jpg'],
-              'iteminfo' => ['maker' => [['id' => 'maker-001', 'name' => 'Test Circle']]],
-          ]);
-          if (($comic['makerId'] ?? '') !== 'maker-001' || ($comic['floorKey'] ?? '') !== 'comic') exit(1);
-          if ($client->isComicItem(['imageURL' => ['large' => 'https://pics.dmm.co.jp/digital/cg/test/testpl.jpg']])) exit(1);
-          $video = $client->feedItem([
-              'content_id' => 'video001',
-              'title' => 'video',
-              'imageURL' => ['large' => 'https://pics.dmm.co.jp/digital/video/test.jpg'],
-              'sampleMovieURL' => [
-                  'size_560_360' => 'https://www.dmm.co.jp/litevideo/-/part/=/cid=video001/size=560_360/',
-                  'size_720_480' => 'https://www.dmm.co.jp/litevideo/-/part/=/cid=video001/size=720_480/',
-              ],
-              'iteminfo' => ['genre' => [['id' => '1', 'name' => 'test']]],
-          ], 'amateur');
-          if (($video['floorKey'] ?? '') !== 'amateur' || ($video['mediaType'] ?? '') !== 'video') exit(1);
-          if (($video['sampleMovieUrl'] ?? '') !== 'https://www.dmm.co.jp/litevideo/-/part/=/cid=video001/size=720_480/') exit(1);
-          if (($video['genreRows'][0]['id'] ?? '') !== 'amateur:1') exit(1);
-          PHP
+          php -r '
+            require "server/app/src/FanzaClient.php";
+            $client = new SwipePreview\FanzaClient(["api_id" => "", "affiliate_id" => ""]);
+            $item = $client->feedItem([
+              "content_id" => "test001",
+              "title" => "test",
+              "imageURL" => ["large" => "https://pics.dmm.co.jp/digital/comic/test/testpl.jpg"],
+              "iteminfo" => ["maker" => [["id" => "maker-001", "name" => "Test Circle"]]],
+            ]);
+            if (($item["makerId"] ?? "") !== "maker-001" || ($item["maker"] ?? "") !== "Test Circle") exit(1);
+            if ($client->isComicItem(["imageURL" => ["large" => "https://pics.dmm.co.jp/digital/cg/test/testpl.jpg"]])) exit(1);
+          '
 
       - name: MariaDB設定を作成
         run: |
@@ -123,7 +109,7 @@ jobs:
           ];
           PHP
 
-      - name: DB移行を冪等実行して複数フロアschemaを確認
+      - name: DB移行を冪等実行してコミック専用schemaを確認
         run: |
           set -euo pipefail
           php server/app/cron/setup-db.php
@@ -131,111 +117,96 @@ jobs:
           php <<'PHP'
           <?php
           $config = require 'server/app/config.local.php';
-          $pdo = new PDO(
-              sprintf('mysql:host=%s;port=%d;dbname=%s;charset=%s', $config['db']['host'], $config['db']['port'], $config['db']['name'], $config['db']['charset']),
-              $config['db']['user'],
-              $config['db']['password'],
-              [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES => false],
+          $dsn = sprintf(
+              'mysql:host=%s;port=%d;dbname=%s;charset=%s',
+              $config['db']['host'],
+              $config['db']['port'],
+              $config['db']['name'],
+              $config['db']['charset'],
           );
+          $pdo = new PDO($dsn, $config['db']['user'], $config['db']['password'], [
+              PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+              PDO::ATTR_EMULATE_PREPARES => false,
+          ]);
           foreach (['works', 'feed_sessions', 'feed_items', 'events', 'app_migrations', 'sync_runs'] as $table) {
-              $stmt = $pdo->prepare('SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=?');
+              $stmt = $pdo->prepare(
+                  'SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?'
+              );
               $stmt->execute([$table]);
               if ((int)$stmt->fetchColumn() !== 1) throw new RuntimeException("missing table: {$table}");
           }
-          foreach (['floor_key', 'sample_movie_url'] as $column) {
-              $stmt = $pdo->prepare('SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name=\'works\' AND column_name=?');
-              $stmt->execute([$column]);
-              if ((int)$stmt->fetchColumn() !== 1) throw new RuntimeException("missing works column: {$column}");
+          foreach (['floor_key', 'sample_movie_url', 'asset_type', 'asset_bucket'] as $column) {
+              $stmt = $pdo->prepare(
+                  'SELECT COUNT(*) FROM information_schema.columns '
+                  . 'WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?'
+              );
+              $stmt->execute(['works', $column]);
+              if ((int)$stmt->fetchColumn() !== 0) throw new RuntimeException("obsolete column remains: {$column}");
           }
-          foreach (['recommendation-v3-rebuild-20260907', 'comic-only-catalog-20260908', 'multi-floor-amateur-video-20260908'] as $migration) {
-              $stmt = $pdo->prepare('SELECT 1 FROM app_migrations WHERE id=?');
-              $stmt->execute([$migration]);
-              if (!$stmt->fetchColumn()) throw new RuntimeException("missing migration: {$migration}");
+          $index = $pdo->query(
+              "SELECT COUNT(*) FROM information_schema.statistics "
+              . "WHERE table_schema=DATABASE() AND table_name='works' AND index_name='idx_works_feed'"
+          );
+          if ((int)$index->fetchColumn() === 0) throw new RuntimeException('idx_works_feed missing');
+          if ((int)$pdo->query("SELECT COUNT(*) FROM app_migrations WHERE id='multi-floor-amateur-video-20260908'")->fetchColumn() !== 0) {
+              throw new RuntimeException('obsolete multi-floor migration remains');
           }
-          foreach (['asset_type', 'asset_bucket'] as $column) {
-              $stmt = $pdo->prepare('SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name=\'works\' AND column_name=?');
-              $stmt->execute([$column]);
-              if ((int)$stmt->fetchColumn() !== 0) throw new RuntimeException("new schema unexpectedly contains {$column}");
+          if (!(bool)$pdo->query("SELECT 1 FROM app_migrations WHERE id='recommendation-v3-rebuild-20260907'")->fetchColumn()) {
+              throw new RuntimeException('recommendation migration missing');
           }
           PHP
 
-      - name: 固定Feed・検索・保存・素人動画の統合テスト
+      - name: 固定Feed・検索・保存・履歴を統合検証
         run: |
           set -euo pipefail
           php server/app/tests/integration.php
           php server/app/tests/search-integration.php
-          php server/app/tests/multi-floor-integration.php
-
-      - name: 旧コミック専用DBからの移行互換を検証
-        run: |
-          set -euo pipefail
-          php <<'PHP'
-          <?php
-          $config = require 'server/app/config.local.php';
-          $pdo = new PDO(
-              sprintf('mysql:host=%s;port=%d;dbname=%s;charset=%s', $config['db']['host'], $config['db']['port'], $config['db']['name'], $config['db']['charset']),
-              $config['db']['user'],
-              $config['db']['password'],
-              [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
-          );
-          $pdo->exec("ALTER TABLE works ADD COLUMN asset_bucket VARCHAR(64) NOT NULL DEFAULT 'comic', ADD COLUMN asset_type VARCHAR(16) NOT NULL DEFAULT 'comic'");
-          $pdo->exec("DELETE FROM app_migrations WHERE id='comic-only-catalog-20260908'");
-          $pdo->exec("UPDATE works SET asset_bucket='cg',asset_type='cg' WHERE cid='audit_014'");
-          PHP
-          php server/app/cron/setup-db.php
-          php server/app/cron/setup-db.php
-          php <<'PHP'
-          <?php
-          $config = require 'server/app/config.local.php';
-          $pdo = new PDO(
-              sprintf('mysql:host=%s;port=%d;dbname=%s;charset=%s', $config['db']['host'], $config['db']['port'], $config['db']['name'], $config['db']['charset']),
-              $config['db']['user'],
-              $config['db']['password'],
-              [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
-          );
-          if ((int)$pdo->query("SELECT COUNT(*) FROM works WHERE cid='audit_014'")->fetchColumn() !== 0) {
-              throw new RuntimeException('legacy non-comic work was not removed');
-          }
-          if ((int)$pdo->query("SELECT COUNT(*) FROM works WHERE floor_key='amateur'")->fetchColumn() < 1) {
-              throw new RuntimeException('amateur works were removed by legacy migration');
-          }
-          if (!(bool)$pdo->query("SELECT 1 FROM app_migrations WHERE id='comic-only-catalog-20260908'")->fetchColumn()) {
-              throw new RuntimeException('comic-only migration was not marked');
-          }
-          foreach (['asset_type', 'asset_bucket'] as $column) {
-              $stmt = $pdo->prepare('SELECT column_default FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name=\'works\' AND column_name=?');
-              $stmt->execute([$column]);
-              if (trim((string)$stmt->fetchColumn(), "'\"") !== 'comic') throw new RuntimeException("unexpected default: {$column}");
-          }
-          PHP
+          rm -f server/app/config.local.php
 
       - name: クリティカルな回帰を検証
         run: |
           set -euo pipefail
           test ! -e .github/workflows/backfill-2025-09-05.yml
           test ! -e .github/workflows/verify-production.yml
+          test ! -e components/VideoWorkCard.tsx
+          test ! -e components/FloorSwitcher.tsx
+          test ! -e components/FloorTabs.tsx
+          test ! -e components/ComingSoonFloorPage.tsx
+          test ! -e src/floors.ts
+          test ! -e styles/video.css
           grep -F 'feed_sessions' server/app/schema.sql >/dev/null
-          grep -F 'floor_key' server/app/schema.sql >/dev/null
-          grep -F 'sample_movie_url' server/app/schema.sql >/dev/null
-          grep -F "'videoc'" server/app/src/FanzaClient.php >/dev/null
-          grep -F 'sampleMovieURL' server/app/src/FanzaClient.php >/dev/null
-          grep -F 'VideoWorkCard' components/SwipePreviewApp.tsx >/dev/null
-          grep -F 'video-embed-player' styles/video.css >/dev/null
-          grep -F 'frame-src https://*.dmm.co.jp' server/public/.htaccess >/dev/null
+          grep -F 'feed_items' server/app/schema.sql >/dev/null
+          grep -F 'idx_works_feed' server/app/schema.sql >/dev/null
+          grep -F 'sampleReadRatio' components/WorkCard.tsx >/dev/null
+          grep -F 'reader-cta-link' components/WorkCard.tsx >/dev/null
           grep -F 'recordBatch' server/app/src/EventService.php >/dev/null
+          grep -F 'SearchService' server/app/bootstrap.php >/dev/null
           grep -F 'maker_query' server/app/src/SearchService.php >/dev/null
           grep -F 'series_query' server/app/src/SearchService.php >/dev/null
           grep -F 'work.php?cid=' server/public/.htaccess >/dev/null
           grep -F 'og:title' server/public/work.php >/dev/null
           grep -F 'refresh-catalog.php' .github/workflows/sync-shin.yml >/dev/null
           grep -F 'retention.php' .github/workflows/sync-shin.yml >/dev/null
+          grep -F 'admin_request_authorized' server/public/api/debug.php >/dev/null
+          grep -F 'admin_request_authorized' server/public/api/diagnostics.php >/dev/null
+          grep -F 'Content-Security-Policy' server/public/.htaccess >/dev/null
           grep -F 'cancel-in-progress: false' .github/workflows/deploy-shin.yml >/dev/null
+          grep -F 'isComicItem' server/app/src/FanzaClient.php >/dev/null
+          grep -F 'isComicItem' server/app/cron/fanza-sync.php >/dev/null
+          if grep -R -E 'floor_key|sample_movie_url|VideoWorkCard|videoc' --exclude='ComicOnlyCleanup.php' --exclude='comic-only-cleanup-integration.php' server src components styles lib; then
+            echo '廃止済み動画フロア実装が残っています。' >&2
+            exit 1
+          fi
           if grep -F 'Math.round(track.scrollLeft / track.clientWidth)' -n src components; then
             echo '旧RTLページ計測が残っています。' >&2
             exit 1
           fi
           if grep -F 'candidateTarget = min(1500' -n server/app/src/CatalogService.php; then
             echo '1,500件固定候補上限が残っています。' >&2
+            exit 1
+          fi
+          if grep -F 'CRC32(CONCAT' -n server/app/src/CatalogService.php; then
+            echo '全件式CRC32 ORDER BYが残っています。' >&2
             exit 1
           fi
 
@@ -261,7 +232,7 @@ jobs:
           test -f deploy/app/cron/retention.php
           test -f deploy/app/src/WorkRepository.php
           test -f deploy/app/src/SearchService.php
+          test -f deploy/app/src/PriceParser.php
           test ! -e deploy/app/tests
           test ! -f deploy/app/config.local.php
-          grep -F 'frame-src https://*.dmm.co.jp' deploy/public_html/.htaccess >/dev/null
-          rm -f server/app/config.local.php
+          grep -F 'Content-Security-Policy' deploy/public_html/.htaccess >/dev/null

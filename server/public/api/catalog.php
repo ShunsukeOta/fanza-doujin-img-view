@@ -7,7 +7,6 @@ require dirname(__DIR__, 2) . '/app/bootstrap.php';
 try {
     [$anonymousUserId] = anonymous_identity();
     $feedId = mb_substr(trim((string)($_GET['feed_id'] ?? '')), 0, 36);
-    $floorKey = (string)($_GET['floor'] ?? '') === 'amateur' ? 'amateur' : 'comic';
     $result = $catalogService->catalog(
         request_filters(),
         $feedId,
@@ -15,7 +14,6 @@ try {
         read_int('limit', 6, 1, 12),
         mb_substr(trim((string)($_GET['cid'] ?? '')), 0, 256),
         $anonymousUserId,
-        $floorKey,
     );
 
     $cids = array_values(array_filter(array_map(

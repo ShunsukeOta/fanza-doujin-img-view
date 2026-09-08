@@ -2,8 +2,6 @@ import { StrictMode, type ReactNode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 import { AgeGate } from "@/components/AgeGate";
-import { ComingSoonFloorPage } from "@/components/ComingSoonFloorPage";
-import { FloorSwitcher } from "@/components/FloorSwitcher";
 import { HistoryPage } from "@/components/HistoryPage";
 import { PrivacyPolicyPage, TermsPage } from "@/components/LegalPages";
 import { MyPage } from "@/components/MyPage";
@@ -11,18 +9,16 @@ import { Onboarding } from "@/components/Onboarding";
 import { SavedPage } from "@/components/SavedPage";
 import { SearchPage } from "@/components/SearchPage";
 import { SwipePreviewApp } from "@/components/SwipePreviewApp";
-import type { FeedFloorKey, FilterValues } from "@/lib/types";
+import type { FilterValues } from "@/lib/types";
 import "@/styles/globals.css";
 import "@/styles/navigation.css";
 import "@/styles/pages.css";
 import "@/styles/reader.css";
-import "@/styles/video.css";
 import "@/styles/onboarding.css";
 import "@/styles/discovery.css";
 import "@/styles/accessibility.css";
 import { hasAgeVerification } from "@/src/ageVerification";
 import { startAnalytics } from "@/src/analytics";
-import { floorFeedPath, type FloorKey } from "@/src/floors";
 import { installMainResumeLifecycle, prepareMainResumeFallback } from "@/src/navigationState";
 
 function boundedInt(
@@ -62,40 +58,22 @@ function workCidFromPath(pathname: string): string {
 type MainExperienceProps = {
   initialFilters: FilterValues;
   initialCid: string;
-  initialFloor: FeedFloorKey;
   skipOnboarding?: boolean;
 };
 
-function MainExperience({ initialFilters, initialCid, initialFloor, skipOnboarding = false }: MainExperienceProps) {
-  // コミックは既存ガイドを維持。素人動画は漫画専用説明を出さず直接Feedへ入る。
-  const [onboardingComplete, setOnboardingComplete] = useState(skipOnboarding || initialFloor === "amateur");
-  const [floor, setFloor] = useState<FeedFloorKey>(initialFloor);
+function MainExperience({ initialFilters, initialCid, skipOnboarding = false }: MainExperienceProps) {
+  // 一時仕様: 通常のFeedは新規表示するたびに案内。作品共有URLは対象作品へ直接入る。
+  const [onboardingComplete, setOnboardingComplete] = useState(skipOnboarding);
 
   useEffect(() => {
     if (onboardingComplete) installMainResumeLifecycle();
   }, [onboardingComplete]);
 
-  const changeFloor = (nextFloor: FloorKey) => {
-    if (nextFloor === "actress") {
-      window.location.assign(floorFeedPath(nextFloor));
-      return;
-    }
-    if (nextFloor === floor) return;
-    const next = nextFloor as FeedFloorKey;
-    setFloor(next);
-    window.history.replaceState(window.history.state, "", floorFeedPath(next));
-  };
-
   if (!onboardingComplete) {
     return <Onboarding onComplete={() => setOnboardingComplete(true)} />;
   }
 
-  return (
-    <>
-      <FloorSwitcher activeFloor={floor} context="feed" overlay onFloorChange={changeFloor} />
-      <SwipePreviewApp initialFilters={initialFilters} initialCid={initialCid} floor={floor} />
-    </>
-  );
+  return <SwipePreviewApp initialFilters={initialFilters} initialCid={initialCid} />;
 }
 
 function ProtectedExperience({ children }: { children: ReactNode }) {
@@ -114,7 +92,7 @@ function ProtectedExperience({ children }: { children: ReactNode }) {
 
 const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
 const protectedSubpages = ["/saved", "/search", "/mypage", "/history", "/favorites"];
-if (![...protectedSubpages, "/privacy", "/terms", "/actress"].includes(pathname)) {
+if (![...protectedSubpages, "/privacy", "/terms"].includes(pathname)) {
   prepareMainResumeFallback();
 }
 
@@ -125,10 +103,9 @@ if (params.has("asset_type") || params.has("category")) {
   const cleaned = params.toString();
   window.history.replaceState(null, "", `${window.location.pathname}${cleaned ? `?${cleaned}` : ""}${window.location.hash}`);
 }
-const initialFloor: FeedFloorKey = pathname === "/amateur" ? "amateur" : "comic";
 const initialFilters: FilterValues = {
   genreId: (params.get("genre_id") ?? "").slice(0, 64),
-  minSamples: initialFloor === "amateur" ? 1 : boundedInt(params, "min_samples", 1, 1, 100),
+  minSamples: boundedInt(params, "min_samples", 1, 1, 100),
   minReviews: boundedInt(params, "min_reviews", 0, 0, 100_000),
   minRating: ratingFilter(params),
   minPrice: boundedInt(params, "min_price", 0, 0, 10_000_000),
@@ -155,12 +132,10 @@ if (pathname === "/favorites") {
     else if (pathname === "/search") protectedPage = <SearchPage />;
     else if (pathname === "/mypage") protectedPage = <MyPage />;
     else if (pathname === "/history") protectedPage = <HistoryPage />;
-    else if (pathname === "/actress") protectedPage = <ComingSoonFloorPage floor="actress" />;
     else protectedPage = (
       <MainExperience
         initialFilters={initialFilters}
         initialCid={workCid}
-        initialFloor={initialFloor}
         skipOnboarding={pathWorkCid !== ""}
       />
     );

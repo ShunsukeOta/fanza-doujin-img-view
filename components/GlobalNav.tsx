@@ -1,5 +1,4 @@
 import { BookmarkIcon, FeedSwipeIcon, SearchIcon, UserIcon } from "@/components/icons";
-import { floorContextPath, floorFromLocation } from "@/src/floors";
 import { navigateToSubpage, resumeMainFromSubpage, type NavOrigin } from "@/src/navigationState";
 
 type NavKey = "saved" | "main" | "search" | "mypage";
@@ -28,16 +27,13 @@ function currentOrigin(): NavOrigin {
 
 export function GlobalNav({ active = currentNav() }: Props) {
   const origin = currentOrigin();
-  const floor = floorFromLocation();
 
   const goMain = () => {
     if (origin !== "main") resumeMainFromSubpage();
   };
 
   const goSubpage = (path: "/saved" | "/search") => {
-    const target = floorContextPath(floor, path === "/saved" ? "saved" : "search");
-    if (`${currentPath()}${window.location.search}` === target) return;
-    navigateToSubpage(path, origin, target);
+    if (currentPath() !== path) navigateToSubpage(path, origin);
   };
 
   return (

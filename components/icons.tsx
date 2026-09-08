@@ -2,25 +2,6 @@ export function FilterIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" /></svg>;
 }
 
-export function ViewSwitchIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <rect x="4" y="4" width="6" height="6" rx="1.5" />
-      <rect x="14" y="4" width="6" height="6" rx="1.5" />
-      <rect x="4" y="14" width="6" height="6" rx="1.5" />
-      <rect x="14" y="14" width="6" height="6" rx="1.5" />
-    </svg>
-  );
-}
-
-export function ChevronDownIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="m7 9.5 5 5 5-5" />
-    </svg>
-  );
-}
-
 export function SearchIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">

@@ -22,19 +22,20 @@ final class SearchService
         int $limit,
         string $sort,
         string $anonymousUserId,
-        string $floorKey = 'comic',
     ): array {
         $pdo = $this->database->connection();
-        if (!$pdo) throw new RuntimeException('検索DBが利用できません。');
+        if (!$pdo) {
+            throw new RuntimeException('検索DBが利用できません。');
+        }
 
-        $floorKey = $floorKey === 'amateur' ? 'amateur' : 'comic';
-        $filters = $this->normalizeFilters($filters, $floorKey);
+        $filters = $this->normalizeFilters($filters);
         $cursor = max(0, min(200000, $cursor));
         $limit = max(1, min(24, $limit));
         $sort = in_array($sort, ['popular', 'rating', 'new', 'price_asc'], true) ? $sort : 'popular';
 
-        [$where, $params] = $this->where($filters, $floorKey);
+        [$where, $params] = $this->where($filters);
         $whereSql = implode(' AND ', $where);
+
         $countStmt = $pdo->prepare('SELECT COUNT(*) FROM works w WHERE ' . $whereSql);
         $countStmt->execute($params);
         $total = (int)$countStmt->fetchColumn();
@@ -62,8 +63,15 @@ final class SearchService
         $items = [];
         foreach ($cids as $cid) {
             $item = $hydrated[$cid] ?? null;
-            if (!is_array($item) || ($item['available'] ?? true) === false || ($item['floorKey'] ?? 'comic') !== $floorKey) continue;
-            $reaction = $reactions[$cid] ?? ['likeCount' => 0, 'saveCount' => 0, 'viewerLiked' => false, 'viewerSaved' => false];
+            if (!is_array($item) || ($item['available'] ?? true) === false) {
+                continue;
+            }
+            $reaction = $reactions[$cid] ?? [
+                'likeCount' => 0,
+                'saveCount' => 0,
+                'viewerLiked' => false,
+                'viewerSaved' => false,
+            ];
             $item['likeCount'] = (int)($reaction['likeCount'] ?? 0);
             $item['saveCount'] = (int)($reaction['saveCount'] ?? 0);
             $item['viewerLiked'] = (bool)($reaction['viewerLiked'] ?? false);
@@ -73,6 +81,7 @@ final class SearchService
 
         $nextCursor = $cursor + count($cids);
         $hasMore = $nextCursor < $total && count($cids) > 0;
+
         return [
             'ok' => true,
             'items' => $items,
@@ -81,17 +90,19 @@ final class SearchService
             'nextCursor' => $hasMore ? $nextCursor : null,
             'hasMore' => $hasMore,
             'sort' => $sort,
-            'floorKey' => $floorKey,
         ];
     }
 
-    private function normalizeFilters(array $filters, string $floorKey): array
+    private function normalizeFilters(array $filters): array
     {
         $minPrice = max(0, min(10000000, (int)($filters['minPrice'] ?? 0)));
         $maxPrice = max(0, min(10000000, (int)($filters['maxPrice'] ?? 0)));
-        if ($minPrice > 0 && $maxPrice > 0 && $minPrice > $maxPrice) [$minPrice, $maxPrice] = [$maxPrice, $minPrice];
+        if ($minPrice > 0 && $maxPrice > 0 && $minPrice > $maxPrice) {
+            [$minPrice, $maxPrice] = [$maxPrice, $minPrice];
+        }
+
         return [
-            'minSamples' => $floorKey === 'amateur' ? 1 : max(1, min(100, (int)($filters['minSamples'] ?? 1))),
+            'minSamples' => max(1, min(100, (int)($filters['minSamples'] ?? 1))),
             'minReviews' => max(0, min(100000, (int)($filters['minReviews'] ?? 0))),
             'minRating' => max(0.0, min(5.0, (float)($filters['minRating'] ?? 0))),
             'minPrice' => $minPrice,
@@ -103,15 +114,20 @@ final class SearchService
         ];
     }
 
-    private function where(array $filters, string $floorKey): array
+    private function where(array $filters): array
     {
-        $where = ['w.floor_key = :floor_key', 'w.is_active = 1', 'w.review_count >= :min_reviews', 'w.rating >= :min_rating'];
-        $params = [':floor_key' => $floorKey, ':min_reviews' => (int)$filters['minReviews'], ':min_rating' => (float)$filters['minRating']];
-        if ($floorKey === 'amateur') $where[] = "w.sample_movie_url IS NOT NULL AND w.sample_movie_url <> ''";
-        else {
-            $where[] = 'w.sample_count >= :min_samples';
-            $params[':min_samples'] = (int)$filters['minSamples'];
-        }
+        $where = [
+            'w.is_active = 1',
+            'w.sample_count >= :min_samples',
+            'w.review_count >= :min_reviews',
+            'w.rating >= :min_rating',
+        ];
+        $params = [
+            ':min_samples' => (int)$filters['minSamples'],
+            ':min_reviews' => (int)$filters['minReviews'],
+            ':min_rating' => (float)$filters['minRating'],
+        ];
+
         if ($filters['minPrice'] > 0) {
             $where[] = 'w.price_value >= :min_price';
             $params[':min_price'] = (int)$filters['minPrice'];
@@ -125,7 +141,9 @@ final class SearchService
             $params[':genre_id'] = (string)$filters['genreId'];
         }
         if ($filters['query'] !== '') {
-            $where[] = '(w.title LIKE :q_title ESCAPE \'=\' OR w.maker LIKE :q_maker ESCAPE \'=\' OR EXISTS (SELECT 1 FROM work_series ws JOIN series s ON s.id = ws.series_id WHERE ws.work_cid = w.cid AND s.name LIKE :q_series ESCAPE \'=\'))';
+            $where[] = '(w.title LIKE :q_title ESCAPE \'=\' OR w.maker LIKE :q_maker ESCAPE \'=\' '
+                . 'OR EXISTS (SELECT 1 FROM work_series ws JOIN series s ON s.id = ws.series_id '
+                . 'WHERE ws.work_cid = w.cid AND s.name LIKE :q_series ESCAPE \'=\'))';
             $pattern = $this->likePattern((string)$filters['query']);
             $params[':q_title'] = $pattern;
             $params[':q_maker'] = $pattern;
@@ -136,9 +154,11 @@ final class SearchService
             $params[':maker_query'] = $this->likePattern((string)$filters['maker']);
         }
         if ($filters['series'] !== '') {
-            $where[] = 'EXISTS (SELECT 1 FROM work_series ws2 JOIN series s2 ON s2.id = ws2.series_id WHERE ws2.work_cid = w.cid AND s2.name LIKE :series_query ESCAPE \'=\')';
+            $where[] = 'EXISTS (SELECT 1 FROM work_series ws2 JOIN series s2 ON s2.id = ws2.series_id '
+                . 'WHERE ws2.work_cid = w.cid AND s2.name LIKE :series_query ESCAPE \'=\')';
             $params[':series_query'] = $this->likePattern((string)$filters['series']);
         }
+
         return [$where, $params];
     }
 

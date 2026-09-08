@@ -13,11 +13,9 @@ import {
 import { FocusModeToggle } from "@/components/FocusModeToggle";
 import { GlobalNav } from "@/components/GlobalNav";
 import { FilterIcon } from "@/components/icons";
-import { VideoWorkCard } from "@/components/VideoWorkCard";
 import { WorkCard } from "@/components/WorkCard";
-import type { CatalogResponse, FeedFloorKey, FeedItem, FilterValues, MetaResponse } from "@/lib/types";
+import type { CatalogResponse, FeedItem, FilterValues, MetaResponse } from "@/lib/types";
 import { fetchJson } from "@/src/api";
-import { floorFeedPath, floorLabel } from "@/src/floors";
 import { preloadAndDecodeImage } from "@/src/imagePreload";
 import { formatPrice } from "@/src/price";
 import {
@@ -43,21 +41,15 @@ const PREFETCH_THRESHOLD = 3;
 const WINDOW_RADIUS = 4;
 const RATING_OPTIONS = [1, 2, 3, 4, 5] as const;
 
-type Props = {
-  initialFilters: FilterValues;
-  initialCid: string;
-  floor: FeedFloorKey;
-};
+type Props = { initialFilters: FilterValues; initialCid: string };
 
 function buildCatalogQuery(
   filters: FilterValues,
-  floor: FeedFloorKey,
   options: { feedId?: string | null; cursor?: number; limit?: number; cid?: string } = {},
 ) {
   const params = new URLSearchParams({
-    floor,
     genre_id: filters.genreId,
-    min_samples: String(floor === "amateur" ? 1 : filters.minSamples),
+    min_samples: String(filters.minSamples),
     min_reviews: String(filters.minReviews),
     min_rating: String(filters.minRating),
     min_price: String(filters.minPrice),
@@ -71,10 +63,10 @@ function buildCatalogQuery(
   return params;
 }
 
-function buildPageQuery(filters: FilterValues, floor: FeedFloorKey, cid = "") {
+function buildPageQuery(filters: FilterValues, cid = "") {
   const params = new URLSearchParams();
   if (filters.genreId) params.set("genre_id", filters.genreId);
-  if (floor === "comic" && filters.minSamples !== 1) params.set("min_samples", String(filters.minSamples));
+  if (filters.minSamples !== 1) params.set("min_samples", String(filters.minSamples));
   if (filters.minReviews) params.set("min_reviews", String(filters.minReviews));
   if (filters.minRating) params.set("min_rating", String(filters.minRating));
   if (filters.minPrice) params.set("min_price", String(filters.minPrice));
@@ -100,7 +92,7 @@ function parseDraftInt(raw: string, fallback: number, min: number, max: number):
   return Math.max(min, Math.min(max, parsed));
 }
 
-export function SwipePreviewApp({ initialFilters, initialCid, floor }: Props) {
+export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
   const feedRef = useRef<HTMLElement | null>(null);
   const filterButtonRef = useRef<HTMLButtonElement | null>(null);
   const sheetRef = useRef<HTMLElement | null>(null);
@@ -111,7 +103,6 @@ export function SwipePreviewApp({ initialFilters, initialCid, floor }: Props) {
   const moreAbort = useRef<AbortController | null>(null);
   const generation = useRef(0);
   const booted = useRef(false);
-  const previousFloor = useRef<FeedFloorKey>(floor);
   const wheelLockedUntil = useRef(0);
   const pageByCid = useRef(new Map<string, number>());
 
@@ -134,9 +125,6 @@ export function SwipePreviewApp({ initialFilters, initialCid, floor }: Props) {
   const [activeWork, setActiveWork] = useState(0);
   const [toast, setToast] = useState("");
   const [targetTotal, setTargetTotal] = useState(0);
-
-  const isComic = floor === "comic";
-  const contentName = isComic ? "コミック" : "素人動画";
 
   const showToast = useCallback((message: string) => {
     setToast(message);
@@ -165,16 +153,15 @@ export function SwipePreviewApp({ initialFilters, initialCid, floor }: Props) {
   const loadMeta = useCallback(async () => {
     try {
       setMeta(await fetchJson<MetaResponse>(
-        `/api/meta?floor=${floor}`,
+        "/api/meta",
         { headers: { Accept: "application/json" } },
         "メタ情報の取得に失敗しました",
       ));
       setMetaError("");
     } catch (error) {
-      setMeta(null);
       setMetaError(error instanceof Error ? error.message : "メタ情報の取得に失敗しました。");
     }
-  }, [floor]);
+  }, []);
 
   const loadInitial = useCallback(async (nextFilters: FilterValues, nextCid = "") => {
     const requestGeneration = ++generation.current;
@@ -197,7 +184,7 @@ export function SwipePreviewApp({ initialFilters, initialCid, floor }: Props) {
     feedRef.current?.scrollTo({ top: 0, behavior: "auto" });
 
     try {
-      const query = buildCatalogQuery(nextFilters, floor, { cursor: 0, limit: INITIAL_LIMIT, cid: nextCid });
+      const query = buildCatalogQuery(nextFilters, { cursor: 0, limit: INITIAL_LIMIT, cid: nextCid });
       const catalog = await fetchJson<CatalogResponse>(
         `/api/catalog?${query}`,
         {
@@ -222,7 +209,7 @@ export function SwipePreviewApp({ initialFilters, initialCid, floor }: Props) {
     } finally {
       if (generation.current === requestGeneration) setLoading(false);
     }
-  }, [floor, showToast]);
+  }, [showToast]);
 
   const loadMore = useCallback(async (manual = false) => {
     const requestGeneration = generation.current;
@@ -237,7 +224,7 @@ export function SwipePreviewApp({ initialFilters, initialCid, floor }: Props) {
     if (manual) setLoadMoreError("");
 
     try {
-      const query = buildCatalogQuery(filters, floor, { feedId, cursor: nextCursor, limit: INITIAL_LIMIT });
+      const query = buildCatalogQuery(filters, { feedId, cursor: nextCursor, limit: INITIAL_LIMIT });
       const catalog = await fetchJson<CatalogResponse>(
         `/api/catalog?${query}`,
         {
@@ -261,7 +248,7 @@ export function SwipePreviewApp({ initialFilters, initialCid, floor }: Props) {
       if (loadMoreInFlight.current === requestGeneration) loadMoreInFlight.current = null;
       if (generation.current === requestGeneration) setLoadingMore(false);
     }
-  }, [feedId, filters, floor, hasMore, loadMoreError, nextCursor]);
+  }, [feedId, filters, hasMore, loadMoreError, nextCursor]);
 
   const scrollToWork = useCallback((targetIndex: number, behavior: ScrollBehavior = "smooth") => {
     const feed = feedRef.current;
@@ -285,25 +272,11 @@ export function SwipePreviewApp({ initialFilters, initialCid, floor }: Props) {
   }, [hasMore, items.length, loadMore, loadMoreError, scrollToWork]);
 
   useEffect(() => {
-    if (!booted.current) {
-      booted.current = true;
-      previousFloor.current = floor;
-      void loadInitial(initialFilters, initialCid);
-      void loadMeta();
-      return;
-    }
-    if (previousFloor.current === floor) return;
-    previousFloor.current = floor;
-    const reset = DEFAULT_FILTERS;
-    setFilters(reset);
-    setDraftFilters(reset);
-    setDraftMinSamples("");
-    setDraftMinReviews("");
-    setSheetOpen(false);
-    setMeta(null);
-    void loadInitial(reset);
+    if (booted.current) return;
+    booted.current = true;
+    void loadInitial(initialFilters, initialCid);
     void loadMeta();
-  }, [floor, initialCid, initialFilters, loadInitial, loadMeta]);
+  }, [initialCid, initialFilters, loadInitial, loadMeta]);
 
   useEffect(() => {
     const feed = feedRef.current;
@@ -312,7 +285,9 @@ export function SwipePreviewApp({ initialFilters, initialCid, floor }: Props) {
       const visible = entries
         .filter((entry) => entry.isIntersecting && entry.intersectionRatio >= 0.55)
         .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-      if (visible?.target instanceof HTMLElement) setActiveWork(Number(visible.target.dataset.workIndex ?? 0));
+      if (visible?.target instanceof HTMLElement) {
+        setActiveWork(Number(visible.target.dataset.workIndex ?? 0));
+      }
     }, { root: feed, threshold: [0.55, 0.75, 0.9] });
     feed.querySelectorAll<HTMLElement>(".feed-item").forEach((work) => observer.observe(work));
     return () => observer.disconnect();
@@ -332,8 +307,9 @@ export function SwipePreviewApp({ initialFilters, initialCid, floor }: Props) {
     const warm = () => {
       if (!cancelled) void preloadAndDecodeImage(nextImage, "auto");
     };
-    if ("requestIdleCallback" in window) idleId = window.requestIdleCallback(warm, { timeout: 900 });
-    else {
+    if ("requestIdleCallback" in window) {
+      idleId = window.requestIdleCallback(warm, { timeout: 900 });
+    } else {
       const timeoutId = globalThis.setTimeout(warm, 350);
       cancelFallback = () => globalThis.clearTimeout(timeoutId);
     }
@@ -350,12 +326,16 @@ export function SwipePreviewApp({ initialFilters, initialCid, floor }: Props) {
     if (sheet) sheet.inert = !sheetOpen;
     if (feed) feed.inert = sheetOpen;
     if (!sheetOpen) return;
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : filterButtonRef.current;
+    const previous = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : filterButtonRef.current;
     window.requestAnimationFrame(() => sheet?.querySelector<HTMLElement>("input,select,button")?.focus());
     const key = (event: KeyboardEvent) => {
       if (event.key === "Escape") setSheetOpen(false);
       if (event.key === "Tab" && sheet) {
-        const focusable = [...sheet.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled]),select:not([disabled])')];
+        const focusable = [...sheet.querySelectorAll<HTMLElement>(
+          'button:not([disabled]),input:not([disabled]),select:not([disabled])',
+        )];
         if (focusable.length === 0) return;
         const first = focusable[0];
         const last = focusable[focusable.length - 1];
@@ -383,17 +363,16 @@ export function SwipePreviewApp({ initialFilters, initialCid, floor }: Props) {
   }, []);
 
   const replaceUrl = useCallback((nextFilters: FilterValues, nextCid = "") => {
-    const query = buildPageQuery(nextFilters, floor, nextCid);
-    const path = floorFeedPath(floor);
-    window.history.replaceState(null, "", query.size ? `${path}?${query}` : path);
-  }, [floor]);
+    const query = buildPageQuery(nextFilters, nextCid);
+    window.history.replaceState(null, "", query.size ? `/?${query}` : "/");
+  }, []);
 
   const applyFilters = async (event: FormEvent) => {
     event.preventDefault();
     if (draftFilters.minPrice > 0 && draftFilters.maxPrice > 0 && draftFilters.maxPrice < draftFilters.minPrice) return;
     const next: FilterValues = {
       ...draftFilters,
-      minSamples: isComic ? parseDraftInt(draftMinSamples, 1, 1, 100) : 1,
+      minSamples: parseDraftInt(draftMinSamples, 1, 1, 100),
       minReviews: parseDraftInt(draftMinReviews, 0, 0, 100_000),
       query: draftFilters.query.trim(),
     };
@@ -416,7 +395,9 @@ export function SwipePreviewApp({ initialFilters, initialCid, floor }: Props) {
     setDraftFilters((old) => ({ ...old, genreId: event.target.value }));
   };
 
-  const updateNumber = (key: "minPrice" | "maxPrice") => (event: ChangeEvent<HTMLInputElement>) => {
+  const updateNumber = (
+    key: "minPrice" | "maxPrice",
+  ) => (event: ChangeEvent<HTMLInputElement>) => {
     const raw = event.target.value.trim();
     if (!raw) {
       setDraftFilters((old) => ({ ...old, [key]: 0 }));
@@ -426,20 +407,23 @@ export function SwipePreviewApp({ initialFilters, initialCid, floor }: Props) {
     if (Number.isFinite(value)) setDraftFilters((old) => ({ ...old, [key]: value }));
   };
 
-  const priceInvalid = draftFilters.minPrice > 0 && draftFilters.maxPrice > 0 && draftFilters.maxPrice < draftFilters.minPrice;
+  const priceInvalid = draftFilters.minPrice > 0
+    && draftFilters.maxPrice > 0
+    && draftFilters.maxPrice < draftFilters.minPrice;
   const activeGenre = meta?.genres.find((genre) => genre.id === filters.genreId)?.name ?? "";
   const activeCondition = useMemo(() => {
     const parts: string[] = [];
     if (filters.query) parts.push(`「${filters.query}」`);
     if (activeGenre) parts.push(activeGenre);
-    if (filters.minPrice && filters.maxPrice) parts.push(`${formatPrice("", filters.minPrice)}〜${formatPrice("", filters.maxPrice)}`);
-    else if (filters.minPrice) parts.push(`${formatPrice("", filters.minPrice)}以上`);
+    if (filters.minPrice && filters.maxPrice) {
+      parts.push(`${formatPrice("", filters.minPrice)}〜${formatPrice("", filters.maxPrice)}`);
+    } else if (filters.minPrice) parts.push(`${formatPrice("", filters.minPrice)}以上`);
     else if (filters.maxPrice) parts.push(`${formatPrice("", filters.maxPrice)}以下`);
-    if (isComic && filters.minSamples > 1) parts.push(`サンプル${filters.minSamples}枚以上`);
+    if (filters.minSamples > 1) parts.push(`サンプル${filters.minSamples}枚以上`);
     if (filters.minReviews) parts.push(`レビュー${filters.minReviews}件以上`);
     if (filters.minRating) parts.push(`評価${filters.minRating}以上`);
-    return parts.length ? parts.join(" / ") : `すべての${floorLabel(floor)}`;
-  }, [activeGenre, filters, floor, isComic]);
+    return parts.length ? parts.join(" / ") : "すべてのコミック";
+  }, [activeGenre, filters]);
 
   const handleFeedKey = (event: ReactKeyboardEvent<HTMLElement>) => {
     if (event.target !== event.currentTarget) return;
@@ -453,7 +437,11 @@ export function SwipePreviewApp({ initialFilters, initialCid, floor }: Props) {
   };
 
   const handleWheel = (event: ReactWheelEvent<HTMLElement>) => {
-    if (Math.abs(event.deltaY) < 24 || Math.abs(event.deltaY) <= Math.abs(event.deltaX) || performance.now() < wheelLockedUntil.current) return;
+    if (
+      Math.abs(event.deltaY) < 24
+      || Math.abs(event.deltaY) <= Math.abs(event.deltaX)
+      || performance.now() < wheelLockedUntil.current
+    ) return;
     event.preventDefault();
     wheelLockedUntil.current = performance.now() + 260;
     moveWork(activeWork, event.deltaY > 0 ? 1 : -1);
@@ -463,8 +451,17 @@ export function SwipePreviewApp({ initialFilters, initialCid, floor }: Props) {
     <>
       <header className="app-header">
         <div className="header-actions">
-          <div className="feed-count"><span>{items.length ? activeWork + 1 : 0}</span> / {targetTotal ? targetTotal.toLocaleString("ja-JP") : items.length || "-"}</div>
-          <button ref={filterButtonRef} className="icon-btn" type="button" onClick={() => setSheetOpen(true)}><FilterIcon /> 絞り込み</button>
+          <div className="feed-count">
+            <span>{items.length ? activeWork + 1 : 0}</span> / {targetTotal ? targetTotal.toLocaleString("ja-JP") : items.length || "-"}
+          </div>
+          <button
+            ref={filterButtonRef}
+            className="icon-btn"
+            type="button"
+            onClick={() => setSheetOpen(true)}
+          >
+            <FilterIcon /> 絞り込み
+          </button>
         </div>
       </header>
 
@@ -472,9 +469,9 @@ export function SwipePreviewApp({ initialFilters, initialCid, floor }: Props) {
 
       <main
         ref={feedRef}
-        className={`feed feed--${floor}`}
+        className="feed"
         id="feed"
-        aria-label={`${floorLabel(floor)}フィード`}
+        aria-label="同人コミックフィード"
         tabIndex={0}
         onKeyDown={handleFeedKey}
         onWheel={handleWheel}
@@ -484,100 +481,167 @@ export function SwipePreviewApp({ initialFilters, initialCid, floor }: Props) {
             feedScrollRaf.current = null;
             const feed = feedRef.current;
             if (!feed || feed.clientHeight <= 0 || !items.length) return;
-            setActiveWork(Math.max(0, Math.min(items.length - 1, Math.round(feed.scrollTop / feed.clientHeight))));
+            setActiveWork(Math.max(
+              0,
+              Math.min(items.length - 1, Math.round(feed.scrollTop / feed.clientHeight)),
+            ));
           });
         }}
       >
         {loading ? (
-          <section className="empty-state"><div className="empty-card loading-card"><div className="spinner" aria-hidden="true" /><h2>{contentName}を読み込んでいます</h2></div></section>
+          <section className="empty-state">
+            <div className="empty-card loading-card">
+              <div className="spinner" aria-hidden="true" />
+              <h2>コミックを読み込んでいます</h2>
+            </div>
+          </section>
         ) : catalogError ? (
-          <section className="empty-state"><div className="empty-card"><h2>{contentName}を取得できませんでした</h2><p>{catalogError}</p><button className="btn btn-primary" type="button" onClick={() => void loadInitial(filters, initialCid)}>再試行</button></div></section>
+          <section className="empty-state">
+            <div className="empty-card">
+              <h2>コミックを取得できませんでした</h2>
+              <p>{catalogError}</p>
+              <button className="btn btn-primary" type="button" onClick={() => void loadInitial(filters, initialCid)}>再試行</button>
+            </div>
+          </section>
         ) : items.length === 0 ? (
-          <section className="empty-state"><div className="empty-card"><h2>表示できる{contentName}がありません</h2><p>絞り込み条件を変更してください。</p><button className="btn btn-primary" type="button" onClick={() => setSheetOpen(true)}>絞り込み</button></div></section>
+          <section className="empty-state">
+            <div className="empty-card">
+              <h2>表示できるコミックがありません</h2>
+              <p>絞り込み条件を変更してください。</p>
+              <button className="btn btn-primary" type="button" onClick={() => setSheetOpen(true)}>絞り込み</button>
+            </div>
+          </section>
         ) : items.map((item, index) => Math.abs(index - activeWork) <= WINDOW_RADIUS ? (
-          isComic ? (
-            <WorkCard
-              key={item.cid}
-              item={item}
-              index={index}
-              isActive={index === activeWork}
-              initialPage={pageByCid.current.get(item.cid) ?? 0}
-              readerSettings={readerSettings}
-              onToggleControls={toggleReaderControls}
-              onPageChange={(workCid, page, isCta) => {
-                pageByCid.current.set(workCid, page);
-                if (isCta || page >= Math.max(0, item.images.length - 2)) {
-                  const nextImage = items[index + 1]?.images?.[0];
-                  if (nextImage) void preloadAndDecodeImage(nextImage, "high");
-                }
-              }}
-              onToast={showToast}
-              onVerticalSwipe={(direction) => moveWork(index, direction)}
-            />
-          ) : (
-            <VideoWorkCard
-              key={item.cid}
-              item={item}
-              index={index}
-              isActive={index === activeWork}
-              onToast={showToast}
-              onVerticalSwipe={(direction) => moveWork(index, direction)}
-              onToggleControls={toggleReaderControls}
-            />
-          )
+          <WorkCard
+            key={item.cid}
+            item={item}
+            index={index}
+            isActive={index === activeWork}
+            initialPage={pageByCid.current.get(item.cid) ?? 0}
+            readerSettings={readerSettings}
+            onToggleControls={toggleReaderControls}
+            onPageChange={(workCid, page, isCta) => {
+              pageByCid.current.set(workCid, page);
+              if (isCta || page >= Math.max(0, item.images.length - 2)) {
+                const nextImage = items[index + 1]?.images?.[0];
+                if (nextImage) void preloadAndDecodeImage(nextImage, "high");
+              }
+            }}
+            onToast={showToast}
+            onVerticalSwipe={(direction) => moveWork(index, direction)}
+          />
         ) : (
-          <article key={item.cid} className="feed-item feed-item-virtual" data-work-index={index} data-cid={item.cid} aria-label={`${index + 1}件目 ${item.title}`} />
+          <article
+            key={item.cid}
+            className="feed-item feed-item-virtual"
+            data-work-index={index}
+            data-cid={item.cid}
+            aria-label={`${index + 1}件目 ${item.title}`}
+          />
         ))}
       </main>
 
-      {loadingMore ? <div className="feed-loading-more" aria-live="polite"><span className="mini-spinner" aria-hidden="true" /> 次の{contentName}を準備中</div> : null}
-      {loadMoreError ? <div className="feed-load-error" role="status"><span>{loadMoreError}</span><button type="button" onClick={() => void loadMore(true)}>再試行</button></div> : null}
+      {loadingMore ? (
+        <div className="feed-loading-more" aria-live="polite">
+          <span className="mini-spinner" aria-hidden="true" /> 次のコミックを準備中
+        </div>
+      ) : null}
+      {loadMoreError ? (
+        <div className="feed-load-error" role="status">
+          <span>{loadMoreError}</span>
+          <button type="button" onClick={() => void loadMore(true)}>再試行</button>
+        </div>
+      ) : null}
 
       <GlobalNav active="main" />
       {toast ? <div className="toast is-show" role="status">{toast}</div> : null}
 
-      <div className={`sheet-backdrop${sheetOpen ? " is-open" : ""}`} onClick={() => setSheetOpen(false)} aria-hidden="true" />
+      <div
+        className={`sheet-backdrop${sheetOpen ? " is-open" : ""}`}
+        onClick={() => setSheetOpen(false)}
+        aria-hidden="true"
+      />
       <aside
         ref={sheetRef}
         className={`sheet${sheetOpen ? " is-open" : ""}`}
         id="filterSheet"
         role="dialog"
         aria-modal="true"
-        aria-label={`${floorLabel(floor)}の表示条件を設定`}
+        aria-label="コミックとビューアーを設定"
         aria-hidden={!sheetOpen}
       >
         <div className="sheet-handle" />
-        <div className="sheet-head"><div className="sheet-title">設定</div><button className="close-btn" type="button" onClick={() => setSheetOpen(false)} aria-label="閉じる">×</button></div>
+        <div className="sheet-head">
+          <div className="sheet-title">設定</div>
+          <button className="close-btn" type="button" onClick={() => setSheetOpen(false)} aria-label="閉じる">×</button>
+        </div>
 
-        {isComic ? (
-          <section className="reader-settings-panel" aria-labelledby="reader_settings_title">
-            <h2 id="reader_settings_title">ビューアー設定</h2>
-            <div className="reader-setting-row">
-              <span>画像表示</span>
-              <div className="reader-segmented" role="group" aria-label="画像表示方式">
-                <button type="button" className={readerSettings.fitMode === "contain" ? "is-active" : ""} aria-pressed={readerSettings.fitMode === "contain"} onClick={() => updateReaderSettings({ fitMode: "contain" })}>全体表示</button>
-                <button type="button" className={readerSettings.fitMode === "width" ? "is-active" : ""} aria-pressed={readerSettings.fitMode === "width"} onClick={() => updateReaderSettings({ fitMode: "width" })}>横幅優先</button>
-              </div>
+        <section className="reader-settings-panel" aria-labelledby="reader_settings_title">
+          <h2 id="reader_settings_title">ビューアー設定</h2>
+          <div className="reader-setting-row">
+            <span>画像表示</span>
+            <div className="reader-segmented" role="group" aria-label="画像表示方式">
+              <button
+                type="button"
+                className={readerSettings.fitMode === "contain" ? "is-active" : ""}
+                aria-pressed={readerSettings.fitMode === "contain"}
+                onClick={() => updateReaderSettings({ fitMode: "contain" })}
+              >
+                全体表示
+              </button>
+              <button
+                type="button"
+                className={readerSettings.fitMode === "width" ? "is-active" : ""}
+                aria-pressed={readerSettings.fitMode === "width"}
+                onClick={() => updateReaderSettings({ fitMode: "width" })}
+              >
+                横幅優先
+              </button>
             </div>
-            <div className="reader-setting-row">
-              <span>読む方向</span>
-              <div className="reader-segmented" role="group" aria-label="読む方向">
-                <button type="button" className={readerSettings.readingDirection === "rtl" ? "is-active" : ""} aria-pressed={readerSettings.readingDirection === "rtl"} onClick={() => updateReaderSettings({ readingDirection: "rtl" })}>右→左</button>
-                <button type="button" className={readerSettings.readingDirection === "ltr" ? "is-active" : ""} aria-pressed={readerSettings.readingDirection === "ltr"} onClick={() => updateReaderSettings({ readingDirection: "ltr" })}>左→右</button>
-              </div>
+          </div>
+          <div className="reader-setting-row">
+            <span>読む方向</span>
+            <div className="reader-segmented" role="group" aria-label="読む方向">
+              <button
+                type="button"
+                className={readerSettings.readingDirection === "rtl" ? "is-active" : ""}
+                aria-pressed={readerSettings.readingDirection === "rtl"}
+                onClick={() => updateReaderSettings({ readingDirection: "rtl" })}
+              >
+                右→左
+              </button>
+              <button
+                type="button"
+                className={readerSettings.readingDirection === "ltr" ? "is-active" : ""}
+                aria-pressed={readerSettings.readingDirection === "ltr"}
+                onClick={() => updateReaderSettings({ readingDirection: "ltr" })}
+              >
+                左→右
+              </button>
             </div>
-            <label className="reader-setting-toggle">
-              <span><strong>画面端タップでページ送り</strong><small>中央タップはUI表示切替</small></span>
-              <input type="checkbox" checked={readerSettings.tapNavigation} onChange={(event) => updateReaderSettings({ tapNavigation: event.target.checked })} />
-            </label>
-          </section>
-        ) : null}
+          </div>
+          <label className="reader-setting-toggle">
+            <span><strong>画面端タップでページ送り</strong><small>中央タップはUI表示切替</small></span>
+            <input
+              type="checkbox"
+              checked={readerSettings.tapNavigation}
+              onChange={(event) => updateReaderSettings({ tapNavigation: event.target.checked })}
+            />
+          </label>
+        </section>
 
         <form onSubmit={applyFilters}>
           <div className="filters">
             <div className="field field--full">
-              <label htmlFor="work_query">作品名・メーカー・シリーズ</label>
-              <input id="work_query" type="search" maxLength={100} placeholder="キーワードで検索" value={draftFilters.query} onChange={(event) => setDraftFilters((old) => ({ ...old, query: event.target.value }))} />
+              <label htmlFor="work_query">作品名・サークル・シリーズ</label>
+              <input
+                id="work_query"
+                type="search"
+                maxLength={100}
+                placeholder="キーワードで検索"
+                value={draftFilters.query}
+                onChange={(event) => setDraftFilters((old) => ({ ...old, query: event.target.value }))}
+              />
             </div>
             <div className="field field--full">
               <label htmlFor="genre_id">ジャンル</label>
@@ -587,22 +651,63 @@ export function SwipePreviewApp({ initialFilters, initialCid, floor }: Props) {
               </select>
               {metaError ? <div className="genre-note">ジャンル情報を取得できませんでした</div> : null}
             </div>
-            <div className="field"><label htmlFor="min_price">価格下限</label><input id="min_price" type="number" inputMode="numeric" min="0" max="10000000" placeholder="指定なし" value={draftFilters.minPrice || ""} onChange={updateNumber("minPrice")} /></div>
-            <div className="field"><label htmlFor="max_price">価格上限</label><input id="max_price" type="number" inputMode="numeric" min="0" max="10000000" placeholder="指定なし" value={draftFilters.maxPrice || ""} onChange={updateNumber("maxPrice")} /></div>
+            <div className="field">
+              <label htmlFor="min_price">価格下限</label>
+              <input id="min_price" type="number" inputMode="numeric" min="0" max="10000000" placeholder="指定なし" value={draftFilters.minPrice || ""} onChange={updateNumber("minPrice")} />
+            </div>
+            <div className="field">
+              <label htmlFor="max_price">価格上限</label>
+              <input id="max_price" type="number" inputMode="numeric" min="0" max="10000000" placeholder="指定なし" value={draftFilters.maxPrice || ""} onChange={updateNumber("maxPrice")} />
+            </div>
             {priceInvalid ? <div className="filter-error field--full">価格上限は価格下限以上にしてください。</div> : null}
-            {isComic ? (
-              <div className="field"><label htmlFor="min_samples">最低サンプル枚数</label><input id="min_samples" type="number" inputMode="numeric" min="1" max="100" placeholder="未指定（1）" value={draftMinSamples} onChange={(event) => setDraftMinSamples(event.target.value)} /></div>
-            ) : null}
-            <div className={`field${isComic ? "" : " field--full"}`}><label htmlFor="min_reviews">最低レビュー件数</label><input id="min_reviews" type="number" inputMode="numeric" min="0" max="100000" placeholder="未指定（0）" value={draftMinReviews} onChange={(event) => setDraftMinReviews(event.target.value)} /></div>
+            <div className="field">
+              <label htmlFor="min_samples">最低サンプル枚数</label>
+              <input
+                id="min_samples"
+                type="number"
+                inputMode="numeric"
+                min="1"
+                max="100"
+                placeholder="未指定（1）"
+                value={draftMinSamples}
+                onChange={(event) => setDraftMinSamples(event.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="min_reviews">最低レビュー件数</label>
+              <input
+                id="min_reviews"
+                type="number"
+                inputMode="numeric"
+                min="0"
+                max="100000"
+                placeholder="未指定（0）"
+                value={draftMinReviews}
+                onChange={(event) => setDraftMinReviews(event.target.value)}
+              />
+            </div>
             <div className="field field--full">
-              <label id="min_rating_label">最低平均評価（{draftFilters.minRating ? `${draftFilters.minRating}以上` : "未指定"}）</label>
+              <label id="min_rating_label">
+                最低平均評価（{draftFilters.minRating ? `${draftFilters.minRating}以上` : "未指定"}）
+              </label>
               <div className="rating-filter" role="group" aria-labelledby="min_rating_label">
                 {RATING_OPTIONS.map((rating) => {
                   const selected = draftFilters.minRating === rating;
                   const filled = draftFilters.minRating >= rating;
                   return (
-                    <button key={rating} type="button" className={`${filled ? "is-filled" : ""}${selected ? " is-selected" : ""}`.trim()} aria-pressed={selected} aria-label={`最低評価${rating}以上${selected ? "を解除" : "に設定"}`} onClick={() => setDraftFilters((old) => ({ ...old, minRating: selected ? 0 : rating }))}>
-                      <strong aria-hidden="true">★</strong><span>{rating}</span>
+                    <button
+                      key={rating}
+                      type="button"
+                      className={`${filled ? "is-filled" : ""}${selected ? " is-selected" : ""}`.trim()}
+                      aria-pressed={selected}
+                      aria-label={`最低評価${rating}以上${selected ? "を解除" : "に設定"}`}
+                      onClick={() => setDraftFilters((old) => ({
+                        ...old,
+                        minRating: selected ? 0 : rating,
+                      }))}
+                    >
+                      <strong aria-hidden="true">★</strong>
+                      <span>{rating}</span>
                     </button>
                   );
                 })}
