@@ -1,16 +1,18 @@
 const ONBOARDING_KEY = "swipe-preview:onboarding-v2";
 const COMPLETE_VALUE = "complete";
 
-function readStorage(storage: Storage): boolean {
+export function hasCompletedOnboarding(): boolean {
   try {
-    return storage.getItem(ONBOARDING_KEY) === COMPLETE_VALUE;
+    if (window.localStorage.getItem(ONBOARDING_KEY) === COMPLETE_VALUE) return true;
+  } catch {
+    // localStorage自体へアクセスできない環境ではsessionStorageを確認する。
+  }
+
+  try {
+    return window.sessionStorage.getItem(ONBOARDING_KEY) === COMPLETE_VALUE;
   } catch {
     return false;
   }
-}
-
-export function hasCompletedOnboarding(): boolean {
-  return readStorage(window.localStorage) || readStorage(window.sessionStorage);
 }
 
 export function markOnboardingComplete(): void {
