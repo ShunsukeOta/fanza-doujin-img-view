@@ -235,7 +235,7 @@ export function MyPage() {
             <section className="profile-section profile-menu-section">
               <div className="profile-section-head"><h2>操作と情報</h2></div>
               <div className="profile-menu">
-                <button type="button" onClick={() => setGuideOpen(true)}><span><strong>操作ガイド</strong><small>スワイプ・ページ送り・保存方法を確認</small></span><em>›</em></button>
+                <button type="button" onClick={() => setGuideOpen(true)}><span><strong>操作ガイド</strong><small>上下スワイプ・ページ送り・保存方法を確認</small></span><em>›</em></button>
                 <button type="button" onClick={() => navigateToSubpage("/history", "mypage")}><span><strong>閲覧履歴</strong><small>最近見た作品をもう一度開く</small></span><em>›</em></button>
                 <button type="button" onClick={() => navigateToSubpage("/saved", "mypage")}><span><strong>保存済み</strong><small>あとで読む作品と値下げ情報</small></span><em>›</em></button>
                 <a href="/privacy"><span><strong>プライバシーポリシー</strong><small>匿名データ・Cookie・保存期間</small></span><em>›</em></a>
@@ -263,7 +263,7 @@ export function MyPage() {
 
       <GlobalNav active="mypage" />
 
-      {guideOpen ? <Onboarding onComplete={() => setGuideOpen(false)} /> : null}
+      {guideOpen ? <Onboarding mode="guide" onComplete={() => setGuideOpen(false)} /> : null}
 
       {deleteOpen ? (
         <div className="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="delete-data-title">
