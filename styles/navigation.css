@@ -1,18 +1,13 @@
 :root {
   --global-nav-h: 72px;
-  --nav-safe-bottom: env(safe-area-inset-bottom);
-}
-
-/* Home Screen PWAにはSafari下部ツールバーがないため、ナビ内へ追加safe-areaを作らない。 */
-@media (display-mode: standalone), (display-mode: fullscreen) {
-  :root { --nav-safe-bottom: 0px; }
+  --nav-safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 .global-nav {
   position: fixed;
   z-index: 70;
   left: 50%;
-  bottom: calc(8px + var(--nav-safe-bottom));
+  bottom: max(8px, var(--nav-safe-bottom));
   width: min(440px, calc(100% - 20px));
   height: 58px;
   padding: 4px;
@@ -96,7 +91,7 @@
 @media (max-width: 380px) {
   .global-nav {
     width: calc(100% - 14px);
-    bottom: calc(6px + var(--nav-safe-bottom));
+    bottom: max(6px, var(--nav-safe-bottom));
     gap: 2px;
   }
 
