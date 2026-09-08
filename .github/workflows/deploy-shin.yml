@@ -145,7 +145,7 @@ jobs:
             "wp983575@wp983575.wpx.jp:wp983575.wpx.jp/.releases/${GITHUB_SHA}/app/config.local.php"
           rm -f /tmp/config.local.php
 
-      - name: 本番切替前にDB移行を完了
+      - name: 本番切替前にコミック専用DB移行を完了
         shell: bash
         run: |
           set -euo pipefail
@@ -153,16 +153,17 @@ jobs:
             -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
             wp983575@wp983575.wpx.jp "set -eu; APP=\"\$HOME/wp983575.wpx.jp/.releases/${GITHUB_SHA}/app\"; chmod 600 \"\$APP/config.local.php\"; /usr/bin/php8.3 \"\$APP/cron/setup-db.php\"")"
           printf '%s\n' "$SETUP_OUTPUT"
+          printf '%s\n' "$SETUP_OUTPUT" | grep -F 'コミック専用DB cleanup' >/dev/null
           WORKS="$(printf '%s\n' "$SETUP_OUTPUT" | sed -n 's/.*works=\([0-9][0-9]*\).*/\1/p' | tail -n 1)"
           test -n "$WORKS"
           if [ "$WORKS" -eq 0 ]; then
-            echo "初回作品DBを投入します。"
+            echo "初回コミックDBを投入します。"
             ssh -i "$HOME/.ssh/id_shin" -p 10022 \
               -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
               wp983575@wp983575.wpx.jp \
               "set -eu; APP=\"\$HOME/wp983575.wpx.jp/.releases/${GITHUB_SHA}/app\"; /usr/bin/php8.3 \"\$APP/cron/fanza-sync.php\" --pages=20 --sort=date"
           else
-            echo "既存作品DB ${WORKS} 件を維持します。"
+            echo "コミック作品DB ${WORKS} 件を維持します。"
           fi
 
       - name: 移行成功後に本番へ切り替え
@@ -213,6 +214,9 @@ jobs:
           const first = JSON.parse(fs.readFileSync('/tmp/catalog1.json', 'utf8'));
           if (!first.feedId || !Array.isArray(first.items) || first.items.length === 0) throw new Error('catalog first page invalid');
           if (first.hasMore && typeof first.nextCursor !== 'number') throw new Error('nextCursor missing');
+          for (const item of first.items) {
+            if ('floorKey' in item || 'mediaType' in item || 'sampleMovieUrl' in item) throw new Error('obsolete media fields remain');
+          }
           fs.writeFileSync('/tmp/feed-id', first.feedId);
           fs.writeFileSync('/tmp/cursor', String(first.nextCursor ?? 0));
           fs.writeFileSync('/tmp/work-cid', String(first.items[0].cid ?? ''));
@@ -247,7 +251,7 @@ jobs:
 
           "${CURL[@]}" -c /tmp/user-cookies -b /tmp/user-cookies "${BASE_URL}/api/saved?limit=2" | grep -F '"ok":true' >/dev/null
           "${CURL[@]}" -c /tmp/user-cookies -b /tmp/user-cookies "${BASE_URL}/api/me" | grep -F '"ok":true' >/dev/null
-          for path in /saved /search /mypage /actress /amateur; do
+          for path in /saved /search /mypage /history; do
             "${CURL[@]}" "${BASE_URL}${path}" | grep -F '<div id="root"></div>' >/dev/null
           done
 
