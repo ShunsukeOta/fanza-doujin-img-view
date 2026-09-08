@@ -125,6 +125,9 @@ mustContain(videoCard, [
 if (videoCard.includes("readingDirection") || videoCard.includes("readerMath") || videoCard.includes("MAX_ZOOM")) {
   fail("素人動画カードへ漫画Reader専用処理が混入しています。");
 }
+if (/\[endView, eventContext, isActive, mode, muted\]/.test(videoCard)) {
+  fail("ミュート切替で動画閲覧セッションが再生成される回帰があります。");
+}
 
 const searchPage = readFileSync("components/SearchPage.tsx", "utf8");
 mustContain(searchPage, [
@@ -151,6 +154,9 @@ mustContain(navigation, [
   'type MainFloor = "comic" | "amateur"',
   '`/amateur?cid=${encodeURIComponent(normalized)}`',
   '`/work/${encodeURIComponent(normalized)}`',
+  "fallbackMainPath",
+  'floor === "amateur"',
+  "target: string = subpage",
 ], "復帰ナビゲーション");
 
 const readerSettings = readFileSync("src/readerSettings.ts", "utf8");
@@ -246,7 +252,14 @@ if (!indexHtml.includes("fonts.googleapis.com") || !indexHtml.includes("Noto+San
 }
 
 const globalNav = readFileSync("components/GlobalNav.tsx", "utf8");
-mustContain(globalNav, ["SearchIcon", ">検索<", ">読む<", "floorContextPath", "floorFeedPath"], "グローバルメニュー");
+mustContain(globalNav, [
+  "SearchIcon",
+  ">検索<",
+  ">読む<",
+  "floorContextPath",
+  "navigateToSubpage(path, origin, target)",
+  "resumeMainFromSubpage()",
+], "グローバルメニュー");
 const floorSwitcher = readFileSync("components/FloorSwitcher.tsx", "utf8");
 mustContain(floorSwitcher, ["FLOORS", "floorContextPath", "表示するコンテンツ", 'aria-haspopup="menu"', "onFloorChange"], "表示切替UI");
 const floorCompat = readFileSync("components/FloorTabs.tsx", "utf8");
