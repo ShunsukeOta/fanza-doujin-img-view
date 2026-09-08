@@ -130,7 +130,6 @@ function anonymous_identity(): array
     if (preg_match('/^[a-f0-9-]{36}$/i', $userId) !== 1) {
         $userId = uuid_v4();
     }
-    // 継続利用中は期限を毎回延長し、発行日から固定日数で別ユーザー化しない。
     setcookie('fp_uid', $userId, $cookieOptions);
 
     $sessionId = (string)($_COOKIE['fp_sid'] ?? '');
@@ -143,6 +142,21 @@ function anonymous_identity(): array
     ]);
 
     return [$userId, $sessionId];
+}
+
+function clear_anonymous_identity(): void
+{
+    $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+    $options = [
+        'expires' => time() - 3600,
+        'path' => '/',
+        'secure' => $secure,
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ];
+    setcookie('fp_uid', '', $options);
+    setcookie('fp_sid', '', $options);
 }
 
 function admin_request_authorized(): bool
