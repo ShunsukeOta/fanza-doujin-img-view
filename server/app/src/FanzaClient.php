@@ -9,9 +9,23 @@ use RuntimeException;
 final class FanzaClient
 {
     private const API_BASE = 'https://api.dmm.com/affiliate/v3';
-    private const USER_AGENT = 'fanza-doujin-img-view-php/2.0';
+    private const USER_AGENT = 'fanza-doujin-img-view-php/2.1';
     private const TIMEOUT_SECONDS = 25;
     private const FLOOR_CACHE_SECONDS = 604800;
+    private const FLOOR_DEFINITIONS = [
+        'comic' => [
+            'serviceCode' => 'doujin',
+            'serviceName' => '同人',
+            'floorCode' => 'digital_doujin',
+            'floorName' => '同人',
+        ],
+        'amateur' => [
+            'serviceCode' => 'digital',
+            'serviceName' => '動画',
+            'floorCode' => 'videoc',
+            'floorName' => '素人',
+        ],
+    ];
 
     public function __construct(private readonly array $config)
     {
@@ -23,15 +37,22 @@ final class FanzaClient
             && trim((string)($this->config['affiliate_id'] ?? '')) !== '';
     }
 
-    public function resolveDoujinFloor(): array
+    public function normalizeFloorKey(string $floorKey): string
     {
+        return isset(self::FLOOR_DEFINITIONS[$floorKey]) ? $floorKey : 'comic';
+    }
+
+    public function resolveFloor(string $floorKey): array
+    {
+        $floorKey = $this->normalizeFloorKey($floorKey);
+        $definition = self::FLOOR_DEFINITIONS[$floorKey];
         $cachePath = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
             . DIRECTORY_SEPARATOR
-            . 'swipe-preview-floor.json';
+            . 'swipe-preview-floor-' . $floorKey . '.json';
 
         if (is_file($cachePath) && (time() - (int)filemtime($cachePath)) < self::FLOOR_CACHE_SECONDS) {
             $cached = json_decode((string)file_get_contents($cachePath), true);
-            if (is_array($cached) && !empty($cached['floorId'])) {
+            if (is_array($cached) && !empty($cached['floorId']) && ($cached['key'] ?? '') === $floorKey) {
                 return $cached;
             }
         }
@@ -43,25 +64,26 @@ final class FanzaClient
                 continue;
             }
             foreach ($this->rows($site['service'] ?? null) as $service) {
-                if ($this->string($service['code'] ?? null) !== 'doujin') {
+                if ($this->string($service['code'] ?? null) !== $definition['serviceCode']) {
                     continue;
                 }
                 foreach ($this->rows($service['floor'] ?? null) as $floor) {
-                    if ($this->string($floor['code'] ?? null) !== 'digital_doujin') {
+                    if ($this->string($floor['code'] ?? null) !== $definition['floorCode']) {
                         continue;
                     }
                     $floorId = $this->string($floor['id'] ?? null);
                     if ($floorId === '') {
-                        throw new RuntimeException('FloorListでdigital_doujinのfloor_idを取得できませんでした。');
+                        throw new RuntimeException('FloorListで' . $definition['floorCode'] . 'のfloor_idを取得できませんでした。');
                     }
 
                     $resolved = [
+                        'key' => $floorKey,
                         'siteCode' => 'FANZA',
                         'siteName' => $this->string($site['name'] ?? null) ?: 'FANZA',
-                        'serviceCode' => 'doujin',
-                        'serviceName' => $this->string($service['name'] ?? null) ?: '同人',
-                        'floorCode' => 'digital_doujin',
-                        'floorName' => $this->string($floor['name'] ?? null) ?: '同人',
+                        'serviceCode' => $definition['serviceCode'],
+                        'serviceName' => $this->string($service['name'] ?? null) ?: $definition['serviceName'],
+                        'floorCode' => $definition['floorCode'],
+                        'floorName' => $this->string($floor['name'] ?? null) ?: $definition['floorName'],
                         'floorId' => $floorId,
                     ];
                     @file_put_contents(
@@ -73,23 +95,33 @@ final class FanzaClient
             }
         }
 
-        throw new RuntimeException('FloorListに FANZA / doujin / digital_doujin が見つかりませんでした。');
+        throw new RuntimeException(
+            'FloorListに FANZA / ' . $definition['serviceCode'] . ' / ' . $definition['floorCode'] . ' が見つかりませんでした。'
+        );
     }
 
-    public function fallbackFloor(): array
+    public function resolveDoujinFloor(): array
     {
+        return $this->resolveFloor('comic');
+    }
+
+    public function fallbackFloor(string $floorKey = 'comic'): array
+    {
+        $floorKey = $this->normalizeFloorKey($floorKey);
+        $definition = self::FLOOR_DEFINITIONS[$floorKey];
         return [
+            'key' => $floorKey,
             'siteCode' => 'FANZA',
             'siteName' => 'FANZA',
-            'serviceCode' => 'doujin',
-            'serviceName' => '同人',
-            'floorCode' => 'digital_doujin',
-            'floorName' => '同人',
+            'serviceCode' => $definition['serviceCode'],
+            'serviceName' => $definition['serviceName'],
+            'floorCode' => $definition['floorCode'],
+            'floorName' => $definition['floorName'],
             'floorId' => '',
         ];
     }
 
-    public function fetchGenres(string $floorId): array
+    public function fetchGenres(string $floorId, string $namespace = ''): array
     {
         $genres = [];
         $hits = 100;
@@ -103,11 +135,12 @@ final class FanzaClient
             $rows = $this->rows($result['genre'] ?? null);
 
             foreach ($rows as $row) {
-                $id = $this->string($row['genre_id'] ?? null) ?: $this->string($row['id'] ?? null);
+                $rawId = $this->string($row['genre_id'] ?? null) ?: $this->string($row['id'] ?? null);
                 $name = trim($this->string($row['name'] ?? null));
-                if ($id === '' || $name === '') {
+                if ($rawId === '' || $name === '') {
                     continue;
                 }
+                $id = $namespace !== '' ? $namespace . ':' . $rawId : $rawId;
                 $genres[$id] = [
                     'id' => $id,
                     'name' => $name,
@@ -140,7 +173,7 @@ final class FanzaClient
         $result = $this->record($root['result'] ?? null);
         $items = $this->rows($result['items'] ?? null);
         if ($items === []) {
-            throw new RuntimeException('このCIDは現在のFANZA同人APIでは取得できません。');
+            throw new RuntimeException('このCIDは現在のFANZA APIでは取得できません。');
         }
         return $items[0];
     }
@@ -161,7 +194,7 @@ final class FanzaClient
         ];
         if ($genreId !== '') {
             $params['article'] = 'genre';
-            $params['article_id'] = $genreId;
+            $params['article_id'] = preg_replace('/^[a-z]+:/', '', $genreId) ?: $genreId;
         }
         if ($gteDate !== '') {
             $params['gte_date'] = $gteDate;
@@ -193,7 +226,7 @@ final class FanzaClient
 
         $decoded = rawurldecode($value);
         if ($decoded === '' || preg_match('/^[A-Za-z0-9_-]+$/', $decoded) !== 1) {
-            throw new RuntimeException('作品IDの形式が正しくありません。CIDまたはFANZA同人の商品URLを入力してください。');
+            throw new RuntimeException('作品IDの形式が正しくありません。CIDまたはFANZAの商品URLを入力してください。');
         }
         return $decoded;
     }
@@ -220,29 +253,39 @@ final class FanzaClient
         return false;
     }
 
-    public function feedItem(array $item): array
+    public function feedItem(array $item, string $floorKey = 'comic'): array
     {
-        if (!$this->isComicItem($item)) {
+        $floorKey = $this->normalizeFloorKey($floorKey);
+        if ($floorKey === 'comic' && !$this->isComicItem($item)) {
             throw new RuntimeException('この作品はコミック作品ではありません。');
         }
 
-        $images = $this->sampleImages($item);
+        $sampleMovieUrl = $floorKey === 'amateur' ? $this->sampleMovieUrl($item) : '';
+        if ($floorKey === 'amateur' && $sampleMovieUrl === '') {
+            throw new RuntimeException('この素人動画には表示可能な動画サンプルがありません。');
+        }
+
+        $images = $floorKey === 'comic' ? $this->sampleImages($item) : $this->posterImages($item);
         $review = $this->record($item['review'] ?? null);
         $prices = $this->record($item['prices'] ?? null);
-        $genres = $this->itemGenres($item);
-        $series = $this->itemSeries($item);
+        $namespace = $floorKey === 'comic' ? '' : $floorKey;
+        $genres = $this->itemGenres($item, $namespace);
+        $series = $this->itemSeries($item, $namespace);
         $maker = $this->makerInfo($item);
         $volume = trim($this->string($item['volume'] ?? null));
 
         return [
             'cid' => $this->string($item['content_id'] ?? null),
+            'floorKey' => $floorKey,
+            'mediaType' => $floorKey === 'amateur' ? 'video' : 'comic',
             'title' => $this->string($item['title'] ?? null),
             'productUrl' => $this->string($item['URL'] ?? null),
             'affiliateUrl' => $this->string($item['affiliateURL'] ?? null),
             'description' => $this->itemDescription($item),
             'images' => $images,
-            'sampleCount' => count($images),
-            'fullPageCount' => $this->pageCountFromVolume($volume),
+            'sampleMovieUrl' => $sampleMovieUrl,
+            'sampleCount' => $floorKey === 'amateur' ? 1 : count($images),
+            'fullPageCount' => $floorKey === 'comic' ? $this->pageCountFromVolume($volume) : null,
             'volume' => $volume,
             'reviews' => (int)($review['count'] ?? 0),
             'rating' => (float)($review['average'] ?? 0),
@@ -372,17 +415,47 @@ final class FanzaClient
         return array_keys($urls);
     }
 
-    private function itemGenres(array $item): array
+    private function posterImages(array $item): array
     {
-        return $this->itemInfoRows($item, 'genre', 'genre_id');
+        $image = $this->record($item['imageURL'] ?? null);
+        $urls = [];
+        foreach (['large', 'list', 'small'] as $key) {
+            $url = $image[$key] ?? null;
+            if (is_string($url) && preg_match('~^https?://~i', $url) === 1) {
+                $urls[$url] = true;
+            }
+        }
+        return array_keys($urls);
     }
 
-    private function itemSeries(array $item): array
+    private function sampleMovieUrl(array $item): string
     {
-        return $this->itemInfoRows($item, 'series', 'series_id');
+        $sample = $this->record($item['sampleMovieURL'] ?? null);
+        foreach (['size_720_480', 'size_644_414', 'size_560_360', 'size_476_306'] as $key) {
+            $url = $sample[$key] ?? null;
+            if (is_string($url) && preg_match('~^https?://~i', $url) === 1) {
+                return $url;
+            }
+        }
+        foreach ($sample as $url) {
+            if (is_string($url) && preg_match('~^https?://~i', $url) === 1) {
+                return $url;
+            }
+        }
+        return '';
     }
 
-    private function itemInfoRows(array $item, string $key, string $fallbackIdKey): array
+    private function itemGenres(array $item, string $namespace = ''): array
+    {
+        return $this->itemInfoRows($item, 'genre', 'genre_id', $namespace);
+    }
+
+    private function itemSeries(array $item, string $namespace = ''): array
+    {
+        return $this->itemInfoRows($item, 'series', 'series_id', $namespace);
+    }
+
+    private function itemInfoRows(array $item, string $key, string $fallbackIdKey, string $namespace = ''): array
     {
         $itemInfo = $this->record($item['iteminfo'] ?? null);
         $values = [];
@@ -391,11 +464,12 @@ final class FanzaClient
             if ($name === '') {
                 continue;
             }
-            $id = $this->string($row['id'] ?? null)
+            $rawId = $this->string($row['id'] ?? null)
                 ?: $this->string($row[$fallbackIdKey] ?? null);
-            if ($id === '') {
+            if ($rawId === '') {
                 continue;
             }
+            $id = $namespace !== '' ? $namespace . ':' . $rawId : $rawId;
             $values[$id] = [
                 'id' => $id,
                 'name' => $name,
