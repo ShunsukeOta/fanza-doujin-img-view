@@ -32,6 +32,7 @@ for (const selector of [
   ".brand-title",
   ".genre-line",
   ".next-hint",
+  ".reader-settings-note",
 ]) {
   if (css.includes(selector)) fail(`削除済みUIのCSS ${selector} が残っています。`);
 }
@@ -47,8 +48,13 @@ for (const required of [
   ".settings-list",
   ".history-list",
   ".profile-danger-zone",
+  ".rating-filter",
 ]) {
   if (!css.includes(required)) fail(`必須スタイル ${required} がありません。`);
+}
+
+if (!css.includes('font-family: "Noto Sans JP", sans-serif')) {
+  fail("全体フォントがNoto Sans JPへ固定されていません。");
 }
 
 const main = readFileSync("src/main.tsx", "utf8");
@@ -76,6 +82,11 @@ const navigation = readFileSync("src/navigationState.ts", "utf8");
 if (!navigation.includes("scrollLeftForLogicalPage")) fail("復帰位置が読む方向を考慮していません。");
 if (!navigation.includes('"/history"')) fail("閲覧履歴が画面復帰ナビゲーションへ統合されていません。");
 
+const readerSettings = readFileSync("src/readerSettings.ts", "utf8");
+for (const required of ["subscribeReaderSettings", "readerSettingsEqual", "SETTINGS_EVENT", '"pageshow"', '"focus"']) {
+  if (!readerSettings.includes(required)) fail(`Reader設定同期に必要な ${required} がありません。`);
+}
+
 const fanza = readFileSync("server/app/src/FanzaClient.php", "utf8");
 if (!fanza.includes("'makerId' =>")) fail("maker_idを正規化結果へ渡していません。");
 if (!fanza.includes("function isComicItem")) fail("FANZA取得時のコミック判定がありません。");
@@ -93,11 +104,44 @@ if (/nextCursor === null\s*\|\|\s*!feedId/.test(app)) {
 if (!app.includes('catalog.source === "database" ? catalog.apiTotal : 0')) {
   fail("FANZA fallbackの同人フロア全件数をコミック総数として表示する回帰があります。");
 }
+for (const required of ["subscribeReaderSettings", "draftMinSamples", "draftMinReviews", "RATING_OPTIONS", "ビューアー設定"]) {
+  if (!app.includes(required)) fail(`絞り込み/Reader改善に必要な ${required} がありません。`);
+}
+if (app.includes("ダブルタップで拡大・解除、2本指ピンチで1〜4倍に拡大できます。設定はこの端末に保存されます。")) {
+  fail("削除対象のReader補足テキストが再混入しています。");
+}
+if (/id="min_rating"\s+type="number"/.test(app)) {
+  fail("最低評価が数値入力へ戻っています。5段階の星UIを使用してください。");
+}
 for (const deadRetry of ["retryAttempt", "retryAt", "retryDelay", "ApiError"]) {
   if (app.includes(deadRetry)) fail(`実際に機能しない追加取得retryコード ${deadRetry} が残っています。`);
 }
 for (const removed of ["AssetType", "asset_type", "assetType", "作品タイプ", "CG・イラスト系", "ボイス・音声系"]) {
   if (app.includes(removed)) fail(`コミック専用UIに旧作品タイプ要素 ${removed} が残っています。`);
+}
+
+const myPage = readFileSync("components/MyPage.tsx", "utf8");
+if (!myPage.includes("subscribeReaderSettings") || !myPage.includes("readerSettingsEqual")) {
+  fail("マイページのReader設定が絞り込み画面と同期されていません。");
+}
+
+const globalNav = readFileSync("components/GlobalNav.tsx", "utf8");
+const navigationCss = readFileSync("styles/navigation.css", "utf8");
+if (!globalNav.includes("global-nav-main") || !globalNav.includes(">読む<")) {
+  fail("刷新後のグローバルメニュー構造がありません。");
+}
+if (!navigationCss.includes("backdrop-filter: blur(22px)") || !navigationCss.includes("grid-template-columns: repeat(3")) {
+  fail("刷新後のフローティング型グローバルメニューCSSがありません。");
+}
+
+const readerCss = readFileSync("styles/reader.css", "utf8");
+if (!readerCss.includes("white-space: nowrap") || !readerCss.includes("gap: 12px")) {
+  fail("スワイプ案内またはReaderアクション余白の改善が欠落しています。");
+}
+
+const indexHtml = readFileSync("index.html", "utf8");
+if (!indexHtml.includes("fonts.googleapis.com") || !indexHtml.includes("Noto+Sans+JP")) {
+  fail("Noto Sans JPのWeb Font読込がありません。");
 }
 
 const types = readFileSync("lib/types.ts", "utf8");
@@ -166,5 +210,8 @@ if (!historyApi.includes("userLibraryService->history")) fail("閲覧履歴API�
 const htaccess = readFileSync("server/public/.htaccess", "utf8");
 const router = readFileSync("server/public/router.php", "utf8");
 if (!htaccess.includes("history") || !router.includes("history")) fail("閲覧履歴APIのルーティングが不足しています。");
+if (!htaccess.includes("fonts.googleapis.com") || !htaccess.includes("fonts.gstatic.com")) {
+  fail("Noto Sans JP配信元がCSPで許可されていません。");
+}
 
 if (!process.exitCode) console.log("debt check: OK");
