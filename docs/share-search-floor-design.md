@@ -9,7 +9,7 @@
 - canonical作品URL: `/work/{cid}`
 - 旧 `/?cid={cid}` は301でcanonicalへ統一する
 - `work.php` がDBから作品情報を取得し、React起動前にOGP / X Card / canonicalをHTMLへ埋め込む
-- 共有URLは年齢確認後、通常Feed用オンボーディングを挟まず対象作品Readerへ直接入る
+- 共有URLは年齢確認後、対象作品Readerへ直接入る
 - 作品URLは現段階では `noindex` を維持し、SEO公開判断とは分離する
 
 ## 詳細検索

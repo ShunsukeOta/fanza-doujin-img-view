@@ -4,7 +4,7 @@ FANZA同人の**コミック作品だけ**を対象に、TikTok / Shortsのよ�
 
 現在の本番構成は **React 19 + Vite 7 + TypeScript / PHP 8.3 / MariaDB / シンレンタルサーバー** です。Node.jsは開発・CI・ビルド時だけ使用し、本番Webサーバーには常駐させません。
 
-> 2026-09-08時点。AV / 素人系動画を追加する前段として、旧「作品タイプ」機能を廃止し、現行カタログを同人コミック専用へ再設計しています。
+> 2026-09-08時点。AV / 素人系動画を追加する前段として、旧「作品タイプ」機能を廃止し、現行カタログを同人コミック専用へ再設計しています。将来の3フロア展開に備え、共通フロア切替・詳細検索Shellを先行実装しています。
 
 ## 現在のステータス
 
@@ -17,7 +17,9 @@ FANZA同人の**コミック作品だけ**を対象に、TikTok / Shortsのよ�
 - 18歳以上確認を実装済み
 - プライバシーポリシー / 利用規約を実装済み
 - マイページから匿名データを自己削除可能
-- オンボーディングは現在、メイン画面を新規表示するたびに表示する一時仕様
+- 作品単位の共有URL / OGP / X Cardを実装済み
+- 詳細検索ページを実装済み
+- 「同人漫画 / 女優動画 / 素人動画」の共通フロア切替基盤を実装済み。動画2フロアは準備中
 
 公開先: `https://wp983575.wpx.jp/`
 
@@ -54,24 +56,29 @@ migrationは非コミック削除・孤立メタデータ整理・互換列DDL�
 - サンプル読了後のFANZAアフィリエイトCTA
 - 保存済み作品一覧と価格変化表示
 - 閲覧履歴
-- 作品名・サークル・シリーズのキーワード検索
-- ジャンル、価格、サンプル枚数、レビュー件数、評価で絞り込み
+- 作品単位URL `/work/{cid}` とSSR OGP / X Card
+- 作品名・サークル・シリーズ・ジャンル・価格・評価等の詳細検索
+- 検索結果から作品Readerへ直接遷移
+- Feed / 詳細検索 / 保存済みで共通の3フロア切替
 - 匿名行動データからジャンル嗜好を更新するルールベース推薦
-- Reader設定の端末保存
+- Reader設定の端末保存と画面間同期
 - 18歳以上確認
 - 匿名データ削除
 - PWA / Service Worker
-- 3ステップのオンボーディング
-- メイン ↔ 保存済み / マイページ / 閲覧履歴間の閲覧位置復帰
+- メイン ↔ 保存済み / 検索 / マイページ / 閲覧履歴間の閲覧位置復帰
 
 ## 画面
 
 | Path | 内容 |
 | --- | --- |
 | `/` | メインの縦スワイプ・コミックFeed |
+| `/work/{cid}` | 作品固有URL。OGPをSSRし、対象作品からReaderを開始 |
+| `/search` | 同人コミックの詳細検索 |
 | `/saved` | 保存済みコミック |
 | `/mypage` | 匿名ユーザーのマイページ |
 | `/history` | 閲覧履歴 |
+| `/actress` | 女優動画フロア準備中 |
+| `/amateur` | 素人動画フロア準備中 |
 | `/privacy` | プライバシーポリシー |
 | `/terms` | 利用規約 |
 | `/favorites` | 旧URL。`/saved`へリダイレクト |
@@ -88,11 +95,56 @@ React Routerは使用せず、`src/main.tsx`でpathnameを判定して画面を�
 - 年齢確認前は作品画面をマウントせず、行動計測も開始しない
 - 匿名データ削除時に年齢確認状態も削除
 
-## オンボーディング
+年齢確認完了後は、メインFeedまたは共有された対象作品をそのまま表示します。
 
-現在は検証中のため、メイン画面を新規表示するたびにオンボーディングを表示します。マイページの「操作ガイド」からも同じガイドを再表示できます。
+## 作品共有 / OGP
 
-詳細は `docs/onboarding-implementation.md` を参照してください。
+canonical作品URLは `/work/{cid}` です。旧 `/?cid={cid}` は301でcanonicalへ統一します。
+
+`server/public/work.php` がDBから作品情報を取得し、React起動前に以下をHTMLへ埋め込みます。
+
+- `title`
+- canonical
+- `og:title`
+- `og:description`
+- `og:image`
+- `og:url`
+- `twitter:card`
+- `twitter:title`
+- `twitter:description`
+- `twitter:image`
+
+作品URLは現段階では `noindex` を維持し、SNS共有基盤とSEO公開判断を分離しています。
+
+## 詳細検索
+
+`/search` はFeed内の絞り込みSheetとは独立した本格検索画面です。
+
+現在の同人漫画フロアでは以下を検索できます。
+
+- キーワード（作品名 / サークル / シリーズ）
+- ジャンル
+- サークル
+- シリーズ
+- 価格下限 / 上限
+- 最低サンプル枚数
+- 最低レビュー件数
+- 最低評価 1〜5
+- 人気順 / 評価順 / 新着順 / 価格が安い順
+
+検索処理は `SearchPage -> /api/search -> SearchService -> MariaDB` に分離しています。将来は同じSearch Shellへ女優動画・素人動画固有の検索条件を追加します。
+
+## フロア切替
+
+共通 `FloorTabs` で以下を定義しています。
+
+- 同人漫画: 利用可能
+- 女優動画: 準備中
+- 素人動画: 準備中
+
+Feed / 詳細検索 / 保存済みで同じ定義を利用します。上部タブは「何を見るか」、下部グローバルメニューは「何をするか」を担当します。
+
+下部メニューは「読む / 検索 / 保存 / マイページ」の4項目です。
 
 ## マイページ
 
@@ -106,7 +158,6 @@ React Routerは使用せず、`src/main.tsx`でpathnameを判定して画面を�
   - 右→左 / 左→右
   - 画面端タップ送り
   - Reader UI最小化
-- 操作ガイド
 - 保存済み / 閲覧履歴への導線
 - プライバシーポリシー / 利用規約
 - 利用開始日
@@ -122,8 +173,13 @@ React Routerは使用せず、`src/main.tsx`でpathnameを判定して画面を�
 18歳以上確認
   ↓
 React / Vite
+  ├─ Feed / Reader
+  ├─ 詳細検索
+  ├─ 保存 / 履歴 / マイページ
+  └─ 3フロア共通UI
   ↓
 /api/catalog       コミックFeed
+/api/search        詳細検索
 /api/meta          ジャンル
 /api/events        行動イベント
 /api/reactions     いいね・保存状態
@@ -134,6 +190,8 @@ React / Vite
 /api/health        稼働確認
   ↓
 PHP 8.3
+  ├─ work.php      作品OGP / canonical
+  ├─ SearchService
   ├─ MariaDB
   │   ├─ コミック作品 / ジャンル / シリーズ
   │   ├─ 価格履歴
@@ -226,12 +284,12 @@ lib/                   フロント共通型
 src/                   analytics / API / reader / navigation / age verification等
 styles/                責務別CSS
 public/                manifest / service worker / icons
-server/public/         公開PHP APIと.htaccess
+server/public/         公開PHP API・作品OGP・.htaccess
 server/app/src/        PHPドメインロジック
 server/app/cron/       DB構築・同期・保守cron
 server/app/tests/      CI用統合テスト
 scripts/               build / debt check / logic test
-docs/                  実装メモ
+docs/                  実装・設計メモ
 .github/workflows/     CI / deploy / catalog maintenance
 ```
 
@@ -264,6 +322,7 @@ npm run build:shin
 
 `check:debt`では既存のReader・年齢確認・履歴・削除等の回帰に加え、以下も検査します。
 
+- 削除済みUI / CSS / ドキュメントの再混入
 - `AssetType` / `assetType` / 作品タイプUIの再混入
 - CatalogServiceへの`asset_type`分岐の再混入
 - WorkRepositoryへの旧作品タイプ列依存の再混入
@@ -274,10 +333,11 @@ npm run build:shin
 - 既存DBコミック専用化migration / 孤立メタ整理の欠落
 - migration完了markが互換DDLより先に立つ回帰
 - FANZA fallbackの複数ページ・部分ページcursor処理の欠落
+- 詳細検索 / 作品OGP / フロア切替基盤の欠落
 
 ## CI
 
-Pull RequestではTypeScript、全PHP構文、debt check、Readerロジック、MariaDB migration、検索、固定Feed、保存cursor、閲覧履歴cursor、匿名データ削除、価格差額、本番build、成果物への秘密情報混入をまとめて確認します。
+Pull RequestではTypeScript、全PHP構文、debt check、Readerロジック、MariaDB migration、通常検索・詳細検索、固定Feed、保存cursor、閲覧履歴cursor、匿名データ削除、価格差額、本番build、成果物への秘密情報混入をまとめて確認します。
 
 MariaDB 11.4をCI service containerとして使用します。新規schemaの再実行安全性に加え、旧`asset_type / asset_bucket`列を持つDBをCI内で再現し、非コミック削除、孤立ジャンル・シリーズ削除、互換列の`comic`固定、migration再実行を検証します。
 
@@ -298,17 +358,16 @@ DB migration
   ↓
 app / public_html切替
   ↓
-本番HTTP / PWA / fixed feed / public boundary検証
+本番HTTP / PWA / fixed feed / search / OGP / public boundary検証
 ```
 
 ## 本公開前に残っている主な事項
 
-現在は`noindex,nofollow`を維持しています。年齢確認、プライバシーポリシー、利用規約、匿名データ削除は実装済みです。
+現在は`noindex,nofollow`を維持しています。年齢確認、プライバシーポリシー、利用規約、匿名データ削除、作品単位共有URL、動的OGP、詳細検索、3フロア共通UIは実装済みです。
 
 主な残作業:
 
 - Reader実機QA
-- 作品単位共有URL / 動的OGP
 - PWA追加訴求の段階設計
 - SEO公開ページ / URL / index設計
 - X / 既存SEOサイトからの市場検証

@@ -5,13 +5,16 @@ const fail = (message) => {
   process.exitCode = 1;
 };
 
-const removedStyles = [
+const removedFiles = [
   "styles/page-scroll.css",
   "styles/pwa-layout.css",
   "styles/saved-enhancements.css",
+  "styles/onboarding.css",
+  "components/Onboarding.tsx",
+  "docs/onboarding-implementation.md",
 ];
-for (const path of removedStyles) {
-  if (existsSync(path)) fail(`${path} が再作成されています。pages/globalsへ統合してください。`);
+for (const path of removedFiles) {
+  if (existsSync(path)) fail(`${path} が再作成されています。削除済みの責務を復活させないでください。`);
 }
 
 const styleFiles = [
@@ -19,7 +22,6 @@ const styleFiles = [
   "styles/navigation.css",
   "styles/pages.css",
   "styles/reader.css",
-  "styles/onboarding.css",
   "styles/discovery.css",
   "styles/accessibility.css",
 ];
@@ -34,6 +36,7 @@ for (const selector of [
   ".genre-line",
   ".next-hint",
   ".reader-settings-note",
+  ".onboarding",
 ]) {
   if (css.includes(selector)) fail(`削除済みUIのCSS ${selector} が残っています。`);
 }
@@ -62,9 +65,12 @@ if (!css.includes('font-family: "Noto Sans JP", sans-serif')) {
 }
 
 const main = readFileSync("src/main.tsx", "utf8");
-for (const removed of removedStyles) {
+for (const removed of removedFiles) {
   const importPath = `@/${removed}`;
-  if (main.includes(importPath)) fail(`削除済みCSS ${importPath} をimportしています。`);
+  if (main.includes(importPath)) fail(`削除済みファイル ${importPath} をimportしています。`);
+}
+if (main.includes("Onboarding") || main.includes("onboarding.css")) {
+  fail("メイン起動経路にオンボーディングが残っています。");
 }
 if (!main.includes("hasAgeVerification") || !main.includes("<AgeGate")) {
   fail("成人向け画面の年齢確認ゲートがありません。");
@@ -81,8 +87,8 @@ if (!main.includes('pathname === "/search"') || !main.includes("<SearchPage")) {
 if (!main.includes("workCidFromPath") || !main.includes("<FloorTabs")) {
   fail("作品単位URLまたはFeedフロア切替がMainへ統合されていません。");
 }
-if (!main.includes('skipOnboarding={pathWorkCid !== ""}')) {
-  fail("共有作品URLが通常Feed用オンボーディングを迂回してReaderへ直行しません。");
+if (!main.includes("installMainResumeLifecycle")) {
+  fail("オンボーディング削除後のメイン復帰ライフサイクルが初期化されていません。");
 }
 
 const imagePreload = readFileSync("src/imagePreload.ts", "utf8");
@@ -142,6 +148,9 @@ for (const removed of ["AssetType", "asset_type", "assetType", "作品タイプ"
 const myPage = readFileSync("components/MyPage.tsx", "utf8");
 if (!myPage.includes("subscribeReaderSettings") || !myPage.includes("readerSettingsEqual")) {
   fail("マイページのReader設定が絞り込み画面と同期されていません。");
+}
+if (myPage.includes("Onboarding") || myPage.includes("操作ガイド") || myPage.includes("guideOpen")) {
+  fail("マイページに削除済みオンボーディング導線が残っています。");
 }
 
 const globalNav = readFileSync("components/GlobalNav.tsx", "utf8");
@@ -264,6 +273,12 @@ if (!htaccess.includes("work.php?cid=") || !router.includes("/work/")) fail("作
 if (!htaccess.includes("R=301") || !htaccess.includes("QSD")) fail("旧cid共有URLがcanonical作品URLへ301統一されていません。");
 if (!htaccess.includes("fonts.googleapis.com") || !htaccess.includes("fonts.gstatic.com")) {
   fail("Noto Sans JP配信元がCSPで許可されていません。");
+}
+
+const readme = readFileSync("README.md", "utf8");
+const shareDesign = readFileSync("docs/share-search-floor-design.md", "utf8");
+if (readme.includes("オンボーディング") || shareDesign.includes("オンボーディング")) {
+  fail("ドキュメントに削除済みオンボーディングの記述が残っています。");
 }
 
 if (!process.exitCode) console.log("debt check: OK");
