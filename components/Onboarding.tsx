@@ -1,4 +1,5 @@
 import {
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
@@ -6,142 +7,262 @@ import {
   useState,
 } from "react";
 
+import { BookmarkIcon, HeartIcon } from "@/components/icons";
+
 type Props = {
   onComplete: () => void;
+  mode?: "first-run" | "guide";
 };
 
 type Step = {
+  key: "feed" | "reader" | "keep";
   eyebrow: string;
   title: string;
   description: string;
-  visual: "discover" | "reader" | "save";
+};
+
+type GestureAxis = "vertical" | "horizontal";
+
+type ActiveGesture = {
+  axis: GestureAxis;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  lastX: number;
+  lastY: number;
 };
 
 const STEPS: Step[] = [
   {
-    eyebrow: "DISCOVER",
-    title: "気になる作品を、\n流すように。",
-    description: "上下にスワイプするだけで次の作品へ。テンポを崩さず、気になるサンプルを次々チェックできます。",
-    visual: "discover",
+    key: "feed",
+    eyebrow: "FIND",
+    title: "作品は、上下で切り替える",
+    description: "上にスワイプすると次の作品へ。下に戻せば前の作品です。まずは下の画面で試してみてください。",
   },
   {
+    key: "reader",
     eyebrow: "READ",
-    title: "横に送って、\nそのまま読む。",
-    description: "左右スワイプ、または画面端タップでページ送り。ダブルタップやピンチ操作で細部まで拡大できます。",
-    visual: "reader",
+    title: "漫画は、左右で読む",
+    description: "サンプルは左右スワイプでページ送り。画面端のタップでも送れます。読む方向は設定から変更できます。",
   },
   {
+    key: "keep",
     eyebrow: "KEEP",
-    title: "見つけたら、\nすぐ残す。",
-    description: "いいね・保存であとから見返せます。サンプルを読み終えたら、そのままFANZAで続きを確認できます。",
-    visual: "save",
+    title: "気になったら保存。続きはFANZAへ",
+    description: "いいね・保存した作品はあとから見返せます。サンプル最終ページのボタンからFANZAの作品ページへ移動できます。",
   },
 ];
 
-function ChevronIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="m9 6 6 6-6 6" />
-    </svg>
-  );
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
-function HeartIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M20.8 4.9a5.6 5.6 0 0 0-7.9 0L12 5.8l-.9-.9a5.6 5.6 0 1 0-7.9 7.9l.9.9L12 21l7.9-7.3.9-.9a5.6 5.6 0 0 0 0-7.9Z" />
-    </svg>
-  );
-}
+function FeedPractice({ practiced, onPracticed }: { practiced: boolean; onPracticed: () => void }) {
+  const gestureRef = useRef<ActiveGesture | null>(null);
 
-function BookmarkIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M6.5 3.5h11v17L12 17l-5.5 3.5v-17Z" />
-    </svg>
-  );
-}
+  const resetOffset = (target: HTMLDivElement) => {
+    target.style.setProperty("--practice-x", "0px");
+    target.style.setProperty("--practice-y", "0px");
+    target.classList.remove("is-dragging");
+  };
 
-function DiscoverVisual() {
+  const pointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    gestureRef.current = {
+      axis: "vertical",
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      lastX: event.clientX,
+      lastY: event.clientY,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.currentTarget.classList.add("is-dragging");
+  };
+
+  const pointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const gesture = gestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    gesture.lastX = event.clientX;
+    gesture.lastY = event.clientY;
+    const deltaY = clamp(event.clientY - gesture.startY, -72, 24);
+    event.currentTarget.style.setProperty("--practice-y", `${deltaY}px`);
+  };
+
+  const finishPointer = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const gesture = gestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    const deltaY = gesture.lastY - gesture.startY;
+    gestureRef.current = null;
+    resetOffset(event.currentTarget);
+    if (deltaY <= -42) onPracticed();
+  };
+
+  const keyboardPractice = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "ArrowUp") return;
+    event.preventDefault();
+    onPracticed();
+  };
+
   return (
-    <div className="onboarding-visual onboarding-discover" aria-hidden="true">
-      <div className="onboarding-phone">
-        <div className="onboarding-work-card onboarding-work-card--back">
-          <span className="onboarding-card-tag">NEXT</span>
-        </div>
-        <div className="onboarding-work-card onboarding-work-card--front">
-          <div className="onboarding-card-lines">
-            <span />
-            <span />
+    <div className="onboarding-practice-wrap">
+      <div
+        className={`onboarding-practice onboarding-practice--feed${practiced ? " is-practiced" : ""}`}
+        role="group"
+        aria-label="作品切替の練習。上にスワイプしてください。"
+        tabIndex={0}
+        onPointerDown={pointerDown}
+        onPointerMove={pointerMove}
+        onPointerUp={finishPointer}
+        onPointerCancel={(event) => {
+          gestureRef.current = null;
+          resetOffset(event.currentTarget);
+        }}
+        onKeyDown={keyboardPractice}
+      >
+        <div className="onboarding-demo-phone">
+          <div className="onboarding-demo-feed">
+            <article className="onboarding-demo-work onboarding-demo-work--current">
+              <span className="onboarding-demo-cover" />
+              <div><strong>気になる作品</strong><small>サンプルをチェック</small></div>
+            </article>
+            <article className="onboarding-demo-work onboarding-demo-work--next">
+              <span className="onboarding-demo-cover onboarding-demo-cover--next" />
+              <div><strong>次の作品</strong><small>そのまま続けて見る</small></div>
+            </article>
           </div>
-          <div className="onboarding-card-actions">
-            <span><HeartIcon /></span>
-            <span><BookmarkIcon /></span>
+        </div>
+        {!practiced ? (
+          <div className="onboarding-gesture-hint onboarding-gesture-hint--up" aria-hidden="true">
+            <span className="onboarding-touch-dot" />
+            <span className="onboarding-gesture-line" />
+            <strong>上へスワイプ</strong>
           </div>
-        </div>
-        <div className="onboarding-swipe onboarding-swipe--vertical">
-          <span className="onboarding-swipe-dot" />
-          <span className="onboarding-swipe-line" />
-          <span className="onboarding-swipe-arrow">↑</span>
-        </div>
+        ) : null}
       </div>
-      <span className="onboarding-visual-caption">SWIPE UP</span>
+      <p className={`onboarding-practice-result${practiced ? " is-complete" : ""}`} aria-live="polite">
+        {practiced ? "OK　この操作で次の作品へ進みます" : "ここで実際に操作できます"}
+      </p>
     </div>
   );
 }
 
-function ReaderVisual() {
+function ReaderPractice({ practiced, onPracticed }: { practiced: boolean; onPracticed: () => void }) {
+  const gestureRef = useRef<ActiveGesture | null>(null);
+
+  const resetOffset = (target: HTMLDivElement) => {
+    target.style.setProperty("--practice-x", "0px");
+    target.style.setProperty("--practice-y", "0px");
+    target.classList.remove("is-dragging");
+  };
+
+  const pointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    gestureRef.current = {
+      axis: "horizontal",
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      lastX: event.clientX,
+      lastY: event.clientY,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.currentTarget.classList.add("is-dragging");
+  };
+
+  const pointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const gesture = gestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    gesture.lastX = event.clientX;
+    gesture.lastY = event.clientY;
+    const deltaX = clamp(event.clientX - gesture.startX, -72, 72);
+    event.currentTarget.style.setProperty("--practice-x", `${deltaX}px`);
+  };
+
+  const finishPointer = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const gesture = gestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    const deltaX = gesture.lastX - gesture.startX;
+    gestureRef.current = null;
+    resetOffset(event.currentTarget);
+    if (Math.abs(deltaX) >= 42) onPracticed();
+  };
+
+  const keyboardPractice = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    onPracticed();
+  };
+
   return (
-    <div className="onboarding-visual onboarding-reader" aria-hidden="true">
-      <div className="onboarding-reader-frame">
-        <div className="onboarding-reader-page onboarding-reader-page--prev" />
-        <div className="onboarding-reader-page onboarding-reader-page--current">
-          <div className="onboarding-manga-panel onboarding-manga-panel--one" />
-          <div className="onboarding-manga-panel onboarding-manga-panel--two" />
-          <div className="onboarding-manga-panel onboarding-manga-panel--three" />
+    <div className="onboarding-practice-wrap">
+      <div
+        className={`onboarding-practice onboarding-practice--reader${practiced ? " is-practiced" : ""}`}
+        role="group"
+        aria-label="ページ送りの練習。左右にスワイプしてください。"
+        tabIndex={0}
+        onPointerDown={pointerDown}
+        onPointerMove={pointerMove}
+        onPointerUp={finishPointer}
+        onPointerCancel={(event) => {
+          gestureRef.current = null;
+          resetOffset(event.currentTarget);
+        }}
+        onKeyDown={keyboardPractice}
+      >
+        <div className="onboarding-reader-demo">
+          <div className="onboarding-reader-strip">
+            <div className="onboarding-demo-page onboarding-demo-page--one">
+              <span /><span /><span />
+            </div>
+            <div className="onboarding-demo-page onboarding-demo-page--two">
+              <span /><span /><span />
+            </div>
+          </div>
+          <span className="onboarding-demo-counter">{practiced ? "02" : "01"} / 12</span>
         </div>
-        <div className="onboarding-reader-page onboarding-reader-page--next" />
-        <span className="onboarding-page-number">03 / 12</span>
+        {!practiced ? (
+          <div className="onboarding-gesture-hint onboarding-gesture-hint--side" aria-hidden="true">
+            <span className="onboarding-touch-dot" />
+            <span className="onboarding-gesture-line" />
+            <strong>左右にスワイプ</strong>
+          </div>
+        ) : null}
       </div>
-      <div className="onboarding-swipe onboarding-swipe--horizontal">
-        <span className="onboarding-swipe-arrow">←</span>
-        <span className="onboarding-swipe-line" />
-        <span className="onboarding-swipe-dot" />
-      </div>
-      <span className="onboarding-visual-caption">SWIPE / TAP</span>
+      <p className={`onboarding-practice-result${practiced ? " is-complete" : ""}`} aria-live="polite">
+        {practiced ? "OK　この操作で漫画のページを送れます" : "左右どちらでも試せます"}
+      </p>
     </div>
   );
 }
 
-function SaveVisual() {
+function KeepVisual() {
   return (
-    <div className="onboarding-visual onboarding-save" aria-hidden="true">
-      <div className="onboarding-save-stack">
-        <div className="onboarding-save-card onboarding-save-card--ghost" />
-        <div className="onboarding-save-card">
-          <span className="onboarding-save-kicker">SAMPLE COMPLETE</span>
-          <strong>サンプルはここまで</strong>
-          <div className="onboarding-save-meta"><span>全 84 ページ</span><span>¥770</span></div>
-          <div className="onboarding-save-cta">FANZAで続きを読む <ChevronIcon /></div>
-          <div className="onboarding-save-secondary"><BookmarkIcon /> あとで読む</div>
-        </div>
+    <div className="onboarding-practice-wrap">
+      <div className="onboarding-practice onboarding-practice--keep" aria-hidden="true">
+        <article className="onboarding-keep-card">
+          <div className="onboarding-keep-preview"><span /><span /><span /></div>
+          <div className="onboarding-keep-actions">
+            <div><span className="onboarding-keep-icon"><HeartIcon /></span><strong>いいね</strong></div>
+            <div><span className="onboarding-keep-icon"><BookmarkIcon /></span><strong>保存</strong></div>
+          </div>
+          <div className="onboarding-keep-divider" />
+          <small>サンプルはここまで</small>
+          <div className="onboarding-keep-cta">FANZAで続きを読む <span>›</span></div>
+        </article>
       </div>
-      <div className="onboarding-floating-reaction onboarding-floating-reaction--heart"><HeartIcon /></div>
-      <div className="onboarding-floating-reaction onboarding-floating-reaction--bookmark"><BookmarkIcon /></div>
+      <p className="onboarding-practice-result is-complete">保存した作品は「保存」メニューから確認できます</p>
     </div>
   );
 }
 
-function StepVisual({ type }: { type: Step["visual"] }) {
-  if (type === "reader") return <ReaderVisual />;
-  if (type === "save") return <SaveVisual />;
-  return <DiscoverVisual />;
-}
-
-export function Onboarding({ onComplete }: Props) {
+export function Onboarding({ onComplete, mode = "first-run" }: Props) {
   const [stepIndex, setStepIndex] = useState(0);
-  const pointerStart = useRef<number | null>(null);
+  const [feedPracticed, setFeedPracticed] = useState(false);
+  const [readerPracticed, setReaderPracticed] = useState(false);
   const completedRef = useRef(false);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const headingRef = useRef<HTMLHeadingElement | null>(null);
   const step = STEPS[stepIndex];
   const isLast = stepIndex === STEPS.length - 1;
 
@@ -156,73 +277,90 @@ export function Onboarding({ onComplete }: Props) {
   }, []);
 
   useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    document.body.style.overflow = "hidden";
+    requestAnimationFrame(() => headingRef.current?.focus());
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      if (mode === "guide") previousFocus?.focus();
+    };
+  }, [mode]);
+
+  useEffect(() => {
+    requestAnimationFrame(() => headingRef.current?.focus());
+  }, [stepIndex]);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
         complete();
-      } else if (event.key === "ArrowRight") {
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const dialog = dialogRef.current;
+      if (!dialog) return;
+      const focusable = [...dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+      )].filter((element) => !element.hasAttribute("aria-hidden"));
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
-        if (stepIndex === STEPS.length - 1) complete();
-        else move(1);
-      } else if (event.key === "ArrowLeft") {
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
         event.preventDefault();
-        move(-1);
+        first.focus();
       }
     };
+
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [complete, move, stepIndex]);
-
-  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.pointerType === "mouse" && event.button !== 0) return;
-    pointerStart.current = event.clientX;
-  };
-
-  const handlePointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const start = pointerStart.current;
-    pointerStart.current = null;
-    if (start === null) return;
-    const delta = event.clientX - start;
-    if (Math.abs(delta) < 52) return;
-    if (delta < 0) {
-      if (isLast) complete();
-      else move(1);
-    } else {
-      move(-1);
-    }
-  };
+  }, [complete]);
 
   return (
     <div
+      ref={dialogRef}
       className="onboarding"
       role="dialog"
       aria-modal="true"
       aria-labelledby="onboarding-title"
-      onPointerDown={handlePointerDown}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={() => { pointerStart.current = null; }}
+      aria-describedby="onboarding-description"
     >
       <div className="onboarding-shell">
         <header className="onboarding-header">
           <div className="onboarding-brand" aria-label="Swipe Preview">
-            <span className="onboarding-brand-mark"><i /><i /></span>
+            <span className="onboarding-brand-mark" aria-hidden="true"><i /><i /></span>
             <span>SWIPE PREVIEW</span>
           </div>
-          <button className="onboarding-skip" type="button" onClick={complete}>スキップ</button>
+          <button className="onboarding-dismiss" type="button" onClick={complete}>
+            {mode === "guide" ? "閉じる" : "スキップ"}
+          </button>
         </header>
 
-        <main className="onboarding-main" key={stepIndex}>
-          <StepVisual type={step.visual} />
+        <main className="onboarding-main">
+          <div className="onboarding-stage">
+            {step.key === "feed" ? (
+              <FeedPractice practiced={feedPracticed} onPracticed={() => setFeedPracticed(true)} />
+            ) : step.key === "reader" ? (
+              <ReaderPractice practiced={readerPracticed} onPracticed={() => setReaderPracticed(true)} />
+            ) : (
+              <KeepVisual />
+            )}
+          </div>
 
-          <div className="onboarding-copy">
+          <div className="onboarding-copy" aria-live="polite">
             <div className="onboarding-step-label">
               <span>{String(stepIndex + 1).padStart(2, "0")}</span>
               <i />
               <span>{String(STEPS.length).padStart(2, "0")}</span>
               <em>{step.eyebrow}</em>
             </div>
-            <h1 id="onboarding-title">{step.title}</h1>
-            <p>{step.description}</p>
+            <h1 id="onboarding-title" ref={headingRef} tabIndex={-1}>{step.title}</h1>
+            <p id="onboarding-description">{step.description}</p>
           </div>
         </main>
 
@@ -230,7 +368,7 @@ export function Onboarding({ onComplete }: Props) {
           <div className="onboarding-progress" aria-label={`${stepIndex + 1} / ${STEPS.length}`}>
             {STEPS.map((item, index) => (
               <button
-                key={item.eyebrow}
+                key={item.key}
                 type="button"
                 className={index === stepIndex ? "is-active" : ""}
                 aria-label={`${index + 1}ページ目`}
@@ -249,8 +387,8 @@ export function Onboarding({ onComplete }: Props) {
               type="button"
               onClick={() => isLast ? complete() : move(1)}
             >
-              {isLast ? "はじめる" : "次へ"}
-              <ChevronIcon />
+              {isLast ? (mode === "guide" ? "閉じる" : "はじめる") : "次へ"}
+              <span aria-hidden="true">›</span>
             </button>
           </div>
         </footer>
