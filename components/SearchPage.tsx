@@ -1,10 +1,8 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
-import { FloorTabs } from "@/components/FloorTabs";
 import { GlobalNav } from "@/components/GlobalNav";
 import type { FeedItem, MetaResponse } from "@/lib/types";
 import { fetchJson } from "@/src/api";
-import { floorFromLocation, floorLabel } from "@/src/floors";
 import { openWorkInMain } from "@/src/navigationState";
 import { formatPrice } from "@/src/price";
 
@@ -84,8 +82,10 @@ function buildSearchParams(filters: SearchFilters, cursor = 0): URLSearchParams 
   if (filters.maker.trim()) params.set("maker", filters.maker.trim());
   if (filters.series.trim()) params.set("series", filters.series.trim());
   if (filters.genreId) params.set("genre_id", filters.genreId);
-  if (effectiveInt(filters.minPrice, 0, 0, 10_000_000) > 0) params.set("min_price", String(effectiveInt(filters.minPrice, 0, 0, 10_000_000)));
-  if (effectiveInt(filters.maxPrice, 0, 0, 10_000_000) > 0) params.set("max_price", String(effectiveInt(filters.maxPrice, 0, 0, 10_000_000)));
+  const minPrice = effectiveInt(filters.minPrice, 0, 0, 10_000_000);
+  const maxPrice = effectiveInt(filters.maxPrice, 0, 0, 10_000_000);
+  if (minPrice > 0) params.set("min_price", String(minPrice));
+  if (maxPrice > 0) params.set("max_price", String(maxPrice));
   return params;
 }
 
@@ -107,7 +107,6 @@ function mergeUnique(current: FeedItem[], incoming: FeedItem[]): FeedItem[] {
 }
 
 export function SearchPage() {
-  const floor = floorFromLocation();
   const [meta, setMeta] = useState<MetaResponse | null>(null);
   const [draft, setDraft] = useState<SearchFilters>(() => parseFilters());
   const [applied, setApplied] = useState<SearchFilters>(() => parseFilters());
@@ -115,7 +114,7 @@ export function SearchPage() {
   const [total, setTotal] = useState(0);
   const [nextCursor, setNextCursor] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(floor === "comic");
+  const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
 
@@ -126,7 +125,6 @@ export function SearchPage() {
   }, [draft.maxPrice, draft.minPrice]);
 
   const runSearch = useCallback(async (filters: SearchFilters, cursor = 0, append = false) => {
-    if (floor !== "comic") return;
     append ? setLoadingMore(true) : setLoading(true);
     setError("");
     try {
@@ -148,17 +146,16 @@ export function SearchPage() {
     } finally {
       append ? setLoadingMore(false) : setLoading(false);
     }
-  }, [floor]);
+  }, []);
 
   useEffect(() => {
-    if (floor !== "comic") return;
     void fetchJson<MetaResponse>(
       "/api/meta",
       { headers: { Accept: "application/json" }, credentials: "same-origin" },
       "ジャンル情報を取得できませんでした",
     ).then(setMeta).catch(() => setMeta(null));
     void runSearch(applied);
-  }, [applied, floor, runSearch]);
+  }, [applied, runSearch]);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -195,23 +192,6 @@ export function SearchPage() {
     setApplied(empty);
   };
 
-  if (floor !== "comic") {
-    return (
-      <div className="subpage-shell search-shell">
-        <header className="subpage-header"><h1>詳細検索</h1></header>
-        <main className="subpage-content search-content">
-          <FloorTabs activeFloor={floor} context="search" />
-          <section className="search-coming-card">
-            <span>COMING SOON</span>
-            <h2>{floorLabel(floor)}の詳細検索は準備中です</h2>
-            <p>フロア追加時に同じ検索Shellへ出演者・動画時間など、そのフロア固有の条件を追加します。</p>
-          </section>
-        </main>
-        <GlobalNav active="search" />
-      </div>
-    );
-  }
-
   return (
     <div className="subpage-shell search-shell">
       <header className="subpage-header search-header">
@@ -222,8 +202,6 @@ export function SearchPage() {
       </header>
 
       <main className="subpage-content search-content">
-        <FloorTabs activeFloor="comic" context="search" />
-
         <form className="detail-search-form" onSubmit={submit}>
           <div className="detail-search-grid">
             <label className="detail-search-field detail-search-field--wide">

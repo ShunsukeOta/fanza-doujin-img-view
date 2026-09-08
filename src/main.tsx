@@ -2,8 +2,6 @@ import { StrictMode, type ReactNode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 import { AgeGate } from "@/components/AgeGate";
-import { ComingSoonFloorPage } from "@/components/ComingSoonFloorPage";
-import { FloorSwitcher } from "@/components/FloorSwitcher";
 import { HistoryPage } from "@/components/HistoryPage";
 import { PrivacyPolicyPage, TermsPage } from "@/components/LegalPages";
 import { MyPage } from "@/components/MyPage";
@@ -75,12 +73,7 @@ function MainExperience({ initialFilters, initialCid, skipOnboarding = false }: 
     return <Onboarding onComplete={() => setOnboardingComplete(true)} />;
   }
 
-  return (
-    <>
-      <FloorSwitcher activeFloor="comic" context="feed" overlay />
-      <SwipePreviewApp initialFilters={initialFilters} initialCid={initialCid} />
-    </>
-  );
+  return <SwipePreviewApp initialFilters={initialFilters} initialCid={initialCid} />;
 }
 
 function ProtectedExperience({ children }: { children: ReactNode }) {
@@ -99,7 +92,7 @@ function ProtectedExperience({ children }: { children: ReactNode }) {
 
 const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
 const protectedSubpages = ["/saved", "/search", "/mypage", "/history", "/favorites"];
-if (![...protectedSubpages, "/privacy", "/terms", "/actress", "/amateur"].includes(pathname)) {
+if (![...protectedSubpages, "/privacy", "/terms"].includes(pathname)) {
   prepareMainResumeFallback();
 }
 
@@ -139,8 +132,6 @@ if (pathname === "/favorites") {
     else if (pathname === "/search") protectedPage = <SearchPage />;
     else if (pathname === "/mypage") protectedPage = <MyPage />;
     else if (pathname === "/history") protectedPage = <HistoryPage />;
-    else if (pathname === "/actress") protectedPage = <ComingSoonFloorPage floor="actress" />;
-    else if (pathname === "/amateur") protectedPage = <ComingSoonFloorPage floor="amateur" />;
     else protectedPage = (
       <MainExperience
         initialFilters={initialFilters}
