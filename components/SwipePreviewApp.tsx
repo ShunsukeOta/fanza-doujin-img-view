@@ -15,7 +15,7 @@ import { GlobalNav } from "@/components/GlobalNav";
 import { FilterIcon } from "@/components/icons";
 import { WorkCard } from "@/components/WorkCard";
 import type { AssetType, CatalogResponse, FeedItem, FilterValues, MetaResponse } from "@/lib/types";
-import { ApiError, fetchJson, retryDelay } from "@/src/api";
+import { fetchJson } from "@/src/api";
 import { preloadAndDecodeImage } from "@/src/imagePreload";
 import { formatPrice } from "@/src/price";
 import {
@@ -84,12 +84,14 @@ function buildPageQuery(filters: FilterValues, cid = "") {
   return params;
 }
 
-function mergeUniqueItems(current: FeedItem[], incoming: FeedItem[]) {
+function mergeUniqueItems(current: FeedItem[], incoming: FeedItem[]): FeedItem[] {
   const seen = new Set(current.map((item) => item.cid));
-  return [
-    ...current,
-    ...incoming.filter((item) => item.cid && !seen.has(item.cid) && seen.add(item.cid)),
-  ];
+  const additions = incoming.filter((item) => {
+    if (!item.cid || seen.has(item.cid)) return false;
+    seen.add(item.cid);
+    return true;
+  });
+  return [...current, ...additions];
 }
 
 export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
@@ -118,8 +120,6 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [catalogError, setCatalogError] = useState("");
   const [loadMoreError, setLoadMoreError] = useState("");
-  const [retryAttempt, setRetryAttempt] = useState(0);
-  const [retryAt, setRetryAt] = useState(0);
   const [metaError, setMetaError] = useState("");
   const [sheetOpen, setSheetOpen] = useState(false);
   const [activeWork, setActiveWork] = useState(0);
@@ -170,8 +170,6 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
     setLoadingMore(false);
     setCatalogError("");
     setLoadMoreError("");
-    setRetryAttempt(0);
-    setRetryAt(0);
     setActiveWork(0);
     setItems([]);
     setFeedId(null);
@@ -211,17 +209,15 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
 
   const loadMore = useCallback(async (manual = false) => {
     const requestGeneration = generation.current;
-    if (loadMoreInFlight.current !== null || !hasMore || nextCursor === null || !feedId) return;
-    if (!manual && (loadMoreError || Date.now() < retryAt)) return;
+    if (loadMoreInFlight.current !== null || !hasMore || nextCursor === null) return;
+    if (!manual && loadMoreError) return;
+
     loadMoreInFlight.current = requestGeneration;
     moreAbort.current?.abort();
     const controller = new AbortController();
     moreAbort.current = controller;
     setLoadingMore(true);
-    if (manual) {
-      setLoadMoreError("");
-      setRetryAt(0);
-    }
+    if (manual) setLoadMoreError("");
 
     try {
       const query = buildCatalogQuery(filters, { feedId, cursor: nextCursor, limit: INITIAL_LIMIT });
@@ -241,20 +237,14 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
       setHasMore(catalog.hasMore);
       setTargetTotal(catalog.apiTotal);
       setLoadMoreError("");
-      setRetryAttempt(0);
-      setRetryAt(0);
     } catch (error) {
       if (controller.signal.aborted || generation.current !== requestGeneration) return;
-      const nextAttempt = retryAttempt + 1;
-      const serverDelay = error instanceof ApiError ? error.retryAfterMs : 0;
-      setRetryAttempt(nextAttempt);
-      setRetryAt(Date.now() + retryDelay(nextAttempt, serverDelay));
       setLoadMoreError(error instanceof Error ? error.message : "追加作品の取得に失敗しました");
     } finally {
       if (loadMoreInFlight.current === requestGeneration) loadMoreInFlight.current = null;
       if (generation.current === requestGeneration) setLoadingMore(false);
     }
-  }, [feedId, filters, hasMore, loadMoreError, nextCursor, retryAt, retryAttempt]);
+  }, [feedId, filters, hasMore, loadMoreError, nextCursor]);
 
   const scrollToWork = useCallback((targetIndex: number, behavior: ScrollBehavior = "smooth") => {
     const feed = feedRef.current;
