@@ -184,7 +184,7 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
       setFeedId(catalog.feedId);
       setNextCursor(catalog.nextCursor);
       setHasMore(catalog.hasMore);
-      setTargetTotal(catalog.apiTotal);
+      setTargetTotal(catalog.source === "database" ? catalog.apiTotal : 0);
       if (catalog.queryError) showToast(catalog.queryError);
     } catch (error) {
       if (controller.signal.aborted || generation.current !== requestGeneration) return;
@@ -224,11 +224,11 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
       setFeedId(catalog.feedId);
       setNextCursor(catalog.nextCursor);
       setHasMore(catalog.hasMore);
-      setTargetTotal(catalog.apiTotal);
+      setTargetTotal(catalog.source === "database" ? catalog.apiTotal : 0);
       setLoadMoreError("");
     } catch (error) {
       if (controller.signal.aborted || generation.current !== requestGeneration) return;
-      setLoadMoreError(error instanceof Error ? error.message : "追加作品の取得に失敗しました");
+      setLoadMoreError(error instanceof Error ? error.message : "追加取得に失敗しました");
     } finally {
       if (loadMoreInFlight.current === requestGeneration) loadMoreInFlight.current = null;
       if (generation.current === requestGeneration) setLoadingMore(false);
