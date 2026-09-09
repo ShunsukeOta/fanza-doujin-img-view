@@ -52,9 +52,14 @@ assert.match(endCtaCss, /data-reader-cta="1"/, "CTA状態だけオーバーレ�
 
 const navigationCss = readFileSync("styles/navigation.css", "utf8");
 assert.doesNotMatch(navigationCss, /global-nav-main\.is-active/, "読むタブだけ特別なアクティブ色が残っている");
+assert.match(navigationCss, /\.global-nav-indicator\s*\{[\s\S]*transition:\s*transform 140ms/, "背景ピルの高速移動アニメーションがない");
+assert.doesNotMatch(navigationCss, /transform 280ms/, "背景ピルの280ms遅延が戻っている");
+assert.match(navigationCss, /global-nav\[data-active="search"\] \.global-nav-indicator/, "背景ピルのタブ追従がない");
 const globalNav = readFileSync("components/GlobalNav.tsx", "utf8");
 assert.doesNotMatch(globalNav, /global-nav-main/, "読むタブだけ専用classが残っている");
-assert.doesNotMatch(globalNav, /NAVIGATION_SETTLE_MS|setTimeout\(/, "グローバルメニュー遷移に意図的な待機時間が残っている");
-assert.match(globalNav, /requestAnimationFrame/, "グローバルメニューの選択表示を描画してから即遷移する処理がない");
+assert.doesNotMatch(globalNav, /NAVIGATION_SETTLE_MS|320/, "グローバルメニューの320ms待機が戻っている");
+assert.match(globalNav, /className="global-nav-indicator"/, "背景ピル自体が消えている");
+assert.match(globalNav, /transitionend/, "背景ピルの移動完了と画面遷移が同期していない");
+assert.match(globalNav, /NAVIGATION_FALLBACK_MS = 180/, "背景ピル遷移失敗時の短いfallbackがない");
 
 console.log("logic regression tests: OK");
