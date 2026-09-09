@@ -60,13 +60,3 @@ export type MetaResponse = {
   genres: Genre[];
   recommenderVersion?: string;
 };
-
-export type FilterValues = {
-  genreId: string;
-  minSamples: number;
-  minReviews: number;
-  minRating: number;
-  minPrice: number;
-  maxPrice: number;
-  query: string;
-};
