@@ -13,14 +13,17 @@ final class CatalogService
     private const LIVE_HITS = 100;
     private const LIVE_MAX_PAGES = 5;
     private const FEED_TTL_HOURS = 12;
-    private const BLOCK_SIZE = 120;
-    private const RECOMMENDER_VERSION = 'rules-v3.2-comic';
+    private const ADAPTIVE_WINDOW_SIZE = 30;
+    private const RECOMMENDER_VERSION = 'rules-v3.3-adaptive';
     private const MAX_CURSOR = 200000;
 
     public function __construct(
         private readonly Database $database,
         private readonly FanzaClient $fanza,
         private readonly WorkRepository $works,
+        private readonly FeedRepository $feedRepository,
+        private readonly CandidateSource $candidateSource,
+        private readonly RecommendationRanker $ranker,
     ) {
     }
 
@@ -126,7 +129,13 @@ final class CatalogService
         $this->ensureUser($pdo, $userId);
         $filterJson = json_encode($filters, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         $filterHash = hash('sha256', (string)$filterJson);
-        $session = $this->loadSession($pdo, $requestedFeedId, $userId, $filterHash);
+        $session = $this->feedRepository->loadSession(
+            $pdo,
+            $requestedFeedId,
+            $userId,
+            $filterHash,
+            self::RECOMMENDER_VERSION,
+        );
         $queryError = '';
 
         if (!$session) {
@@ -168,7 +177,7 @@ final class CatalogService
                     }
 
                     $directBelongsToPool = $this->cidMatchesDatabaseFilters($pdo, $cid, $filters);
-                    $this->insertFeedRows($pdo, $feedId, 0, [[
+                    $this->feedRepository->insertRows($pdo, $feedId, 0, [[
                         'cid' => $cid,
                         'source' => 'direct',
                         'score' => 999.0,
@@ -197,30 +206,21 @@ final class CatalogService
             $added = $this->appendFeedBlock($pdo, $session, $filters, $userId);
             if ($added === 0) {
                 $session['total_count'] = (int)$session['generated_count'];
-                $pdo->prepare('UPDATE feed_sessions SET total_count = ? WHERE id = ?')
-                    ->execute([$session['total_count'], $feedId]);
+                $this->feedRepository->updateTotal($pdo, $feedId, $session['total_count']);
                 break;
             }
         }
 
         $feedRows = [];
         for ($guard = 0; $guard < 4; $guard++) {
-            $stmt = $pdo->prepare(
-                'SELECT fi.position, fi.work_cid, fi.source, fi.score '
-                . 'FROM feed_items fi JOIN works w ON w.cid = fi.work_cid '
-                . 'WHERE fi.feed_id = ? AND fi.position > ? AND w.is_active = 1 '
-                . 'ORDER BY fi.position ASC LIMIT ' . $limit
-            );
-            $stmt->execute([$feedId, $cursor]);
-            $feedRows = $stmt->fetchAll();
+            $feedRows = $this->feedRepository->fetchRows($pdo, $feedId, $cursor, $limit);
             if (count($feedRows) >= $limit || (int)$session['generated_count'] >= (int)$session['total_count']) {
                 break;
             }
             $added = $this->appendFeedBlock($pdo, $session, $filters, $userId);
             if ($added === 0) {
                 $session['total_count'] = (int)$session['generated_count'];
-                $pdo->prepare('UPDATE feed_sessions SET total_count = ? WHERE id = ?')
-                    ->execute([$session['total_count'], $feedId]);
+                $this->feedRepository->updateTotal($pdo, $feedId, $session['total_count']);
                 break;
             }
         }
@@ -243,15 +243,7 @@ final class CatalogService
         $lastPosition = $feedRows === []
             ? $cursor
             : (int)$feedRows[array_key_last($feedRows)]['position'];
-        $existingNext = false;
-        if ($feedRows !== []) {
-            $nextStmt = $pdo->prepare(
-                'SELECT 1 FROM feed_items fi JOIN works w ON w.cid = fi.work_cid '
-                . 'WHERE fi.feed_id = ? AND fi.position > ? AND w.is_active = 1 LIMIT 1'
-            );
-            $nextStmt->execute([$feedId, $lastPosition]);
-            $existingNext = (bool)$nextStmt->fetchColumn();
-        }
+        $existingNext = $feedRows !== [] && $this->feedRepository->hasNext($pdo, $feedId, $lastPosition);
         $canGenerateMore = (int)$session['generated_count'] < (int)$session['total_count'];
         $hasMore = $existingNext || $canGenerateMore;
 
@@ -276,11 +268,7 @@ final class CatalogService
         $feedId = (string)$session['id'];
         $pdo->beginTransaction();
         try {
-            $sessionStmt = $pdo->prepare(
-                'SELECT total_count, generated_count, random_pivot FROM feed_sessions WHERE id = ? FOR UPDATE'
-            );
-            $sessionStmt->execute([$feedId]);
-            $locked = $sessionStmt->fetch();
+            $locked = $this->feedRepository->lockSession($pdo, $feedId);
             if (!is_array($locked)) {
                 $pdo->rollBack();
                 return 0;
@@ -294,163 +282,30 @@ final class CatalogService
                 $pdo->commit();
                 return 0;
             }
-            $target = min(self::BLOCK_SIZE, $remaining);
+            $target = min(self::ADAPTIVE_WINDOW_SIZE, $remaining);
 
             [$where, $params] = $this->databaseWhere($filters);
             $baseWhere = implode(' AND ', $where)
                 . ' AND NOT EXISTS (SELECT 1 FROM feed_items fi WHERE fi.feed_id = :feed_id AND fi.work_cid = w.cid)';
             $common = [...$params, ':feed_id' => $feedId];
-            $candidate = [];
-            $take = static function (string $sql, array $bind, string $source) use ($pdo, &$candidate): void {
-                $stmt = $pdo->prepare($sql);
-                $stmt->execute($bind);
-                foreach ($stmt->fetchAll() as $row) {
-                    $cid = (string)$row['cid'];
-                    $candidate[$source][$cid] ??= $row;
-                }
-            };
-
-            $select = 'SELECT w.cid, w.rating, w.review_count, w.release_date, w.updated_at '
-                . 'FROM works w WHERE ' . $baseWhere;
-            $take(
-                $select . ' ORDER BY w.review_count DESC, w.rating DESC, w.cid ASC LIMIT ' . min(240, max(60, $target)),
+            $candidate = $this->candidateSource->collect(
+                $pdo,
+                $baseWhere,
                 $common,
-                'popular'
+                $target,
+                (int)$session['random_pivot'],
             );
-            $take(
-                $select . ' ORDER BY w.release_date DESC, w.cid ASC LIMIT ' . min(180, max(40, $target)),
-                $common,
-                'recent'
-            );
-
-            $pivot = (int)$session['random_pivot'];
-            $exploreParams = [...$common, ':pivot' => $pivot];
-            $take(
-                $select . ' AND w.random_key >= :pivot ORDER BY w.random_key ASC, w.cid ASC LIMIT ' . min(180, max(40, $target)),
-                $exploreParams,
-                'explore'
-            );
-            if (count($candidate['explore'] ?? []) < max(30, (int)ceil($target * 0.25))) {
-                $take(
-                    $select . ' AND w.random_key < :pivot ORDER BY w.random_key ASC, w.cid ASC LIMIT ' . min(180, max(40, $target)),
-                    $exploreParams,
-                    'explore'
-                );
-            }
-
-            $all = [];
-            foreach ($candidate as $source => $rows) {
-                foreach ($rows as $cid => $row) {
-                    $all[$cid] ??= $row;
-                    $all[$cid]['sources'][] = $source;
-                }
-            }
-            if ($all === []) {
-                $pdo->commit();
-                return 0;
-            }
-
-            $genreMap = $this->loadGenreIds($pdo, array_keys($all));
-            $scores = $this->loadUserGenreScores($pdo, $userId);
-            $seen = $this->loadRecentlySeen($pdo, $userId);
-            $now = time();
-            $bySource = ['popular' => [], 'recent' => [], 'explore' => []];
-
-            foreach ($all as $cid => $row) {
-                $affinity = $this->boundedAffinity($genreMap[$cid] ?? [], $scores, $now);
-                $rating = max(0.0, min(2.0, ((float)$row['rating'] / 5.0) * 2.0));
-                $popularity = min(2.8, log10((float)$row['review_count'] + 1.0) * 0.9);
-                $freshness = $this->freshnessScore((string)($row['release_date'] ?: $row['updated_at']));
-                $explore = $this->stableRandom($feedId . '|' . $cid) * 1.25;
-                $seenPenalty = isset($seen[$cid]) ? -3.5 : 0.0;
-                $score = $affinity + $rating + $popularity + $freshness + $explore + $seenPenalty;
-                foreach ($row['sources'] as $source) {
-                    $bySource[$source][] = [$cid, $score];
-                }
-            }
-
-            foreach ($bySource as &$rows) {
-                usort($rows, static fn(array $a, array $b): int => $b[1] <=> $a[1] ?: strcmp($a[0], $b[0]));
-            }
-            unset($rows);
-
-            $popularQuota = (int)ceil($target * 0.50);
-            $recentQuota = (int)ceil($target * 0.25);
-            $quotas = [
-                'popular' => $popularQuota,
-                'recent' => $recentQuota,
-                'explore' => max(0, $target - $popularQuota - $recentQuota),
-            ];
-            $selected = [];
-            $used = [];
-            foreach (['popular', 'recent', 'explore'] as $source) {
-                $selectedForSource = 0;
-                foreach ($bySource[$source] as [$cid, $score]) {
-                    if (isset($used[$cid])) {
-                        continue;
-                    }
-                    $selected[] = ['cid' => $cid, 'source' => $source, 'score' => $score];
-                    $used[$cid] = true;
-                    $selectedForSource++;
-                    if ($selectedForSource >= $quotas[$source]) {
-                        break;
-                    }
-                }
-            }
-
-            if (count($selected) < $target) {
-                $flat = [];
-                foreach ($bySource as $source => $rows) {
-                    foreach ($rows as [$cid, $score]) {
-                        if (!isset($used[$cid])) {
-                            $flat[] = [$cid, $score, $source];
-                        }
-                    }
-                }
-                usort($flat, static fn(array $a, array $b): int => $b[1] <=> $a[1] ?: strcmp($a[0], $b[0]));
-                foreach ($flat as [$cid, $score, $source]) {
-                    if (isset($used[$cid])) {
-                        continue;
-                    }
-                    $selected[] = ['cid' => $cid, 'source' => $source, 'score' => $score];
-                    $used[$cid] = true;
-                    if (count($selected) >= $target) {
-                        break;
-                    }
-                }
-            }
-
-            if (count($selected) < $target) {
-                $needed = $target - count($selected);
-                $fill = $pdo->prepare(
-                    $select . ' ORDER BY w.random_key ASC, w.cid ASC LIMIT ' . min(500, max(1, $needed * 3))
-                );
-                $fill->execute($common);
-                foreach ($fill->fetchAll() as $row) {
-                    $cid = (string)$row['cid'];
-                    if (isset($used[$cid])) {
-                        continue;
-                    }
-                    $selected[] = ['cid' => $cid, 'source' => 'explore', 'score' => 0.0];
-                    $used[$cid] = true;
-                    if (count($selected) >= $target) {
-                        break;
-                    }
-                }
-            }
-
+            $selected = $this->ranker->rank($pdo, $candidate, $feedId, $userId, $target);
             if ($selected === []) {
                 $pdo->commit();
                 return 0;
             }
 
             $start = (int)$session['generated_count'];
-            $added = $this->insertFeedRows($pdo, $feedId, $start, $selected);
+            $added = $this->feedRepository->insertRows($pdo, $feedId, $start, $selected);
             if ($added > 0) {
                 $session['generated_count'] = $start + $added;
-                $pdo->prepare(
-                    'UPDATE feed_sessions SET generated_count = ?, updated_at = NOW() WHERE id = ?'
-                )->execute([$session['generated_count'], $feedId]);
+                $this->feedRepository->updateGenerated($pdo, $feedId, $session['generated_count']);
             }
             $pdo->commit();
             return $added;
@@ -460,43 +315,6 @@ final class CatalogService
             }
             throw $error;
         }
-    }
-
-    private function insertFeedRows(PDO $pdo, string $feedId, int $start, array $rows): int
-    {
-        $stmt = $pdo->prepare(
-            'INSERT IGNORE INTO feed_items (feed_id, position, work_cid, source, score) VALUES (?, ?, ?, ?, ?)'
-        );
-        $position = $start;
-        $added = 0;
-        foreach ($rows as $row) {
-            $position++;
-            $stmt->execute([
-                $feedId,
-                $position,
-                (string)$row['cid'],
-                (string)$row['source'],
-                (float)$row['score'],
-            ]);
-            if ($stmt->rowCount() > 0) {
-                $added++;
-            }
-        }
-        return $added;
-    }
-
-    private function loadSession(PDO $pdo, string $feedId, string $userId, string $filterHash): ?array
-    {
-        if (preg_match('/^[a-f0-9-]{36}$/i', $feedId) !== 1) {
-            return null;
-        }
-        $stmt = $pdo->prepare(
-            'SELECT * FROM feed_sessions '
-            . 'WHERE id = ? AND anonymous_user_id = ? AND filter_hash = ? AND expires_at > NOW() LIMIT 1'
-        );
-        $stmt->execute([$feedId, $userId, $filterHash]);
-        $row = $stmt->fetch();
-        return is_array($row) ? $row : null;
     }
 
     private function catalogFromApi(array $filters, int $cursor, int $limit, string $cidInput): array
@@ -654,89 +472,6 @@ final class CatalogService
             'genreId' => mb_substr(trim((string)($filters['genreId'] ?? '')), 0, 64),
             'query' => mb_substr(trim((string)($filters['query'] ?? '')), 0, 100),
         ];
-    }
-
-    private function loadGenreIds(PDO $pdo, array $cids): array
-    {
-        if ($cids === []) {
-            return [];
-        }
-        $placeholders = implode(',', array_fill(0, count($cids), '?'));
-        $stmt = $pdo->prepare(
-            "SELECT work_cid, genre_id FROM work_genres WHERE work_cid IN ({$placeholders})"
-        );
-        $stmt->execute($cids);
-        $map = [];
-        foreach ($stmt->fetchAll() as $row) {
-            $map[(string)$row['work_cid']][] = (string)$row['genre_id'];
-        }
-        return $map;
-    }
-
-    private function loadUserGenreScores(PDO $pdo, string $userId): array
-    {
-        $stmt = $pdo->prepare(
-            'SELECT genre_id, score, updated_at FROM user_genre_scores WHERE anonymous_user_id = ?'
-        );
-        $stmt->execute([$userId]);
-        $map = [];
-        foreach ($stmt->fetchAll() as $row) {
-            $map[(string)$row['genre_id']] = [
-                'score' => (float)$row['score'],
-                'updated' => (string)$row['updated_at'],
-            ];
-        }
-        return $map;
-    }
-
-    private function loadRecentlySeen(PDO $pdo, string $userId): array
-    {
-        $stmt = $pdo->prepare(
-            "SELECT work_cid, MAX(created_at) AS last_seen FROM events "
-            . "WHERE anonymous_user_id = ? AND event_type = 'work_impression' "
-            . 'AND created_at >= DATE_SUB(NOW(), INTERVAL 14 DAY) '
-            . 'GROUP BY work_cid ORDER BY last_seen DESC LIMIT 1000'
-        );
-        $stmt->execute([$userId]);
-        $seen = [];
-        foreach ($stmt->fetchAll() as $row) {
-            $seen[(string)$row['work_cid']] = true;
-        }
-        return $seen;
-    }
-
-    private function boundedAffinity(array $genreIds, array $scores, int $now): float
-    {
-        if ($genreIds === []) {
-            return 0.0;
-        }
-        $sum = 0.0;
-        foreach ($genreIds as $id) {
-            $row = $scores[$id] ?? null;
-            if (!$row) {
-                continue;
-            }
-            $updated = strtotime((string)$row['updated']) ?: $now;
-            $ageDays = max(0.0, ($now - $updated) / 86400.0);
-            $decayed = (float)$row['score'] * pow(0.5, $ageDays / 45.0);
-            $sum += tanh($decayed / 8.0);
-        }
-        return max(-2.5, min(2.5, $sum / sqrt((float)count($genreIds)) * 2.0));
-    }
-
-    private function freshnessScore(string $date): float
-    {
-        $timestamp = strtotime($date);
-        if (!$timestamp) {
-            return 0.0;
-        }
-        $days = max(0.0, (time() - $timestamp) / 86400.0);
-        return max(0.0, 1.3 * (1.0 - $days / 120.0));
-    }
-
-    private function stableRandom(string $seed): float
-    {
-        return (int)sprintf('%u', crc32($seed)) / 4294967295;
     }
 
     private function matches(array $item, array $filters): bool
