@@ -38,7 +38,7 @@ const DEFAULT_FILTERS: FilterValues = {
 };
 const INITIAL_LIMIT = 6;
 const PREFETCH_THRESHOLD = 3;
-const WINDOW_RADIUS = 4;
+const WINDOW_RADIUS = 2;
 const RATING_OPTIONS = [1, 2, 3, 4, 5] as const;
 
 type Props = { initialFilters: FilterValues; initialCid: string };
