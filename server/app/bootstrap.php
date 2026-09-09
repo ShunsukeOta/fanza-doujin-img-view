@@ -2,10 +2,13 @@
 
 declare(strict_types=1);
 
+use SwipePreview\CandidateSource;
 use SwipePreview\CatalogService;
 use SwipePreview\Database;
 use SwipePreview\EventService;
 use SwipePreview\FanzaClient;
+use SwipePreview\FeedRepository;
+use SwipePreview\RecommendationRanker;
 use SwipePreview\SearchService;
 use SwipePreview\UserLibraryService;
 use SwipePreview\WorkRepository;
@@ -14,6 +17,9 @@ require_once __DIR__ . '/src/Database.php';
 require_once __DIR__ . '/src/PriceParser.php';
 require_once __DIR__ . '/src/FanzaClient.php';
 require_once __DIR__ . '/src/WorkRepository.php';
+require_once __DIR__ . '/src/FeedRepository.php';
+require_once __DIR__ . '/src/CandidateSource.php';
+require_once __DIR__ . '/src/RecommendationRanker.php';
 require_once __DIR__ . '/src/CatalogService.php';
 require_once __DIR__ . '/src/EventService.php';
 require_once __DIR__ . '/src/SearchService.php';
@@ -32,7 +38,17 @@ date_default_timezone_set((string)($config['app']['timezone'] ?? 'Asia/Tokyo'));
 $database = new Database((array)($config['db'] ?? []));
 $fanza = new FanzaClient((array)($config['dmm'] ?? []));
 $workRepository = new WorkRepository($database, $fanza);
-$catalogService = new CatalogService($database, $fanza, $workRepository);
+$feedRepository = new FeedRepository();
+$candidateSource = new CandidateSource();
+$recommendationRanker = new RecommendationRanker();
+$catalogService = new CatalogService(
+    $database,
+    $fanza,
+    $workRepository,
+    $feedRepository,
+    $candidateSource,
+    $recommendationRanker,
+);
 $eventService = new EventService($database);
 $searchService = new SearchService($database, $workRepository, $eventService);
 $userLibraryService = new UserLibraryService($database, $workRepository);

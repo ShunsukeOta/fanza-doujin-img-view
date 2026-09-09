@@ -41,19 +41,29 @@ requireText(detailsCss, [
   "align-items: center",
 ], "作品詳細CSS");
 
+const workCards = read("styles/work-cards.css");
+requireText(workCards, [
+  ".work-card",
+  ".work-card-media",
+  ".work-card-actions",
+  ".work-card-primary",
+  ".work-card-secondary",
+  ".work-list-more",
+], "共通作品カードCSS");
+
 const pagesCss = read("styles/pages.css");
 requireText(pagesCss, [
-  ".favorite-card.is-price-drop",
-  ".favorite-deal-badge",
-  ".favorite-deal-prices",
-  ".favorite-buy",
-], "保存済みCSS");
+  ".saved-card.is-price-drop",
+  ".saved-card-deal-badge",
+  ".saved-card-deal-prices",
+  ".profile-stats--two",
+], "保存済み/MyPage CSS");
 
 const discoveryCss = read("styles/discovery.css");
 requireText(discoveryCss, [
   ".search-result-saved",
-  ".search-result-actions",
-  ".search-result-buy",
+  ".search-result-thumb",
+  ".detail-search-form",
 ], "検索CSS");
 
 const tracking = read("src/commerceTracking.ts");
@@ -67,12 +77,13 @@ requireText(tracking, [
 
 const saved = read("components/SavedPage.tsx");
 requireText(saved, [
-  "favorite-deal-badge",
+  "saved-card-deal-badge",
   "保存時より",
   "値下げ中にFANZAで見る",
   'placement: "saved"',
   "priceDropValue",
   "savedPriceValue",
+  "WorkCardFrame",
 ], "保存済みCV導線");
 
 const search = read("components/SearchPage.tsx");
@@ -81,6 +92,7 @@ requireText(search, [
   "FANZAで見る",
   'placement: "search"',
   "viewerSaved",
+  "WorkCardFrame",
 ], "検索CV導線");
 
 const events = read("server/app/src/EventService.php");
@@ -91,6 +103,14 @@ requireText(events, [
   "'affiliate_click',\n                7,",
   "'sample_complete',\n                1,",
 ], "推薦イベントシグナル");
+
+const catalog = read("server/app/src/CatalogService.php");
+requireText(catalog, [
+  "ADAPTIVE_WINDOW_SIZE = 30",
+  "rules-v3.3-adaptive",
+  "candidateSource->collect",
+  "ranker->rank",
+], "adaptive推薦");
 
 const setup = read("server/app/cron/setup-db.php");
 requireText(setup, [

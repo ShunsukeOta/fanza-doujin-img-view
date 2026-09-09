@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { GlobalNav } from "@/components/GlobalNav";
+import {
+  WorkCardActions,
+  WorkCardBody,
+  WorkCardFrame,
+  WorkCardMedia,
+  WorkCardMeta,
+  WorkCardTitle,
+  WorkListFeedback,
+} from "@/components/WorkCardPrimitives";
 import type { FeedItem } from "@/lib/types";
 import { fetchJson } from "@/src/api";
 import { navigateToSubpage, openWorkInMain } from "@/src/navigationState";
@@ -87,16 +96,7 @@ export function HistoryPage() {
     <div className="subpage-shell">
       <header className="subpage-header">
         <div>
-          <a
-            className="subpage-back-link"
-            href="/mypage"
-            onClick={(event) => {
-              event.preventDefault();
-              navigateToSubpage("/mypage", "history");
-            }}
-          >
-            ← マイページ
-          </a>
+          <a className="subpage-back-link" href="/mypage" onClick={(event) => { event.preventDefault(); navigateToSubpage("/mypage", "history"); }}>← マイページ</a>
           <h1>閲覧履歴</h1>
         </div>
         <button className="subpage-refresh" type="button" onClick={() => void load()} disabled={loading}>再読込</button>
@@ -106,52 +106,30 @@ export function HistoryPage() {
         <div className="subpage-summary"><span>見た作品 <strong>{total.toLocaleString("ja-JP")}</strong>件</span></div>
 
         {loading ? (
-          <div className="subpage-state">
-            <div className="spinner" aria-hidden="true" />
-            <strong>閲覧履歴を読み込んでいます</strong>
-          </div>
+          <div className="subpage-state"><div className="spinner" aria-hidden="true" /><strong>閲覧履歴を読み込んでいます</strong></div>
         ) : items.length === 0 && error ? (
-          <div className="subpage-state is-error">
-            <strong>読み込みに失敗しました</strong>
-            <p>{error}</p>
-            <button type="button" onClick={() => void load()}>再試行</button>
-          </div>
+          <div className="subpage-state is-error"><strong>読み込みに失敗しました</strong><p>{error}</p><button type="button" onClick={() => void load()}>再試行</button></div>
         ) : items.length === 0 ? (
-          <div className="subpage-state">
-            <strong>まだ閲覧履歴がありません</strong>
-            <p>閲覧した作品がここに表示されます。</p>
-            <button type="button" onClick={() => window.location.assign("/")}>コミックを探す</button>
-          </div>
+          <div className="subpage-state"><strong>まだ閲覧履歴がありません</strong><p>閲覧した作品がここに表示されます。</p><button type="button" onClick={() => window.location.assign("/")}>コミックを探す</button></div>
         ) : (
           <>
-            <div className="history-list">
+            <div className="work-list history-list">
               {items.map((item) => (
-                <article className="history-card" key={item.cid}>
-                  <button className="history-thumb" type="button" onClick={() => openWorkInMain(item.cid)} aria-label={`${item.title || item.cid}を開く`}>
+                <WorkCardFrame className="history-card" key={item.cid}>
+                  <button className="work-card-media history-thumb" type="button" onClick={() => openWorkInMain(item.cid)} aria-label={`${item.title || item.cid}を開く`}>
                     {item.images[0] ? <img src={item.images[0]} alt="" loading="lazy" decoding="async" /> : <span>画像なし</span>}
                   </button>
-                  <div className="history-body">
+                  <WorkCardBody className="history-body">
                     <span className="history-viewed-at">{formatViewedAt(item.viewedAt)}</span>
-                    <h2>{item.title || item.cid}</h2>
-                    <p>{item.maker || item.genres.slice(0, 2).join(" / ") || "FANZA同人コミック"}</p>
-                    <div className="history-meta">
-                      <span>★ {item.rating.toFixed(1)}</span>
-                      {item.price ? <span>{formatPrice(item.price, item.priceValue ?? null)}</span> : null}
-                    </div>
-                    <button className="history-open" type="button" onClick={() => openWorkInMain(item.cid)}>もう一度見る</button>
-                  </div>
-                </article>
+                    <WorkCardTitle>{item.title || item.cid}</WorkCardTitle>
+                    <p className="work-card-subtitle">{item.maker || item.genres.slice(0, 2).join(" / ") || "FANZA同人コミック"}</p>
+                    <WorkCardMeta><span>★ {item.rating.toFixed(1)}</span>{item.price ? <span>{formatPrice(item.price, item.priceValue ?? null)}</span> : null}</WorkCardMeta>
+                    <WorkCardActions><button className="work-card-secondary history-open" type="button" onClick={() => openWorkInMain(item.cid)}>もう一度見る</button></WorkCardActions>
+                  </WorkCardBody>
+                </WorkCardFrame>
               ))}
             </div>
-
-            {error ? <div className="saved-inline-error" role="status">{error}</div> : null}
-            {hasMore ? (
-              <div className="saved-load-more">
-                <button type="button" disabled={loadingMore} onClick={() => void loadMore()}>
-                  {loadingMore ? "読み込み中…" : "さらに表示"}
-                </button>
-              </div>
-            ) : null}
+            <WorkListFeedback error={error} hasMore={hasMore} loadingMore={loadingMore} onLoadMore={() => void loadMore()} />
           </>
         )}
       </main>

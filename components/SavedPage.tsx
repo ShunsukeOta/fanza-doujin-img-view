@@ -2,6 +2,15 @@ import { useCallback, useEffect, useState } from "react";
 
 import { GlobalNav } from "@/components/GlobalNav";
 import { BookmarkIcon, ExternalIcon } from "@/components/icons";
+import {
+  WorkCardActions,
+  WorkCardBody,
+  WorkCardFrame,
+  WorkCardMedia,
+  WorkCardMeta,
+  WorkCardTitle,
+  WorkListFeedback,
+} from "@/components/WorkCardPrimitives";
 import type { FeedItem } from "@/lib/types";
 import { trackEvent } from "@/src/analytics";
 import { fetchJson } from "@/src/api";
@@ -60,7 +69,6 @@ export function SavedPage() {
 
   const loadMore = async () => {
     if (!hasMore || !cursor || loadingMore) return;
-
     setLoadingMore(true);
     setError("");
     try {
@@ -82,7 +90,6 @@ export function SavedPage() {
 
   const removeSaved = async (item: FeedItem) => {
     if (pendingCid) return;
-
     setPendingCid(item.cid);
     setError("");
     try {
@@ -100,14 +107,7 @@ export function SavedPage() {
     <div className="subpage-shell">
       <header className="subpage-header">
         <h1>保存済み</h1>
-        <button
-          className="subpage-refresh"
-          type="button"
-          onClick={() => void load()}
-          disabled={loading}
-        >
-          再読込
-        </button>
+        <button className="subpage-refresh" type="button" onClick={() => void load()} disabled={loading}>再読込</button>
       </header>
 
       <main className="subpage-content">
@@ -116,16 +116,9 @@ export function SavedPage() {
         </div>
 
         {loading ? (
-          <div className="subpage-state">
-            <div className="spinner" aria-hidden="true" />
-            <strong>保存済み作品を読み込んでいます</strong>
-          </div>
+          <div className="subpage-state"><div className="spinner" aria-hidden="true" /><strong>保存済み作品を読み込んでいます</strong></div>
         ) : items.length === 0 && error ? (
-          <div className="subpage-state is-error">
-            <strong>読み込みに失敗しました</strong>
-            <p>{error}</p>
-            <button type="button" onClick={() => void load()}>再試行</button>
-          </div>
+          <div className="subpage-state is-error"><strong>読み込みに失敗しました</strong><p>{error}</p><button type="button" onClick={() => void load()}>再試行</button></div>
         ) : items.length === 0 ? (
           <div className="subpage-state">
             <span className="subpage-state-icon"><BookmarkIcon /></span>
@@ -135,32 +128,26 @@ export function SavedPage() {
           </div>
         ) : (
           <>
-            <div className="favorite-grid">
+            <div className="work-grid saved-grid">
               {items.map((item) => {
                 const canBuy = item.available !== false && isHttpUrl(item.affiliateUrl);
-                const priceDrop = typeof item.priceDropValue === "number" && item.priceDropValue > 0
-                  ? item.priceDropValue
-                  : null;
+                const priceDrop = typeof item.priceDropValue === "number" && item.priceDropValue > 0 ? item.priceDropValue : null;
                 const savedPrice = typeof item.savedPriceValue === "number" ? item.savedPriceValue : null;
                 const currentPrice = typeof item.priceValue === "number" ? item.priceValue : null;
                 const currentPriceLabel = formatPrice(item.price, currentPrice);
                 const savedPriceLabel = savedPrice !== null ? formatPrice("", savedPrice) : "";
 
                 return (
-                  <article
-                    className={`favorite-card${item.available === false ? " is-unavailable" : ""}${priceDrop !== null ? " is-price-drop" : ""}`}
+                  <WorkCardFrame
+                    className={`saved-card${item.available === false ? " is-unavailable" : ""}${priceDrop !== null ? " is-price-drop" : ""}`}
                     key={item.cid}
                   >
-                    <div className="favorite-thumb">
-                      {item.images[0] ? (
-                        <img src={item.images[0]} alt="" loading="lazy" decoding="async" />
-                      ) : (
-                        <div className="favorite-noimage">画像なし</div>
-                      )}
-                      {item.available === false ? <span className="favorite-type">販売終了</span> : null}
-                      {priceDrop !== null ? <span className="favorite-deal-badge">値下げ</span> : null}
+                    <WorkCardMedia className="saved-card-media">
+                      {item.images[0] ? <img src={item.images[0]} alt="" loading="lazy" decoding="async" /> : <span>画像なし</span>}
+                      {item.available === false ? <span className="saved-card-status">販売終了</span> : null}
+                      {priceDrop !== null ? <span className="saved-card-deal-badge">値下げ</span> : null}
                       <button
-                        className="favorite-save-toggle"
+                        className="saved-card-save-toggle"
                         type="button"
                         disabled={pendingCid === item.cid}
                         onClick={() => void removeSaved(item)}
@@ -169,38 +156,30 @@ export function SavedPage() {
                       >
                         <BookmarkIcon />
                       </button>
-                    </div>
+                    </WorkCardMedia>
 
-                    <div className="favorite-body">
-                      <h2>{item.title || item.cid}</h2>
-                      <div className="favorite-meta">
+                    <WorkCardBody>
+                      <WorkCardTitle>{item.title || item.cid}</WorkCardTitle>
+                      <WorkCardMeta>
                         <span>★ {item.rating.toFixed(1)} <small>({item.reviews}件)</small></span>
                         {priceDrop === null && currentPriceLabel ? <span>{currentPriceLabel}</span> : null}
-                      </div>
+                      </WorkCardMeta>
                       {priceDrop !== null ? (
-                        <div className="favorite-deal">
-                          <span className="favorite-deal-prices">
+                        <div className="saved-card-deal">
+                          <span className="saved-card-deal-prices">
                             {savedPriceLabel ? <del>{savedPriceLabel}</del> : null}
                             {currentPriceLabel ? <strong>{currentPriceLabel}</strong> : null}
                           </span>
                           <span>保存時より {formatPrice("", priceDrop)} お得</span>
                         </div>
                       ) : null}
-                      {item.genres.length > 0 ? (
-                        <p className="favorite-genres">{item.genres.slice(0, 4).join(" / ")}</p>
-                      ) : null}
+                      {item.genres.length > 0 ? <p className="work-card-tags">{item.genres.slice(0, 4).join(" / ")}</p> : null}
 
-                      <div className={`favorite-actions${canBuy ? " favorite-actions--buy" : ""}`}>
-                        <button
-                          className="favorite-sample"
-                          type="button"
-                          onClick={() => openWorkInMain(item.cid)}
-                        >
-                          サンプルを読む
-                        </button>
+                      <WorkCardActions className={canBuy ? "has-buy" : ""}>
+                        <button className="work-card-secondary" type="button" onClick={() => openWorkInMain(item.cid)}>サンプルを読む</button>
                         {canBuy ? (
                           <a
-                            className={`favorite-buy${priceDrop !== null ? " is-deal" : ""}`}
+                            className="work-card-primary"
                             href={item.affiliateUrl}
                             target="_blank"
                             rel="noopener noreferrer sponsored"
@@ -208,31 +187,19 @@ export function SavedPage() {
                               eventType: "affiliate_click",
                               cid: item.cid,
                               placement: "saved",
-                              metadata: {
-                                priceDropValue: priceDrop,
-                                savedPriceValue: savedPrice,
-                                priceValue: currentPrice,
-                              },
+                              metadata: { priceDropValue: priceDrop, savedPriceValue: savedPrice, priceValue: currentPrice },
                             }, true)}
                           >
                             {priceDrop !== null ? "値下げ中にFANZAで見る" : "FANZAで見る"} <ExternalIcon />
                           </a>
                         ) : null}
-                      </div>
-                    </div>
-                  </article>
+                      </WorkCardActions>
+                    </WorkCardBody>
+                  </WorkCardFrame>
                 );
               })}
             </div>
-
-            {error ? <div className="saved-inline-error" role="status">{error}</div> : null}
-            {hasMore ? (
-              <div className="saved-load-more">
-                <button type="button" disabled={loadingMore} onClick={() => void loadMore()}>
-                  {loadingMore ? "読み込み中…" : "さらに表示"}
-                </button>
-              </div>
-            ) : null}
+            <WorkListFeedback error={error} hasMore={hasMore} loadingMore={loadingMore} onLoadMore={() => void loadMore()} />
           </>
         )}
       </main>

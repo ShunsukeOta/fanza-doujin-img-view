@@ -111,7 +111,7 @@ jobs:
           ssh -i "$HOME/.ssh/id_shin" -p 10022 \
             -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
             wp983575@wp983575.wpx.jp \
-            "set -eu; test -x /usr/bin/php8.3; BASE=\"\$HOME/wp983575.wpx.jp\"; RELEASE=\"\$BASE/.releases/${GITHUB_SHA}\"; rm -rf \"\$RELEASE\"; mkdir -p \"\$RELEASE/public_html\" \"\$RELEASE/app\" \"\$BASE/public_html\" \"\$BASE/app\"; /usr/bin/php8.3 -v | head -n 1"
+            "set -eu; test -x /usr/bin/php8.3; BASE=\"\$HOME/wp983575.wpx.jp\"; RELEASE=\"\$BASE/.releases/${GITHUB_SHA}\"; rm -rf \"\$RELEASE\"; mkdir -p \"\$RELEASE/public_html\" \"\$RELEASE/app\" \"\$BASE/.rollback\" \"\$BASE/public_html\" \"\$BASE/app\"; /usr/bin/php8.3 -v | head -n 1"
 
       - name: リリース領域へ成果物を転送
         shell: bash
@@ -165,7 +165,27 @@ jobs:
             echo "コミック作品DB ${WORKS} 件を維持します。"
           fi
 
-      - name: 移行成功後に本番へ切り替え
+      - name: 本番の直前版を退避
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROLLBACK_ID="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          printf '%s' "$ROLLBACK_ID" > /tmp/rollback-id
+          ssh -i "$HOME/.ssh/id_shin" -p 10022 \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
+            wp983575@wp983575.wpx.jp "bash -s" <<REMOTE
+          set -eu
+          BASE="\$HOME/wp983575.wpx.jp"
+          SNAPSHOT="\$BASE/.rollback/${ROLLBACK_ID}"
+          rm -rf "\$SNAPSHOT"
+          mkdir -p "\$SNAPSHOT/app" "\$SNAPSHOT/public_html"
+          if [ -d "\$BASE/app" ]; then rsync -a --delete "\$BASE/app/" "\$SNAPSHOT/app/"; fi
+          if [ -d "\$BASE/public_html" ]; then rsync -a --delete --exclude='.well-known/' "\$BASE/public_html/" "\$SNAPSHOT/public_html/"; fi
+          test -f "\$SNAPSHOT/public_html/version.json"
+          REMOTE
+          touch /tmp/deploy-snapshot-ready
+
+      - name: 本番へ切り替え
         shell: bash
         run: |
           set -euo pipefail
@@ -182,8 +202,8 @@ jobs:
           chmod 600 "\$BASE/app/config.local.php"
           grep -F '"commit":"${GITHUB_SHA}"' "\$BASE/public_html/version.json" >/dev/null
           test ! -e "\$BASE/app/tests"
-          rm -rf "\$RELEASE"
           REMOTE
+          touch /tmp/deploy-switched
 
       - name: 本番HTTP・PWA・固定feed・検索・共有URL・公開境界を確認
         shell: bash
@@ -212,6 +232,7 @@ jobs:
           import fs from 'node:fs';
           const first = JSON.parse(fs.readFileSync('/tmp/catalog1.json', 'utf8'));
           if (!first.feedId || !Array.isArray(first.items) || first.items.length === 0) throw new Error('catalog first page invalid');
+          if (first.recommenderVersion !== 'rules-v3.3-adaptive') throw new Error('recommender version invalid');
           if (first.hasMore && typeof first.nextCursor !== 'number') throw new Error('nextCursor missing');
           for (const item of first.items) {
             if ('floorKey' in item || 'mediaType' in item || 'sampleMovieUrl' in item) throw new Error('obsolete media fields remain');
@@ -261,3 +282,37 @@ jobs:
           test "$DIAG_STATUS" = '404'
           test "$EVENTS_GET_STATUS" = '405'
           echo "本番検証OK: ${GITHUB_SHA}"
+
+      - name: 失敗時は直前版へ自動ロールバック
+        if: ${{ failure() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f /tmp/deploy-snapshot-ready ]; then
+            echo "本番切替前の失敗なのでロールバック対象はありません。"
+            exit 0
+          fi
+          ROLLBACK_ID="$(cat /tmp/rollback-id)"
+          ssh -i "$HOME/.ssh/id_shin" -p 10022 \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
+            wp983575@wp983575.wpx.jp "bash -s" <<REMOTE
+          set -eu
+          BASE="\$HOME/wp983575.wpx.jp"
+          SNAPSHOT="\$BASE/.rollback/${ROLLBACK_ID}"
+          test -f "\$SNAPSHOT/public_html/version.json"
+          rsync -a --delete "\$SNAPSHOT/app/" "\$BASE/app/"
+          rsync -a --delete --exclude='.well-known/' "\$SNAPSHOT/public_html/" "\$BASE/public_html/"
+          if [ -f "\$BASE/app/config.local.php" ]; then chmod 600 "\$BASE/app/config.local.php"; fi
+          REMOTE
+          echo "直前版へロールバックしました: ${ROLLBACK_ID}"
+
+      - name: 成功したリリースの一時領域を整理
+        if: ${{ success() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROLLBACK_ID="$(cat /tmp/rollback-id)"
+          ssh -i "$HOME/.ssh/id_shin" -p 10022 \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
+            wp983575@wp983575.wpx.jp \
+            "set -eu; BASE=\"\$HOME/wp983575.wpx.jp\"; rm -rf \"\$BASE/.releases/${GITHUB_SHA}\" \"\$BASE/.rollback/${ROLLBACK_ID}\"; find \"\$BASE/.releases\" -mindepth 1 -maxdepth 1 -type d -mtime +2 -exec rm -rf {} + 2>/dev/null || true; find \"\$BASE/.rollback\" -mindepth 1 -maxdepth 1 -type d -mtime +2 -exec rm -rf {} + 2>/dev/null || true"
