@@ -6,7 +6,7 @@ import { navigateToSubpage, resumeMainFromSubpage, type NavOrigin } from "@/src/
 type NavKey = "saved" | "main" | "search" | "mypage";
 type Props = { active?: NavKey };
 
-const NAVIGATION_MOTION_MS = 240;
+const NAVIGATION_SETTLE_MS = 320;
 
 function currentPath(): string {
   return window.location.pathname.replace(/\/+$/, "") || "/";
@@ -36,42 +36,85 @@ function prefersReducedMotion(): boolean {
 export function GlobalNav({ active = currentNav() }: Props) {
   const origin = currentOrigin();
   const [visualActive, setVisualActive] = useState<NavKey>(active);
+  const visualActiveRef = useRef<NavKey>(active);
   const navigationTimerRef = useRef<number | null>(null);
+  const pendingNavigationRef = useRef<(() => void) | null>(null);
+
+  const clearPendingNavigation = () => {
+    if (navigationTimerRef.current !== null) {
+      window.clearTimeout(navigationTimerRef.current);
+      navigationTimerRef.current = null;
+    }
+    pendingNavigationRef.current = null;
+  };
 
   useEffect(() => {
+    if (pendingNavigationRef.current !== null) return;
+    visualActiveRef.current = active;
     setVisualActive(active);
   }, [active]);
 
   useEffect(() => () => {
     if (navigationTimerRef.current !== null) window.clearTimeout(navigationTimerRef.current);
+    pendingNavigationRef.current = null;
   }, []);
 
-  const moveThenNavigate = (target: NavKey, navigate: () => void) => {
-    if (navigationTimerRef.current !== null) window.clearTimeout(navigationTimerRef.current);
-    const shouldAnimate = visualActive !== target && !prefersReducedMotion();
+  const returnToCurrent = (target: NavKey) => {
+    clearPendingNavigation();
+    if (visualActiveRef.current === target) return;
+    visualActiveRef.current = target;
     setVisualActive(target);
-    if (!shouldAnimate) {
-      navigate();
+  };
+
+  const moveThenNavigate = (target: NavKey, navigate: () => void) => {
+    const previousTarget = visualActiveRef.current;
+    const wasMoving = pendingNavigationRef.current !== null;
+
+    if (navigationTimerRef.current !== null) {
+      window.clearTimeout(navigationTimerRef.current);
+      navigationTimerRef.current = null;
+    }
+
+    pendingNavigationRef.current = navigate;
+    visualActiveRef.current = target;
+    if (previousTarget !== target) setVisualActive(target);
+
+    if (prefersReducedMotion() || (previousTarget === target && !wasMoving)) {
+      const pending = pendingNavigationRef.current;
+      pendingNavigationRef.current = null;
+      pending?.();
       return;
     }
+
     navigationTimerRef.current = window.setTimeout(() => {
       navigationTimerRef.current = null;
-      navigate();
-    }, NAVIGATION_MOTION_MS);
+      const pending = pendingNavigationRef.current;
+      pendingNavigationRef.current = null;
+      pending?.();
+    }, NAVIGATION_SETTLE_MS);
   };
 
   const goMain = () => {
-    if (origin === "main") return;
+    if (origin === "main") {
+      returnToCurrent("main");
+      return;
+    }
     moveThenNavigate("main", resumeMainFromSubpage);
   };
 
   const goSubpage = (path: "/saved" | "/search", target: "saved" | "search") => {
-    if (currentPath() === path) return;
+    if (currentPath() === path) {
+      returnToCurrent(target);
+      return;
+    }
     moveThenNavigate(target, () => navigateToSubpage(path, origin));
   };
 
   const goMyPage = () => {
-    if (currentPath() === "/mypage") return;
+    if (currentPath() === "/mypage") {
+      returnToCurrent("mypage");
+      return;
+    }
     moveThenNavigate("mypage", () => navigateToSubpage("/mypage", origin));
   };
 
