@@ -86,7 +86,7 @@ mustNotContain(schema, [" liked ", "liked_at", "sample_movie_url", "floor_key"],
 
 const navigation = requireFile("src/navigationState.ts");
 mustContain(navigation, ["readActiveReader", "readMainReturnState", "scrollLeftForLogicalPage"], "navigationState");
-mustNotContain(navigation, ["activeWorkSnapshot", "document.getElementById(\"feed\")"], "サブページ遷移状態");
+mustNotContain(navigation, ["activeWorkSnapshot", "function rememberMainBeforeSubpage(subpage: SubpagePath): void {\n  const feed"], "サブページ遷移状態");
 const routes = requireFile("src/routes.ts");
 mustContain(routes, ["PROTECTED_SUBPAGES", "workCidFromPath", "normalizePathname"], "routes");
 const resume = requireFile("src/readerResumeState.ts");
