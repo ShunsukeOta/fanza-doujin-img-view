@@ -13,6 +13,14 @@ body,
   height: 100%;
 }
 
+.app-header {
+  padding-right: max(var(--space-3), env(safe-area-inset-right));
+}
+
+.header-actions {
+  margin-right: 0;
+}
+
 .empty-state,
 .age-gate,
 .legal-shell {
