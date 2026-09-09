@@ -20,20 +20,11 @@ try {
         static fn(array $item): string => trim((string)($item['cid'] ?? '')),
         (array)($result['items'] ?? []),
     )));
-    $reactions = $eventService->reactionSummaries($anonymousUserId, $cids);
+    $saveStates = $eventService->saveStates($anonymousUserId, $cids);
 
     foreach ($result['items'] as &$item) {
         $cid = (string)($item['cid'] ?? '');
-        $reaction = $reactions[$cid] ?? [
-            'likeCount' => 0,
-            'saveCount' => 0,
-            'viewerLiked' => false,
-            'viewerSaved' => false,
-        ];
-        $item['likeCount'] = (int)($reaction['likeCount'] ?? 0);
-        $item['saveCount'] = (int)($reaction['saveCount'] ?? 0);
-        $item['viewerLiked'] = (bool)($reaction['viewerLiked'] ?? false);
-        $item['viewerSaved'] = (bool)($reaction['viewerSaved'] ?? false);
+        $item['viewerSaved'] = (bool)($saveStates[$cid]['viewerSaved'] ?? false);
     }
     unset($item);
 
