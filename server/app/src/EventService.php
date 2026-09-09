@@ -24,6 +24,8 @@ final class EventService
         'affiliate_click',
     ];
     private const RATE_LIMIT_PER_MINUTE = 600;
+    private const AFFILIATE_CLICK_WEIGHT = 10.0;
+    private const SAMPLE_COMPLETE_WEIGHT = 1.0;
 
     public function __construct(private readonly Database $database)
     {
@@ -211,13 +213,48 @@ final class EventService
             : null;
 
         return match ($type) {
-            'affiliate_click' => 8.0,
+            // FANZA遷移は最も強い購入意図。現在のevent行を含め7日以内で1回だけ加点する。
+            'affiliate_click' => $this->firstEventWeight(
+                $pdo,
+                $uid,
+                $cid,
+                'affiliate_click',
+                7,
+                self::AFFILIATE_CLICK_WEIGHT,
+            ),
+            // 読了は明確な興味シグナルだが、view_endと重複するため小さく補助加点する。
+            'sample_complete' => $this->firstEventWeight(
+                $pdo,
+                $uid,
+                $cid,
+                'sample_complete',
+                1,
+                self::SAMPLE_COMPLETE_WEIGHT,
+            ),
             'share' => 2.0,
             'like_toggle' => $this->toggleDelta($pdo, $uid, $cid, 'liked', 'liked_at', 4.0, $active),
             'save_toggle' => $this->toggleDelta($pdo, $uid, $cid, 'saved', 'saved_at', 5.0, $active),
             'view_end' => $this->viewDelta($dwell ?? 0, $ratio ?? 0.0, $metadata),
             default => 0.0,
         };
+    }
+
+    private function firstEventWeight(
+        PDO $pdo,
+        string $uid,
+        string $cid,
+        string $eventType,
+        int $days,
+        float $weight,
+    ): float {
+        $safeDays = max(1, min(90, $days));
+        $stmt = $pdo->prepare(
+            "SELECT COUNT(*) FROM events WHERE anonymous_user_id = ? AND work_cid = ? AND event_type = ? "
+            . "AND created_at >= DATE_SUB(NOW(), INTERVAL {$safeDays} DAY)"
+        );
+        $stmt->execute([$uid, $cid, $eventType]);
+        // affinityDeltaはINSERT後に呼ばれるため、1件なら今回が期間内の初回。
+        return (int)$stmt->fetchColumn() === 1 ? $weight : 0.0;
     }
 
     private function viewDelta(int $dwell, float $ratio, ?array $metadata): float
