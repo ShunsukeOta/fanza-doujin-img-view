@@ -62,3 +62,27 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: ${{ matrix.command }}
+
+  debt-groups:
+    name: 負債領域 / ${{ matrix.group }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        group:
+          - paths-css
+          - client-core
+          - client-pages
+          - server-db
+          - legacy-infra
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: 領域別に負債を検証
+        env:
+          DEBT_GROUP: ${{ matrix.group }}
+        run: node scripts/diagnose-debt.mjs
