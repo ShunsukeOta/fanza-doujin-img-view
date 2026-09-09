@@ -12,6 +12,7 @@ import "@/styles/globals.css";
 import "@/styles/navigation.css";
 import "@/styles/pages.css";
 import "@/styles/reader.css";
+import "@/styles/reader-zoom.css";
 import "@/styles/discovery.css";
 import "@/styles/accessibility.css";
 import "@/styles/viewport.css";
