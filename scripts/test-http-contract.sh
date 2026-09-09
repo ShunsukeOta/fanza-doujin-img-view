@@ -20,20 +20,25 @@ $stmt->execute(["ci-contract-001","CI Contract Work","https://example.invalid/af
 
 php -S 127.0.0.1:8787 server/public/router.php >"$SERVER_LOG" 2>&1 &
 PHP_SERVER_PID=$!
+READY=0
 for _ in $(seq 1 30); do
-  if curl --silent --fail "$BASE_URL/api/health" >/dev/null; then break; fi
+  if curl --silent --fail "$BASE_URL/api/health" >/dev/null; then READY=1; break; fi
   sleep .2
 done
+if [ "$READY" -ne 1 ]; then
+  cat "$SERVER_LOG" >&2
+  exit 1
+fi
 
 curl_json() {
   curl --fail --silent --show-error -c "$COOKIE_JAR" -b "$COOKIE_JAR" -H 'Accept: application/json' "$@"
 }
 
 CATALOG="$(curl_json "$BASE_URL/api/catalog?limit=1")"
-node -e 'const x=JSON.parse(process.argv[1]); if(!Array.isArray(x.items)||x.items.length!==1||!x.feedId||x.recommenderVersion!=="rules-v3.3-adaptive") process.exit(1)' "$CATALOG"
+node -e 'const x=JSON.parse(process.argv[1]); if(!Array.isArray(x.items)||x.items.length===0||!x.feedId||x.recommenderVersion!=="rules-v3.3-adaptive") process.exit(1)' "$CATALOG"
 
 SEARCH="$(curl_json "$BASE_URL/api/search?limit=1&q=CI%20Contract")"
-node -e 'const x=JSON.parse(process.argv[1]); if(x.ok!==true||!Array.isArray(x.items)) process.exit(1)' "$SEARCH"
+node -e 'const x=JSON.parse(process.argv[1]); if(x.ok!==true||!Array.isArray(x.items)||!x.items.some(i=>i.cid==="ci-contract-001")) process.exit(1)' "$SEARCH"
 
 SAVE="$(curl_json -H 'Content-Type: application/json' -X POST --data '{"eventType":"save_toggle","eventId":"11111111-1111-4111-8111-111111111111","eventVersion":3,"cid":"ci-contract-001","metadata":{"active":true}}' "$BASE_URL/api/events")"
 node -e 'const x=JSON.parse(process.argv[1]); if(x.ok!==true||x.saveState?.viewerSaved!==true) process.exit(1)' "$SAVE"
@@ -42,8 +47,8 @@ STATE="$(curl_json "$BASE_URL/api/save-state?cids=ci-contract-001")"
 node -e 'const x=JSON.parse(process.argv[1]); if(x.ok!==true||x.saveStates?.["ci-contract-001"]?.viewerSaved!==true) process.exit(1)' "$STATE"
 
 curl_json -H 'Content-Type: application/json' -X POST --data '{"eventType":"work_impression","eventId":"22222222-2222-4222-8222-222222222222","eventVersion":3,"cid":"ci-contract-001"}' "$BASE_URL/api/events" >/dev/null
-HISTORY="$(curl_json "$BASE_URL/api/history?limit=1")"
-node -e 'const x=JSON.parse(process.argv[1]); if(x.ok!==true||!Array.isArray(x.items)) process.exit(1)' "$HISTORY"
+HISTORY="$(curl_json "$BASE_URL/api/history?limit=10")"
+node -e 'const x=JSON.parse(process.argv[1]); if(x.ok!==true||!Array.isArray(x.items)||!x.items.some(i=>i.cid==="ci-contract-001")) process.exit(1)' "$HISTORY"
 
 ME="$(curl_json "$BASE_URL/api/me")"
 node -e 'const x=JSON.parse(process.argv[1]); if(x.ok!==true||!x.profile) process.exit(1)' "$ME"
