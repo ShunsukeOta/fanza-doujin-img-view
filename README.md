@@ -1,297 +1,206 @@
 # FANZA同人 Swipe Preview
 
-FANZA同人の**コミック作品だけ**を対象に、TikTok / Shortsのような縦フィードと漫画向け横ページ送りでサンプルを閲覧するモバイルファーストWeb/PWAです。
+FANZA同人の**コミック作品のみ**を対象に、縦方向で作品を切り替え、横方向で漫画サンプルを読むモバイルファーストWeb/PWAです。
 
-現在の本番構成は **React 19 + Vite 7 + TypeScript / PHP 8.3 / MariaDB / シンレンタルサーバー** です。Node.jsは開発・CI・ビルド時だけ使用し、本番Webサーバーには常駐させません。
-
-## 現在のステータス
-
-- 本番環境へ継続デプロイ中
-- `index.html` は現在 `noindex,nofollow`
-- PWA `display: standalone` 対応
-- DBベースの固定推薦フィードを本番利用
-- DBが利用できない場合はFANZA APIへライブフォールバック
-- **取り込み・DB・Feed・検索・保存・履歴の対象はコミックのみ**
-- 18歳以上確認を実装済み
-- プライバシーポリシー / 利用規約を実装済み
-- マイページから匿名データを自己削除可能
+本番構成は **React 19 + Vite 7 + TypeScript / PHP 8.3 / MariaDB / シンレンタルサーバー** です。Node.jsは開発・CI・ビルド時だけ使用します。
 
 公開先: `https://wp983575.wpx.jp/`
 
-## コミック専用化の方針
+## Domain invariant
 
-アプリケーションのDomain invariantは **「`works` に存在する作品 = FANZA同人コミック」** です。作品種別やフロアをDB列・URL・UIで持たず、コミック以外を入口で除外します。
+`works` に存在する作品はFANZA同人コミックに限定します。
 
-1. FANZA APIレスポンスを取り込む前に `FanzaClient::isComicItem()` で `/digital/comic/` 系の作品だけを許可する
-2. 新着同期では非コミック作品を保存しない
-3. DB障害時のライブフォールバックでも非コミック作品をスキップする
-4. 直接CID指定で非コミックを指定してもReaderへ混入させない
-5. `works` schemaに作品種別・動画URL用の列を持たない
-6. 検索・保存・推薦・履歴・行動計測も同じコミックカタログだけを参照する
-
-旧URLの `asset_type` / `category` パラメータはフロントで削除し、カタログ条件として使用しません。
+- FANZA API取込前に `FanzaClient::isComicItem()` でコミック判定
+- 新着同期・ライブフォールバック・直接CID指定のすべてで同じ判定を使用
+- `works` に動画URLや作品種別用の列を持たない
+- Feed、検索、保存、履歴、推薦も同じコミックカタログを参照
 
 ## 主要機能
 
-- 上下スワイプでコミック作品を切り替える固定Feed
-- 左右スワイプ / 画面端タップでサンプルページ送り
+- 上下スワイプによる推薦Feed
+- 左右スワイプ / 画面端タップによるサンプルページ送り
 - RTL / LTR切替
-- `contain` / 横幅優先の画像表示切替
-- ダブルタップ / ピンチによる1〜4倍ズーム
-- 次ページ・次作品画像の先読み + `HTMLImageElement.decode()`
-- いいね、保存、共有
-- サンプル読了後のFANZAアフィリエイトCTA
-- 保存済み作品一覧と価格変化表示
+- 全体表示 / 横幅優先
+- ダブルタップ / ピンチズーム
+- 次ページ・次作品画像の先読み
+- 作品詳細ダイアログ
+- 保存、共有
+- サンプル読了時のFANZAアフィリエイトCTA
+- 保存済み作品と価格変化表示
 - 閲覧履歴
-- 作品名・サークル・シリーズのキーワード検索
-- ジャンル、価格、サンプル枚数、レビュー件数、評価で絞り込み
-- 匿名行動データからジャンル嗜好を更新するルールベース推薦
-- Reader設定の端末保存
+- 作品名・サークル・シリーズ・ジャンル・価格等による詳細検索
+- 匿名行動データによる推薦
 - 18歳以上確認
-- 匿名データ削除
-- PWA / Service Worker
-- メイン ↔ 検索 / 保存済み / マイページ / 閲覧履歴間の閲覧位置復帰
+- 匿名利用データ削除
+- PWA
+- メイン画面とサブページ間のReader位置復帰
 
 ## 画面
 
 | Path | 内容 |
 | --- | --- |
-| `/` | メインの縦スワイプ・コミックFeed |
+| `/` | 推薦コミックFeed |
 | `/work/{cid}` | 共有用作品URL / 対象作品Reader |
-| `/search` | コミック詳細検索 |
-| `/saved` | 保存済みコミック |
-| `/mypage` | 匿名ユーザーのマイページ |
+| `/search` | 詳細検索 |
+| `/saved` | 保存済み作品 |
+| `/mypage` | マイページ |
 | `/history` | 閲覧履歴 |
 | `/privacy` | プライバシーポリシー |
 | `/terms` | 利用規約 |
-| `/favorites` | 旧URL。`/saved`へリダイレクト |
 
-React Routerは使用せず、`src/main.tsx`でpathnameを判定して画面を出し分けています。
+ルート定義は `src/routes.ts`、Reader復帰データは `src/readerResumeState.ts`、遷移処理は `src/navigationState.ts` に分離しています。
 
-## 年齢確認
+## 推薦Feed
 
-成人向け作品を表示する画面は18歳以上確認を通過してからマウントします。
+DBが利用可能な場合、`feed_sessions / feed_items` にユーザー単位のFeed順序を保存します。有効期間は12時間です。
 
-- 「この端末で確認を記憶する」がON: `localStorage`
-- OFF: `sessionStorage`
-- `/privacy` と `/terms` は年齢確認前でも閲覧可能
-- 年齢確認前は作品画面をマウントせず、行動計測も開始しない
-- 匿名データ削除時に年齢確認状態も削除
+推薦versionは **`rules-v3.3-adaptive`** です。
 
-年齢確認完了後は、通常Feedまたは共有された対象作品Readerをそのまま表示します。
+推薦は30作品単位のadaptive windowで生成します。すでに提示した作品順は維持しつつ、次window生成時には直近の保存、FANZA遷移、読了、閲覧行動から更新されたジャンル嗜好を利用します。
 
-## マイページ
-
-`/mypage`では以下を利用できます。
-
-- 保存済み件数 / 閲覧作品数 / いいね件数
-- 最近見た作品
-- 上位ジャンル嗜好
-- Reader設定
-  - 全体表示 / 横幅優先
-  - 右→左 / 左→右
-  - 画面端タップ送り
-  - Reader UI最小化
-- 保存済み / 閲覧履歴への導線
-- プライバシーポリシー / 利用規約
-- 利用開始日
-- 匿名データ削除
-
-`DELETE /api/me`で現在の匿名ユーザーIDを削除します。関連する行動イベント、いいね・保存、ジャンル嗜好、固定Feedも削除し、`fp_uid / fp_sid` Cookieと`swipe-preview:`端末状態をリセットします。
-
-## システム構成
+候補生成とランキングの責務は次のように分離しています。
 
 ```text
-ブラウザ
-  ↓
-18歳以上確認
-  ↓
-React / Vite
-  ↓
-/api/catalog       コミックFeed
-/api/search        コミック詳細検索
-/api/meta          ジャンル
-/api/events        行動イベント
-/api/reactions     いいね・保存状態
-/api/saved         保存済み
+CatalogService
+  ├─ FeedRepository         Feed session / item永続化
+  ├─ CandidateSource        Popular / Recent / Explore候補抽出
+  └─ RecommendationRanker   嗜好・人気・新着・探索・既読をスコアリング
+```
+
+明示的な推薦シグナルは、FANZA遷移を最も強く、保存を次に強く扱います。サンプル読了と閲覧進行は補助シグナルです。
+
+DBが利用できない場合はFANZA APIへライブフォールバックし、コミックだけを返します。
+
+## 保存
+
+保存はON/OFFのユーザー状態だけを保持します。他ユーザーを含む保存件数や「いいね」はDomainに持ちません。
+
+- `user_work_states.saved`
+- `GET /api/save-state`
+- `POST /api/events` の `save_toggle`
+
+保存済み画面では保存時価格と現在価格を比較し、値下げを表示します。
+
+## FANZA同期・保守
+
+1. 新着同期: `fanza-sync.php`
+2. 旧作巡回: `refresh-catalog.php`
+3. Retention: `retention.php`
+
+旧作巡回では、保存作品と直近30日のFANZA遷移作品を優先し、その後に `next_refresh_at` 順でカタログ全体を巡回します。
+
+CIでは `refresh-catalog.php --plan-only` を実MariaDBに対して実行し、巡回対象選定SQLが現在schemaで動作することを保証します。
+
+## 公開API
+
+```text
+/api/catalog       推薦Feed
+/api/search        詳細検索
+/api/meta          ジャンルmetadata
+/api/events        行動イベント・保存更新
+/api/save-state    現在ユーザーの保存状態
+/api/saved         保存済み一覧
 /api/history       閲覧履歴
 /api/me            マイページ / 匿名データ削除
-/api/work-details  読了時の作品詳細・価格再確認
+/api/work-details  作品詳細
 /api/health        稼働確認
-  ↓
-PHP 8.3
-  ├─ MariaDB
-  │   ├─ コミック作品 / ジャンル / シリーズ
-  │   ├─ 価格履歴
-  │   ├─ 行動イベント / 嗜好
-  │   └─ 固定推薦Feed
-  │
-  └─ DMM Web Service API v3
-      ├─ コミック判定
-      ├─ 新着同期
-      ├─ 個別作品更新
-      ├─ DB障害時のライブフォールバック
-      └─ 旧作品巡回更新
 ```
 
-`/api/debug` と `/api/diagnostics` は、管理トークンが設定され正しい`X-Admin-Token`が送信された場合だけ利用できます。通常の本番アクセスでは404を返します。
-
-## カタログ取得
-
-### 通常時: MariaDB固定Feed
-
-DBに表示可能なコミックがある場合、`/api/catalog`はMariaDBを使用します。
-
-初回取得時に`feed_sessions / feed_items`へユーザー単位の推薦順序を固定し、以降は`feed_id + cursor`で同じFeedの続きを返します。固定Feedの有効期間は12時間です。
-
-recommender versionは **`rules-v3.2-comic`** です。
-
-候補はPopular / Recent / Exploreを主軸にし、ジャンル嗜好、評価、レビュー人気度、新着度、探索スコア、最近表示済み作品へのペナルティを反映します。
-
-### DB利用不可時: FANZA APIフォールバック
-
-DBへ接続できない、または表示可能なDB作品がない場合はFANZA APIからライブ取得します。
-
-FANZA同人APIにはコミック以外も含まれるため、フォールバックでは最大複数APIページを走査し、`isComicItem()`を通過したコミックだけをFeedへ返します。`feedId`は`null`となり、`nextCursor`で続きを取得します。1回のAPIレスポンス途中で表示件数へ到達した場合も、未走査部分を飛ばさないcursor計算にしています。
-
-FANZAの`total_count`は同人API全体の件数なので、フォールバック中はコミック総数として画面へ表示しません。画面上は現在読み込めているコミック件数を使用します。
-
-## FANZA同期
-
-新着同期はFANZA同人APIのレスポンスをそのままDBへ入れません。
-
-```text
-FANZA ItemList
-  ↓
-isComicItem(raw)
-  ├─ false → skip
-  └─ true
-       ↓
-     feedItem()
-       ↓
-     WorkRepository
-       ↓
-     MariaDB
-```
-
-`genres / series`もAPI全体のマスターを事前投入せず、実際に取り込んだコミックの`iteminfo`から保存します。これによりCG・ゲーム・音声だけで使われるメタデータが混入しません。
-
-作品保守は3系統です。
-
-1. **新着同期**: 6時間ごとに `fanza-sync.php --pages=5 --sort=date`
-2. **旧作巡回**: `refresh-catalog.php`で保存・Like・アフィリエイトクリック作品を優先しつつDB全体を巡回
-3. **Retention**: `retention.php`で期限切れイベント、匿名データ、固定Feedを整理
-
-既存コミックが後から取得不能またはコミック判定外になった場合は即時販売終了にせず、複数回の確認後に`unavailable`へ移行します。
+`/api/debug` と `/api/diagnostics` は管理トークンが一致した場合だけ利用可能です。
 
 ## DB
 
 主要テーブル:
 
-- `works`: コミック作品情報、サンプルURL、価格、maker / maker_id、販売状態、更新時刻
-- `genres`, `work_genres`: ジャンル
-- `series`, `work_series`: シリーズ
-- `work_price_history`: 価格変更履歴
-- `anonymous_users`: ランダムUUIDのみの匿名ユーザー
-- `events`: 閲覧・ページ進捗・読了・CTA・like/save/share・affiliate click
-- `user_work_states`: いいね・保存の現在状態
-- `user_genre_scores`: 行動から更新するジャンル嗜好
-- `feed_sessions`, `feed_items`: 固定推薦Feed
-- `sync_runs`: 同期・巡回更新履歴
-- `app_migrations`: 一度だけ行うmigration管理
+- `works`
+- `genres`, `work_genres`
+- `series`, `work_series`
+- `work_price_history`
+- `anonymous_users`
+- `events`
+- `user_work_states`
+- `user_genre_scores`
+- `feed_sessions`, `feed_items`
+- `sync_runs`
+- `app_migrations`
 
-`works`に作品タイプ列や動画URL列はありません。コミック以外は保存前に除外します。
+アプリDBに実名・住所・メールアドレス・決済情報・IPアドレスは保存しません。
 
-IPアドレスや実名情報はアプリDBへ保存しません。イベント生ログは初期設定60日、匿名ユーザーと派生データは最終行動から180日で整理します。
+## UI構成
 
-## ディレクトリ構成
+一覧系の作品カードは `components/WorkCardPrimitives.tsx` と `styles/work-cards.css` を共有します。Saved / Search / Historyでカードの枠、本文、metadata、CTA、追加読込・エラーUIを重複実装しません。
 
-```text
-components/            React UI
-lib/                   フロント共通型
-src/                   analytics / API / reader / navigation / age verification等
-styles/                責務別CSS
-public/                manifest / service worker / icons
-server/public/         公開PHP APIと.htaccess
-server/app/src/        PHPドメインロジック
-server/app/cron/       DB構築・同期・保守cron
-server/app/tests/      CI用統合テスト
-scripts/               build / debt check / logic test
-docs/                  実装メモ
-.github/workflows/     CI / deploy / catalog maintenance
-```
+MyPageの統計は「保存済み」「見た作品」の2項目です。
 
 ## 開発
 
-Node.jsは`>=20.19.0`です。CIではNode.js 22を使用します。
+Node.jsは `>=20.19.0`、CIはNode.js 22、PHP 8.3を使用します。
 
 ```bash
 npm ci
 npm run dev
-```
-
-PHP APIをローカルで動かす場合:
-
-```bash
 npm run dev:api
 ```
 
-Viteは`/api`を`127.0.0.1:8787`へプロキシします。
-
-## ローカルチェック
+## ローカル検証
 
 ```bash
 npm run typecheck
 npm run check:php
-npm run test:logic
 npm run check:debt
+npm run test:logic
 npm run build:shin
 ```
 
-`check:debt`では既存のReader・年齢確認・履歴・削除等の回帰に加え、以下も検査します。
-
-- フロア切替・動画Reader・動画CSSの再混入
-- `floor_key / sample_movie_url / asset_type / asset_bucket`のschema再混入
-- CatalogService / WorkRepository / APIへの作品種別分岐の再混入
-- FANZAコミック判定の欠落
-- 同期時の非コミックスキップ欠落
-- FANZA fallbackの複数ページ・部分ページcursor処理の欠落
-- 詳細検索・作品共有URL・固定Feedの主要回帰
-
 ## CI
 
-Pull RequestではTypeScript、全PHP構文、debt check、Readerロジック、MariaDB migration、検索、固定Feed、保存cursor、閲覧履歴cursor、匿名データ削除、価格差額、本番build、成果物への秘密情報混入をまとめて確認します。
+Pull Request CIは静的検証と実行検証を分離しています。
 
-MariaDB 11.4をCI service containerとして使用し、schema再実行の安全性とコミック専用のDomain invariantを確認します。
+### 静的検証
+
+- TypeScript strict check
+- 全PHP構文
+- architecture / debt invariant
+- Readerロジック
+
+### 実行検証
+
+MariaDB 11.4を起動して以下を実行します。
+
+- schema migrationの冪等実行
+- 廃止済み列の不存在確認
+- `refresh-catalog.php --plan-only`
+- 固定Feed / 保存 / 履歴 / 検索のDomain integration test
+- 30件adaptive recommendation integration test
+- PHP built-in server経由の公開HTTP API contract test
+- production buildと公開境界検査
+
+文字列grepだけでAPI・cronの整合性を保証せず、実DB・実HTTP経路も必ず通します。
 
 ## 本番デプロイ
 
-`main`へのpushは成功済みPR CIを経由したコミットだけをデプロイします。
+`main`へのpushは、成功済みPR CIが確認できる場合だけデプロイします。
 
 ```text
 PR CI成功確認
   ↓
-本番build
+production build
   ↓
-リリース領域へ転送
-  ↓
-config.local.php生成
+候補releaseへ転送
   ↓
 DB migration
   ↓
-app / public_html切替
+直前のapp / public_htmlをsnapshot
   ↓
-本番HTTP / PWA / fixed feed / search / public boundary検証
+新releaseへ切替
+  ↓
+production smoke test
+  ├─ 成功 → 一時release / snapshotを整理
+  └─ 失敗 → 直前snapshotへ自動rollback
 ```
 
-## 本公開前に残っている主な事項
+production smokeではversion、PWA、セキュリティヘッダー、DB/FANZA health、推薦Feed継続性、検索、共有URL、保存・マイページ、公開境界を確認します。
 
-現在は`noindex,nofollow`を維持しています。年齢確認、プライバシーポリシー、利用規約、匿名データ削除は実装済みです。
+## 公開状態
 
-主な残作業:
-
-- Reader実機QA
-- 作品単位共有URL / 動的OGPの実機確認
-- PWA追加訴求の段階設計
-- SEO公開ページ / URL / index設計
-- X / 既存SEOサイトからの市場検証
+現時点では `noindex,nofollow` を維持しています。年齢確認、プライバシーポリシー、利用規約、匿名データ削除は実装済みです。
