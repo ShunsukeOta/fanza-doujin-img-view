@@ -30,6 +30,8 @@ for (const path of [
   "styles/onboarding.css",
   "src/onboardingState.ts",
   "docs/onboarding-implementation.md",
+  "server/app/src/ComicOnlyCleanup.php",
+  "server/app/tests/comic-only-cleanup-integration.php",
 ]) {
   if (existsSync(path)) fail(`廃止済みファイル ${path} が残っています。`);
 }
@@ -41,6 +43,7 @@ const styleFiles = [
   "styles/reader.css",
   "styles/discovery.css",
   "styles/accessibility.css",
+  "styles/viewport.css",
 ];
 for (const path of styleFiles) {
   if (!existsSync(path)) fail(`必須CSS ${path} がありません。`);
@@ -77,6 +80,7 @@ mustContain(css, [
   ".rating-filter",
   ".detail-search-form",
   ".search-result-grid",
+  "--app-height",
 ], "CSS");
 if (!css.includes('font-family: "Noto Sans JP", sans-serif')) {
   fail("全体フォントがNoto Sans JPへ固定されていません。");
@@ -93,6 +97,7 @@ mustContain(main, [
   "<SearchPage",
   "workCidFromPath",
   "installMainResumeLifecycle",
+  "installViewportSizing",
   "<SwipePreviewApp",
 ], "Main");
 mustNotContain(main, [
@@ -185,11 +190,16 @@ if (sync.includes("fetchGenres")) {
 }
 
 const setupDb = read("server/app/cron/setup-db.php");
-mustContain(setupDb, ["ComicOnlyCleanup::run", "idx_works_feed", "recommendation-v3-rebuild-20260907"], "DB setup");
-mustNotContain(setupDb, ["multi-floor-amateur-video-20260908", "floor_key", "sample_movie_url", "idx_works_floor_feed"], "DB setup本体");
-if (!existsSync("server/app/src/ComicOnlyCleanup.php")) fail("本番DB縮退用の一時cleanupがありません。");
-const cleanup = read("server/app/src/ComicOnlyCleanup.php");
-mustContain(cleanup, ["floor_key", "sample_movie_url", "asset_type", "asset_bucket", "idx_works_feed", "multi-floor-amateur-video-20260908"], "DB cleanup");
+mustContain(setupDb, ["idx_works_feed", "recommendation-v3-rebuild-20260907"], "DB setup");
+mustNotContain(setupDb, [
+  "ComicOnlyCleanup",
+  "multi-floor-amateur-video-20260908",
+  "floor_key",
+  "sample_movie_url",
+  "asset_type",
+  "asset_bucket",
+  "amateur",
+], "DB setup");
 
 const searchApi = read("server/public/api/search.php");
 mustContain(searchApi, ["searchService->search"], "詳細検索API");
@@ -214,6 +224,9 @@ const indexHtml = read("index.html");
 if (!indexHtml.includes("fonts.googleapis.com") || !indexHtml.includes("Noto+Sans+JP")) {
   fail("Noto Sans JPのWeb Font読込がありません。");
 }
+
+const packageJson = read("package.json");
+mustNotContain(packageJson, ["comic-only-cleanup-integration.php", "ComicOnlyCleanup"], "package scripts");
 
 const meApi = read("server/public/api/me.php");
 mustContain(meApi, ["'DELETE'", "deleteProfile", "clear_anonymous_identity"], "匿名データ削除API");
