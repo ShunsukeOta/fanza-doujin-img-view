@@ -53,6 +53,12 @@ function test_item(int $index): array
     ];
 }
 
+$likedColumns = $pdo->query(
+    "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() "
+    . "AND table_name = 'user_work_states' AND column_name IN ('liked', 'liked_at')"
+)->fetchColumn();
+assert_test((int)$likedColumns === 0, 'いいね列がuser_work_statesに残っている');
+
 assert_test(
     $fanza->isComicItem(['imageURL' => ['large' => 'https://pics.dmm.co.jp/digital/comic/example/examplepl.jpg']]),
     'digital/comicをコミックとして判定できない',
@@ -111,8 +117,8 @@ $historyPrice = $pdo->prepare(
 $historyPrice->execute(['audit_001', '1,500円', 1500]);
 
 $state = $pdo->prepare(
-    'INSERT INTO user_work_states (anonymous_user_id, work_cid, liked, saved, liked_at, saved_at, updated_at) '
-    . 'VALUES (?, ?, 0, 1, NULL, DATE_SUB(NOW(), INTERVAL ? HOUR), NOW()) '
+    'INSERT INTO user_work_states (anonymous_user_id, work_cid, saved, saved_at, updated_at) '
+    . 'VALUES (?, ?, 1, DATE_SUB(NOW(), INTERVAL ? HOUR), NOW()) '
     . 'ON DUPLICATE KEY UPDATE saved=1, saved_at=VALUES(saved_at), updated_at=NOW()'
 );
 $state->execute([$uid, 'audit_001', 1]);
@@ -126,6 +132,7 @@ assert_test(is_string($savedFirst['nextCursor']) && $savedFirst['nextCursor'] !=
 assert_test(($savedFirst['items'][0]['cid'] ?? '') === 'audit_001', '保存順序がsaved_at順ではない');
 assert_test(($savedFirst['items'][0]['savedPriceValue'] ?? null) === 1500, '保存時価格を取得できていない');
 assert_test(($savedFirst['items'][0]['priceDropValue'] ?? null) === 500, '値下げ差額が500円にならない');
+assert_test(!array_key_exists('saveCount', $savedFirst['items'][0]), '作品ごとの保存件数がレスポンスへ残っている');
 
 $savedSecond = $userLibraryService->saved($uid, 2, (string)$savedFirst['nextCursor']);
 assert_test(count($savedSecond['items']) === 1, '保存2ページ目が1件ではない');
@@ -177,9 +184,32 @@ assert_test(
     '同一作品への7日以内FANZAクリック連打で嗜好スコアが重複加点されている',
 );
 
+$saveState = $eventService->record($uid, '44444444-4444-4444-8444-444444444444', [
+    'eventId' => '55555555-5555-4555-8555-555555555553',
+    'eventType' => 'save_toggle',
+    'cid' => 'audit_004',
+    'metadata' => ['active' => true],
+]);
+assert_test(($saveState['viewerSaved'] ?? false) === true, '保存ONの状態が返っていない');
+assert_test(!array_key_exists('saveCount', $saveState ?? []), '保存イベント応答に全体件数が残っている');
+$scoreStmt->execute([$uid, 'audit_genre']);
+$scoreAfterSave = (float)$scoreStmt->fetchColumn();
+assert_test(abs($scoreAfterSave - 17.0) < 0.01, '保存が明示的な好みとして7点加算されていない');
+
+$eventService->record($uid, '44444444-4444-4444-8444-444444444444', [
+    'eventId' => '55555555-5555-4555-8555-555555555554',
+    'eventType' => 'save_toggle',
+    'cid' => 'audit_004',
+    'metadata' => ['active' => false],
+]);
+$scoreStmt->execute([$uid, 'audit_genre']);
+$scoreAfterUnsave = (float)$scoreStmt->fetchColumn();
+assert_test(abs($scoreAfterUnsave - 10.0) < 0.01, '保存解除で推薦スコアが戻っていない');
+
 $profile = $userLibraryService->profile($uid);
 assert_test(($profile['stats']['saved'] ?? 0) === 3, 'profileの保存件数が不正');
 assert_test(($profile['stats']['viewed'] ?? 0) === 3, 'profileの閲覧件数が不正');
+assert_test(!array_key_exists('liked', $profile['stats'] ?? []), 'profileにいいね件数が残っている');
 assert_test(count($profile['recentHistory'] ?? []) === 3, 'profileの最近見た作品が不正');
 
 assert_test($userLibraryService->deleteProfile($uid) === true, '匿名プロフィールを削除できない');
@@ -191,7 +221,7 @@ $eventCount->execute([$uid]);
 assert_test((int)$eventCount->fetchColumn() === 0, '削除後にイベントが残っている');
 $stateCount = $pdo->prepare('SELECT COUNT(*) FROM user_work_states WHERE anonymous_user_id = ?');
 $stateCount->execute([$uid]);
-assert_test((int)$stateCount->fetchColumn() === 0, '削除後に保存・いいね状態が残っている');
+assert_test((int)$stateCount->fetchColumn() === 0, '削除後に保存状態が残っている');
 $feedCount = $pdo->prepare('SELECT COUNT(*) FROM feed_sessions WHERE anonymous_user_id = ?');
 $feedCount->execute([$uid]);
 assert_test((int)$feedCount->fetchColumn() === 0, '削除後に固定feedが残っている');
