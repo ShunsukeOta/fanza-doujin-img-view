@@ -49,7 +49,7 @@ function clearClientAppState(): void {
         .filter((key): key is string => Boolean(key?.startsWith("swipe-preview:")));
       keys.forEach((key) => storage.removeItem(key));
     } catch {
-      // Storageを利用できない環境ではサーバー側削除だけを完了させる。
+      // Storageを利用できない環境ではサーバー側の削除だけを完了させる。
     }
   }
 }
@@ -102,7 +102,7 @@ export function MyPage() {
     setReaderSettings((current) => ({ ...current, ...patch }));
   };
 
-  const deleteAnonymousData = async () => {
+  const deleteUserData = async () => {
     if (deleting) return;
     setDeleting(true);
     setDeleteError("");
@@ -115,7 +115,7 @@ export function MyPage() {
           credentials: "same-origin",
           cache: "no-store",
         },
-        "匿名データを削除できませんでした",
+        "利用データを削除できませんでした",
       );
       clearAgeVerification();
       clearClientAppState();
@@ -149,10 +149,9 @@ export function MyPage() {
             <section className="profile-hero">
               <div className="profile-avatar"><UserIcon /></div>
               <div className="profile-copy">
-                <strong>ゲストユーザー</strong>
-                <span>ログイン不要・匿名IDで利用中</span>
+                <strong>この端末の利用情報</strong>
+                <span>登録やログインなしで利用できます</span>
               </div>
-              <span className="profile-status">ANONYMOUS</span>
             </section>
 
             <section className="profile-stats" aria-label="利用状況">
@@ -180,7 +179,7 @@ export function MyPage() {
                   {data.profile.recentHistory.map((item) => (
                     <button type="button" key={item.cid} className="profile-history-card" onClick={() => openWorkInMain(item.cid)}>
                       <span className="profile-history-thumb">
-                        {item.images[0] ? <img src={item.images[0]} alt="" loading="lazy" decoding="async" /> : <i>NO IMAGE</i>}
+                        {item.images[0] ? <img src={item.images[0]} alt="" loading="lazy" decoding="async" /> : <i>画像なし</i>}
                       </span>
                       <span>{item.title || item.cid}</span>
                     </button>
@@ -203,7 +202,7 @@ export function MyPage() {
             </section>
 
             <section className="profile-section">
-              <div className="profile-section-head"><h2>Reader設定</h2></div>
+              <div className="profile-section-head"><h2>ビューアー設定</h2></div>
               <div className="settings-list">
                 <div className="settings-row settings-row--stack">
                   <div><strong>画像の表示</strong><span>ページ全体を収めるか、横幅を優先します。</span></div>
@@ -224,7 +223,7 @@ export function MyPage() {
                   <input className="settings-switch" type="checkbox" checked={readerSettings.tapNavigation} onChange={(event) => updateReader({ tapNavigation: event.currentTarget.checked })} />
                 </label>
                 <label className="settings-row">
-                  <div><strong>Reader UIを最小化</strong><span>作品情報や操作UIを隠して画像を優先します。</span></div>
+                  <div><strong>操作表示を最小化</strong><span>作品情報や操作ボタンを隠して画像を広く表示します。</span></div>
                   <input className="settings-switch" type="checkbox" checked={readerSettings.controlsHidden} onChange={(event) => updateReader({ controlsHidden: event.currentTarget.checked })} />
                 </label>
               </div>
@@ -234,9 +233,9 @@ export function MyPage() {
               <div className="profile-section-head"><h2>操作と情報</h2></div>
               <div className="profile-menu">
                 <button type="button" onClick={() => navigateToSubpage("/history", "mypage")}><span><strong>閲覧履歴</strong><small>最近見た作品をもう一度開く</small></span><em>›</em></button>
-                <button type="button" onClick={() => navigateToSubpage("/saved", "mypage")}><span><strong>保存済み</strong><small>あとで読む作品と値下げ情報</small></span><em>›</em></button>
-                <a href="/privacy"><span><strong>プライバシーポリシー</strong><small>匿名データ・Cookie・保存期間</small></span><em>›</em></a>
-                <a href="/terms"><span><strong>利用規約</strong><small>18歳以上・アフィリエイト・利用条件</small></span><em>›</em></a>
+                <button type="button" onClick={() => navigateToSubpage("/saved", "mypage")}><span><strong>保存済み</strong><small>あとで読みたい作品と価格の変化を見る</small></span><em>›</em></button>
+                <a href="/privacy"><span><strong>プライバシーポリシー</strong><small>データの取り扱いと保存について</small></span><em>›</em></a>
+                <a href="/terms"><span><strong>利用規約</strong><small>サービスの利用条件について</small></span><em>›</em></a>
               </div>
             </section>
 
@@ -244,15 +243,15 @@ export function MyPage() {
               <div className="profile-section-head"><h2>利用情報</h2></div>
               <dl className="profile-facts">
                 <div><dt>利用開始日</dt><dd>{formatDate(data.profile.createdAt)}</dd></div>
-                <div><dt>ログイン</dt><dd>不要</dd></div>
-                <div><dt>閲覧履歴の保存</dt><dd>イベント保存期間内</dd></div>
+                <div><dt>登録・ログイン</dt><dd>不要</dd></div>
+                <div><dt>閲覧履歴</dt><dd>一定期間保存</dd></div>
               </dl>
             </section>
 
             <section className="profile-section profile-danger-zone">
               <div className="profile-section-head"><h2>データ管理</h2></div>
-              <p>現在の匿名IDに紐づく閲覧履歴、保存、いいね、嗜好、固定フィードと、この端末のReader設定・年齢確認を削除できます。</p>
-              <button className="danger-button" type="button" onClick={() => { setDeleteError(""); setDeleteOpen(true); }}>匿名データを削除</button>
+              <p>この端末に紐づく閲覧履歴、保存、いいね、おすすめ情報、ビューアー設定、年齢確認情報を削除できます。</p>
+              <button className="danger-button" type="button" onClick={() => { setDeleteError(""); setDeleteOpen(true); }}>利用データを削除</button>
             </section>
           </>
         ) : null}
@@ -263,13 +262,12 @@ export function MyPage() {
       {deleteOpen ? (
         <div className="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="delete-data-title">
           <div className="confirm-card">
-            <span className="confirm-kicker">DATA DELETE</span>
-            <h2 id="delete-data-title">匿名データを削除しますか？</h2>
-            <p>閲覧履歴、保存、いいね、おすすめ学習データ、固定フィード、端末設定を削除します。この操作は取り消せません。</p>
+            <h2 id="delete-data-title">利用データを削除しますか？</h2>
+            <p>閲覧履歴、保存、いいね、おすすめ情報、ビューアー設定、年齢確認情報を削除します。この操作は取り消せません。</p>
             {deleteError ? <div className="confirm-error" role="status">{deleteError}</div> : null}
             <div className="confirm-actions">
               <button type="button" className="confirm-cancel" disabled={deleting} onClick={() => setDeleteOpen(false)}>キャンセル</button>
-              <button type="button" className="confirm-delete" disabled={deleting} onClick={() => void deleteAnonymousData()}>{deleting ? "削除中…" : "削除する"}</button>
+              <button type="button" className="confirm-delete" disabled={deleting} onClick={() => void deleteUserData()}>{deleting ? "削除中…" : "削除する"}</button>
             </div>
           </div>
         </div>
