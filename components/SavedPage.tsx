@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 
+import { FloorComingSoon, FloorTabs } from "@/components/FloorTabs";
 import { GlobalNav } from "@/components/GlobalNav";
 import { BookmarkIcon } from "@/components/icons";
 import type { FeedItem } from "@/lib/types";
 import { trackEvent } from "@/src/analytics";
 import { fetchJson } from "@/src/api";
+import { floorFromLocation } from "@/src/floors";
 import { openWorkInMain } from "@/src/navigationState";
 import { formatPrice } from "@/src/price";
 import { updateReaction } from "@/src/reactions";
@@ -34,16 +36,18 @@ function mergeUniqueItems(current: FeedItem[], incoming: FeedItem[]): FeedItem[]
 }
 
 export function SavedPage() {
+  const floor = floorFromLocation();
   const [items, setItems] = useState<FeedItem[]>([]);
   const [total, setTotal] = useState(0);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(floor === "comic");
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
   const [pendingCid, setPendingCid] = useState("");
 
   const load = useCallback(async () => {
+    if (floor !== "comic") return;
     setLoading(true);
     setError("");
     try {
@@ -67,14 +71,14 @@ export function SavedPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [floor]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (floor === "comic") void load();
+  }, [floor, load]);
 
   const loadMore = async () => {
-    if (!hasMore || !cursor || loadingMore) return;
+    if (floor !== "comic" || !hasMore || !cursor || loadingMore) return;
 
     setLoadingMore(true);
     setError("");
@@ -96,7 +100,7 @@ export function SavedPage() {
   };
 
   const removeSaved = async (item: FeedItem) => {
-    if (pendingCid) return;
+    if (floor !== "comic" || pendingCid) return;
 
     setPendingCid(item.cid);
     setError("");
@@ -110,6 +114,19 @@ export function SavedPage() {
       setPendingCid("");
     }
   };
+
+  if (floor !== "comic") {
+    return (
+      <div className="subpage-shell">
+        <header className="subpage-header"><h1>保存済み</h1></header>
+        <main className="subpage-content floor-aware-content">
+          <FloorTabs activeFloor={floor} context="saved" />
+          <FloorComingSoon floor={floor} />
+        </main>
+        <GlobalNav active="saved" />
+      </div>
+    );
+  }
 
   return (
     <div className="subpage-shell">
@@ -125,7 +142,8 @@ export function SavedPage() {
         </button>
       </header>
 
-      <main className="subpage-content">
+      <main className="subpage-content floor-aware-content">
+        <FloorTabs activeFloor="comic" context="saved" />
         <div className="subpage-summary" aria-label={`保存した作品 ${total}件`}>
           <span>保存した作品 <strong>{total.toLocaleString("ja-JP")}</strong>件</span>
         </div>
