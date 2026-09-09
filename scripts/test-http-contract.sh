@@ -22,7 +22,7 @@ php -S 127.0.0.1:8787 server/public/router.php >"$SERVER_LOG" 2>&1 &
 PHP_SERVER_PID=$!
 READY=0
 for _ in $(seq 1 30); do
-  if curl --silent --fail "$BASE_URL/api/health" >/dev/null; then READY=1; break; fi
+  if curl --silent --output /dev/null --connect-timeout 1 "$BASE_URL/api/health"; then READY=1; break; fi
   sleep .2
 done
 if [ "$READY" -ne 1 ]; then
