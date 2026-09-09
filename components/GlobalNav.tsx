@@ -6,8 +6,6 @@ import { navigateToSubpage, resumeMainFromSubpage, type NavOrigin } from "@/src/
 type NavKey = "saved" | "main" | "search" | "mypage";
 type Props = { active?: NavKey };
 
-const NAVIGATION_SETTLE_MS = 320;
-
 function currentPath(): string {
   return window.location.pathname.replace(/\/+$/, "") || "/";
 }
@@ -29,22 +27,18 @@ function currentOrigin(): NavOrigin {
   return "main";
 }
 
-function prefersReducedMotion(): boolean {
-  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-}
-
 export function GlobalNav({ active = currentNav() }: Props) {
   const origin = currentOrigin();
   const navRef = useRef<HTMLElement | null>(null);
   const [visualActive, setVisualActive] = useState<NavKey>(active);
   const visualActiveRef = useRef<NavKey>(active);
-  const navigationTimerRef = useRef<number | null>(null);
+  const navigationFrameRef = useRef<number | null>(null);
   const pendingNavigationRef = useRef<(() => void) | null>(null);
 
   const clearPendingNavigation = () => {
-    if (navigationTimerRef.current !== null) {
-      window.clearTimeout(navigationTimerRef.current);
-      navigationTimerRef.current = null;
+    if (navigationFrameRef.current !== null) {
+      window.cancelAnimationFrame(navigationFrameRef.current);
+      navigationFrameRef.current = null;
     }
     pendingNavigationRef.current = null;
   };
@@ -97,35 +91,25 @@ export function GlobalNav({ active = currentNav() }: Props) {
     clearPendingNavigation();
     if (visualActiveRef.current === target) return;
     visualActiveRef.current = target;
+    syncSnapshotDom(target);
     setVisualActive(target);
   };
 
   const moveThenNavigate = (target: NavKey, navigate: () => void) => {
+    clearPendingNavigation();
     const previousTarget = visualActiveRef.current;
-    const wasMoving = pendingNavigationRef.current !== null;
-
-    if (navigationTimerRef.current !== null) {
-      window.clearTimeout(navigationTimerRef.current);
-      navigationTimerRef.current = null;
-    }
 
     pendingNavigationRef.current = navigate;
     visualActiveRef.current = target;
+    syncSnapshotDom(target);
     if (previousTarget !== target) setVisualActive(target);
 
-    if (prefersReducedMotion() || (previousTarget === target && !wasMoving)) {
+    navigationFrameRef.current = window.requestAnimationFrame(() => {
+      navigationFrameRef.current = null;
       const pending = pendingNavigationRef.current;
       pendingNavigationRef.current = null;
       pending?.();
-      return;
-    }
-
-    navigationTimerRef.current = window.setTimeout(() => {
-      navigationTimerRef.current = null;
-      const pending = pendingNavigationRef.current;
-      pendingNavigationRef.current = null;
-      pending?.();
-    }, NAVIGATION_SETTLE_MS);
+    });
   };
 
   const goMain = () => {
