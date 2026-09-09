@@ -54,14 +54,6 @@ function json_response(array $payload, int $status = 200, array $headers = []): 
 
 function public_error_message(Throwable $error, string $fallback): string
 {
-    if ($error instanceof PDOException) {
-        error_log('PDOException: ' . $error->getMessage());
-        return $fallback;
-    }
-    if ($error instanceof RuntimeException) {
-        $message = trim($error->getMessage());
-        return $message !== '' ? $message : $fallback;
-    }
     error_log(get_class($error) . ': ' . $error->getMessage());
     return $fallback;
 }
