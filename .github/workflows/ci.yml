@@ -174,6 +174,8 @@ jobs:
           test ! -e components/ComingSoonFloorPage.tsx
           test ! -e src/floors.ts
           test ! -e styles/video.css
+          test ! -e server/app/src/ComicOnlyCleanup.php
+          test ! -e server/app/tests/comic-only-cleanup-integration.php
           grep -F 'feed_sessions' server/app/schema.sql >/dev/null
           grep -F 'feed_items' server/app/schema.sql >/dev/null
           grep -F 'idx_works_feed' server/app/schema.sql >/dev/null
@@ -193,7 +195,9 @@ jobs:
           grep -F 'cancel-in-progress: false' .github/workflows/deploy-shin.yml >/dev/null
           grep -F 'isComicItem' server/app/src/FanzaClient.php >/dev/null
           grep -F 'isComicItem' server/app/cron/fanza-sync.php >/dev/null
-          if grep -R -E 'floor_key|sample_movie_url|VideoWorkCard|videoc' --exclude='ComicOnlyCleanup.php' --exclude='comic-only-cleanup-integration.php' server src components styles lib; then
+          grep -F 'installViewportSizing' src/main.tsx >/dev/null
+          grep -F 'window.innerHeight' src/viewport.ts >/dev/null
+          if grep -R -E 'floor_key|sample_movie_url|VideoWorkCard|videoc' server src components styles lib; then
             echo '廃止済み動画フロア実装が残っています。' >&2
             exit 1
           fi
@@ -234,5 +238,6 @@ jobs:
           test -f deploy/app/src/SearchService.php
           test -f deploy/app/src/PriceParser.php
           test ! -e deploy/app/tests
+          test ! -e deploy/app/src/ComicOnlyCleanup.php
           test ! -f deploy/app/config.local.php
           grep -F 'Content-Security-Policy' deploy/public_html/.htaccess >/dev/null
