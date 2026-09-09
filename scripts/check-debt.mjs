@@ -23,15 +23,17 @@ for (const path of [
   "styles/video.css",
   "components/VideoWorkCard.tsx",
   "components/FloorSwitcher.tsx",
-  "components/FloorTabs.tsx",
   "components/ComingSoonFloorPage.tsx",
-  "src/floors.ts",
   "components/Onboarding.tsx",
   "styles/onboarding.css",
   "src/onboardingState.ts",
   "docs/onboarding-implementation.md",
 ]) {
   if (existsSync(path)) fail(`廃止済みファイル ${path} が残っています。`);
+}
+
+for (const path of ["components/FloorTabs.tsx", "src/floors.ts"]) {
+  if (!existsSync(path)) fail(`UIフロア切替に必要な ${path} がありません。`);
 }
 
 const styleFiles = [
@@ -55,10 +57,7 @@ mustNotContain(css, [
   ".genre-line",
   ".next-hint",
   ".reader-settings-note",
-  ".floor-tabs",
-  ".floor-tab",
   ".floor-switcher",
-  ".floor-coming",
   ".video-feed-item",
   ".video-embed-player",
   ".video-swipe-zone",
@@ -77,6 +76,9 @@ mustContain(css, [
   ".rating-filter",
   ".detail-search-form",
   ".search-result-grid",
+  ".floor-tabs",
+  ".floor-tab",
+  ".floor-coming-card",
 ], "CSS");
 if (!css.includes('font-family: "Noto Sans JP", sans-serif')) {
   fail("全体フォントがNoto Sans JPへ固定されていません。");
@@ -94,10 +96,11 @@ mustContain(main, [
   "workCidFromPath",
   "installMainResumeLifecycle",
   "<SwipePreviewApp",
+  "<FloorTabs",
+  "floorFromLocation",
 ], "Main");
 mustNotContain(main, [
   "FloorSwitcher",
-  "FloorTabs",
   "ComingSoonFloorPage",
   'pathname === "/amateur"',
   'pathname === "/actress"',
@@ -109,6 +112,21 @@ mustNotContain(main, [
   "markOnboardingComplete",
   "skipOnboarding",
 ], "Main");
+
+const floorUi = read("src/floors.ts");
+mustContain(floorUi, [
+  '"comic" | "actress" | "amateur"',
+  'label: "同人漫画"',
+  'label: "女優動画"',
+  'label: "素人動画"',
+  'available: false',
+  'floorContextPath',
+], "UIフロア定義");
+mustNotContain(floorUi, ["floor_key", "sample_movie_url", "/api/"], "UIフロア定義");
+
+const floorTabs = read("components/FloorTabs.tsx");
+mustContain(floorTabs, ["FLOORS.map", "floorContextPath", "準備中", "FloorComingSoon"], "フロア切替UI");
+mustNotContain(floorTabs, ["fetch(", "fetchJson", "/api/", "VideoWorkCard"], "フロア切替UI");
 
 const myPage = read("components/MyPage.tsx");
 mustContain(myPage, ["subscribeReaderSettings", "readerSettingsEqual"], "マイページ");
@@ -125,16 +143,41 @@ if (!app.includes('catalog.source === "database" ? catalog.apiTotal : 0')) {
 }
 
 const searchPage = read("components/SearchPage.tsx");
-mustContain(searchPage, ["maker", "series", "genreId", "minRating", "price_asc", "/api/search", "openWorkInMain(item.cid)"], "詳細検索");
-mustNotContain(searchPage, ["FloorTabs", "floorFromLocation", "floorLabel", "COMING SOON", "amateur", "actress"], "詳細検索");
+mustContain(searchPage, [
+  "maker",
+  "series",
+  "genreId",
+  "minRating",
+  "price_asc",
+  "/api/search",
+  "openWorkInMain(item.cid)",
+  "FloorTabs",
+  "floorFromLocation",
+  "FloorComingSoon",
+], "詳細検索");
+mustNotContain(searchPage, ["VideoWorkCard", "sampleMovieUrl", "floor_key"], "詳細検索");
 
 const savedPage = read("components/SavedPage.tsx");
-mustContain(savedPage, ["/api/saved", "openWorkInMain(item.cid)", "favorite-buy"], "保存済み");
-mustNotContain(savedPage, ["FloorTabs", "floorFromLocation", "floorLabel", "COMING SOON", "amateur", "actress"], "保存済み");
+mustContain(savedPage, [
+  "/api/saved",
+  "openWorkInMain(item.cid)",
+  "favorite-buy",
+  "FloorTabs",
+  "floorFromLocation",
+  "FloorComingSoon",
+], "保存済み");
+mustNotContain(savedPage, ["VideoWorkCard", "sampleMovieUrl", "floor_key"], "保存済み");
 
 const globalNav = read("components/GlobalNav.tsx");
-mustContain(globalNav, ["SearchIcon", ">検索<", ">読む<", 'navigateToSubpage("/mypage", origin)'], "グローバルメニュー");
-mustNotContain(globalNav, ["floorFromLocation", "floorContextPath", "floorFeedPath", "amateur", "actress"], "グローバルメニュー");
+mustContain(globalNav, [
+  "SearchIcon",
+  ">検索<",
+  ">読む<",
+  'navigateToSubpage("/mypage", origin)',
+  "floorFromLocation",
+  "floorContextPath",
+], "グローバルメニュー");
+mustNotContain(globalNav, ["VideoWorkCard", "sampleMovieUrl", "floor_key"], "グローバルメニュー");
 const navigationCss = read("styles/navigation.css");
 if (!navigationCss.includes("backdrop-filter: blur(22px)") || !navigationCss.includes("grid-template-columns: repeat(4")) {
   fail("4項目フローティング型グローバルメニューCSSがありません。");
@@ -152,7 +195,7 @@ const reactions = read("src/reactions.ts");
 if (!reactions.includes("MAX_REACTION_QUERY_CIDS = 50")) fail("リアクションAPIとフロントの件数上限が不一致です。");
 
 const types = read("lib/types.ts");
-mustNotContain(types, ["FloorKey", "mediaType", "sampleMovieUrl", "AssetType", "assetType", "assetBucket", "assetLabel", "assetTypes"], "フロント型");
+mustNotContain(types, ["FloorKey", "mediaType", "sampleMovieUrl", "AssetType", "assetType", "assetBucket", "assetLabel", "assetTypes"], "フロントDomain型");
 
 const fanza = read("server/app/src/FanzaClient.php");
 mustContain(fanza, ["resolveDoujinFloor", "function isComicItem", "'makerId' =>"], "FANZAクライアント");

@@ -170,10 +170,15 @@ jobs:
           test ! -e .github/workflows/verify-production.yml
           test ! -e components/VideoWorkCard.tsx
           test ! -e components/FloorSwitcher.tsx
-          test ! -e components/FloorTabs.tsx
+          test -f components/FloorTabs.tsx
           test ! -e components/ComingSoonFloorPage.tsx
-          test ! -e src/floors.ts
+          test -f src/floors.ts
           test ! -e styles/video.css
+          grep -F '同人漫画' src/floors.ts >/dev/null
+          grep -F '女優動画' src/floors.ts >/dev/null
+          grep -F '素人動画' src/floors.ts >/dev/null
+          grep -F 'available: false' src/floors.ts >/dev/null
+          grep -F 'floorContextPath' components/FloorTabs.tsx >/dev/null
           grep -F 'feed_sessions' server/app/schema.sql >/dev/null
           grep -F 'feed_items' server/app/schema.sql >/dev/null
           grep -F 'idx_works_feed' server/app/schema.sql >/dev/null

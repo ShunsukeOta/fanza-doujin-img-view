@@ -2,6 +2,8 @@ import { StrictMode, type ReactNode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 import { AgeGate } from "@/components/AgeGate";
+import { FloorComingSoon, FloorTabs } from "@/components/FloorTabs";
+import { GlobalNav } from "@/components/GlobalNav";
 import { HistoryPage } from "@/components/HistoryPage";
 import { PrivacyPolicyPage, TermsPage } from "@/components/LegalPages";
 import { MyPage } from "@/components/MyPage";
@@ -17,6 +19,7 @@ import "@/styles/discovery.css";
 import "@/styles/accessibility.css";
 import { hasAgeVerification } from "@/src/ageVerification";
 import { startAnalytics } from "@/src/analytics";
+import { floorFromLocation, type FloorKey } from "@/src/floors";
 import { installMainResumeLifecycle, prepareMainResumeFallback } from "@/src/navigationState";
 
 function boundedInt(
@@ -56,14 +59,32 @@ function workCidFromPath(pathname: string): string {
 type MainExperienceProps = {
   initialFilters: FilterValues;
   initialCid: string;
+  floor: FloorKey;
 };
 
-function MainExperience({ initialFilters, initialCid }: MainExperienceProps) {
+function MainExperience({ initialFilters, initialCid, floor }: MainExperienceProps) {
   useEffect(() => {
-    installMainResumeLifecycle();
-  }, []);
+    if (floor === "comic") installMainResumeLifecycle();
+  }, [floor]);
 
-  return <SwipePreviewApp initialFilters={initialFilters} initialCid={initialCid} />;
+  if (floor !== "comic") {
+    return (
+      <div className="floor-coming-feed">
+        <FloorTabs activeFloor={floor} context="feed" overlay />
+        <main className="floor-coming-feed-content">
+          <FloorComingSoon floor={floor} />
+        </main>
+        <GlobalNav active="main" />
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <FloorTabs activeFloor="comic" context="feed" overlay />
+      <SwipePreviewApp initialFilters={initialFilters} initialCid={initialCid} />
+    </>
+  );
 }
 
 function ProtectedExperience({ children }: { children: ReactNode }) {
@@ -81,8 +102,9 @@ function ProtectedExperience({ children }: { children: ReactNode }) {
 }
 
 const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+const floor = floorFromLocation();
 const protectedSubpages = ["/saved", "/search", "/mypage", "/history", "/favorites"];
-if (![...protectedSubpages, "/privacy", "/terms"].includes(pathname)) {
+if (floor === "comic" && ![...protectedSubpages, "/privacy", "/terms"].includes(pathname)) {
   prepareMainResumeFallback();
 }
 
@@ -121,7 +143,7 @@ if (pathname === "/favorites") {
     else if (pathname === "/search") protectedPage = <SearchPage />;
     else if (pathname === "/mypage") protectedPage = <MyPage />;
     else if (pathname === "/history") protectedPage = <HistoryPage />;
-    else protectedPage = <MainExperience initialFilters={initialFilters} initialCid={workCid} />;
+    else protectedPage = <MainExperience initialFilters={initialFilters} initialCid={workCid} floor={floor} />;
     app = <ProtectedExperience>{protectedPage}</ProtectedExperience>;
   }
 
