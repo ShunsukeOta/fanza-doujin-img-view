@@ -6,6 +6,8 @@ import { navigateToSubpage, resumeMainFromSubpage, type NavOrigin } from "@/src/
 type NavKey = "saved" | "main" | "search" | "mypage";
 type Props = { active?: NavKey };
 
+const NAVIGATION_FALLBACK_MS = 180;
+
 function currentPath(): string {
   return window.location.pathname.replace(/\/+$/, "") || "/";
 }
@@ -27,20 +29,30 @@ function currentOrigin(): NavOrigin {
   return "main";
 }
 
+function prefersReducedMotion(): boolean {
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+}
+
 export function GlobalNav({ active = currentNav() }: Props) {
   const origin = currentOrigin();
   const navRef = useRef<HTMLElement | null>(null);
   const [visualActive, setVisualActive] = useState<NavKey>(active);
   const visualActiveRef = useRef<NavKey>(active);
-  const navigationFrameRef = useRef<number | null>(null);
   const pendingNavigationRef = useRef<(() => void) | null>(null);
+  const navigationCleanupRef = useRef<(() => void) | null>(null);
 
   const clearPendingNavigation = () => {
-    if (navigationFrameRef.current !== null) {
-      window.cancelAnimationFrame(navigationFrameRef.current);
-      navigationFrameRef.current = null;
-    }
+    navigationCleanupRef.current?.();
+    navigationCleanupRef.current = null;
     pendingNavigationRef.current = null;
+  };
+
+  const completePendingNavigation = () => {
+    const pending = pendingNavigationRef.current;
+    pendingNavigationRef.current = null;
+    navigationCleanupRef.current?.();
+    navigationCleanupRef.current = null;
+    pending?.();
   };
 
   const syncSnapshotDom = (target: NavKey) => {
@@ -98,18 +110,29 @@ export function GlobalNav({ active = currentNav() }: Props) {
   const moveThenNavigate = (target: NavKey, navigate: () => void) => {
     clearPendingNavigation();
     const previousTarget = visualActiveRef.current;
+    const indicator = navRef.current?.querySelector<HTMLElement>(".global-nav-indicator") ?? null;
+    const shouldAnimate = previousTarget !== target && !prefersReducedMotion() && indicator !== null;
 
     pendingNavigationRef.current = navigate;
     visualActiveRef.current = target;
+
+    if (shouldAnimate && indicator) {
+      const handleTransitionEnd = (event: TransitionEvent) => {
+        if (event.target !== indicator || event.propertyName !== "transform") return;
+        completePendingNavigation();
+      };
+      indicator.addEventListener("transitionend", handleTransitionEnd);
+      const fallbackTimer = window.setTimeout(completePendingNavigation, NAVIGATION_FALLBACK_MS);
+      navigationCleanupRef.current = () => {
+        indicator.removeEventListener("transitionend", handleTransitionEnd);
+        window.clearTimeout(fallbackTimer);
+      };
+    }
+
     syncSnapshotDom(target);
     if (previousTarget !== target) setVisualActive(target);
 
-    navigationFrameRef.current = window.requestAnimationFrame(() => {
-      navigationFrameRef.current = null;
-      const pending = pendingNavigationRef.current;
-      pendingNavigationRef.current = null;
-      pending?.();
-    });
+    if (!shouldAnimate) completePendingNavigation();
   };
 
   const goMain = () => {
