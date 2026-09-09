@@ -12,21 +12,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  typecheck:
-    name: TypeScript / ${{ matrix.target }}
+  exact:
+    name: 診断 / ${{ matrix.check }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        target:
-          - src/main.tsx
-          - components/SwipePreviewApp.tsx
-          - components/WorkCard.tsx
-          - components/MyPage.tsx
-          - components/SearchPage.tsx
-          - components/SavedPage.tsx
-          - components/HistoryPage.tsx
-          - src/saveState.ts
+        check:
+          - client-my
+          - client-legal
+          - client-search
+          - client-saved
+          - client-nav
+          - client-save-state
+          - client-types
+          - server-schema
+          - server-events
+          - server-library
+          - server-setup
+          - server-search
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -34,55 +38,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --no-audit --no-fund
-      - name: 対象単位でTypeScriptを検証
+      - name: ファイル単位で負債を検証
         env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          node -e 'const fs=require("fs"); fs.writeFileSync("tsconfig.diagnose.json", JSON.stringify({extends:"./tsconfig.json",include:[process.env.TARGET]},null,2))'
-          npx tsc -p tsconfig.diagnose.json --noEmit
-
-  debt:
-    name: ${{ matrix.name }}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: 負債本体
-            command: node scripts/check-debt.mjs
-          - name: PWAレイアウト
-            command: node scripts/check-pwa-layout.mjs
-          - name: 収益導線
-            command: node scripts/check-commerce.mjs
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci --no-audit --no-fund
-      - run: ${{ matrix.command }}
-
-  debt-groups:
-    name: 負債領域 / ${{ matrix.group }}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        group:
-          - paths-css
-          - client-core
-          - client-pages
-          - server-db
-          - legacy-infra
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci --no-audit --no-fund
-      - name: 領域別に負債を検証
-        env:
-          DEBT_GROUP: ${{ matrix.group }}
-        run: node scripts/diagnose-debt.mjs
+          DEBT_CHECK: ${{ matrix.check }}
+        run: node scripts/diagnose-exact.mjs
