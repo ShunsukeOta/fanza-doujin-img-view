@@ -19,15 +19,28 @@ requireText(app, [
   "preloadAndDecodeImage(nextImage",
 ], "Reader windowing");
 
-const commerceCss = read("styles/commerce.css");
-requireText(commerceCss, [
+const readerCss = read("styles/reader.css");
+requireText(readerCss, [
   "content-visibility: auto",
   "content-visibility: hidden",
   "will-change: auto",
   ".is-reader-zoomed .reader-image-stage > img",
+], "Reader CSS");
+
+const pagesCss = read("styles/pages.css");
+requireText(pagesCss, [
+  ".favorite-card.is-price-drop",
   ".favorite-deal-badge",
+  ".favorite-deal-prices",
+  ".favorite-buy",
+], "保存済みCSS");
+
+const discoveryCss = read("styles/discovery.css");
+requireText(discoveryCss, [
+  ".search-result-saved",
+  ".search-result-actions",
   ".search-result-buy",
-], "commerce.css");
+], "検索CSS");
 
 const tracking = read("src/commerceTracking.ts");
 requireText(tracking, [

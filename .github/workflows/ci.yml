@@ -170,17 +170,16 @@ jobs:
           test ! -e .github/workflows/verify-production.yml
           test ! -e components/VideoWorkCard.tsx
           test ! -e components/FloorSwitcher.tsx
-          test -f components/FloorTabs.tsx
+          test ! -e components/FloorTabs.tsx
           test ! -e components/ComingSoonFloorPage.tsx
-          test -f src/floors.ts
+          test ! -e src/floors.ts
           test ! -e styles/video.css
+          test ! -e styles/commerce.css
           test ! -e server/app/src/ComicOnlyCleanup.php
           test ! -e server/app/tests/comic-only-cleanup-integration.php
-          grep -F '同人漫画' src/floors.ts >/dev/null
-          grep -F '女優動画' src/floors.ts >/dev/null
-          grep -F '素人動画' src/floors.ts >/dev/null
-          grep -F 'available: false' src/floors.ts >/dev/null
-          grep -F 'floorContextPath' components/FloorTabs.tsx >/dev/null
+          test -f src/workUtils.ts
+          grep -F 'isHttpUrl' src/workUtils.ts >/dev/null
+          grep -F 'mergeUniqueByCid' src/workUtils.ts >/dev/null
           grep -F 'feed_sessions' server/app/schema.sql >/dev/null
           grep -F 'feed_items' server/app/schema.sql >/dev/null
           grep -F 'idx_works_feed' server/app/schema.sql >/dev/null
@@ -204,6 +203,10 @@ jobs:
           grep -F 'window.innerHeight' src/viewport.ts >/dev/null
           if grep -R -E 'floor_key|sample_movie_url|VideoWorkCard|videoc' server src components styles lib; then
             echo '廃止済み動画フロア実装が残っています。' >&2
+            exit 1
+          fi
+          if grep -R -E 'FloorTabs|FloorComingSoon|floorFromLocation' src components styles; then
+            echo '未公開フロアUIが再混入しています。' >&2
             exit 1
           fi
           if grep -F 'Math.round(track.scrollLeft / track.clientWidth)' -n src components; then
