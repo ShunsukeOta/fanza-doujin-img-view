@@ -15,19 +15,16 @@ if (!$pdo || !$fanza->configured()) {
     exit(1);
 }
 
-$options = getopt('', ['limit::']);
+$options = getopt('', ['limit::', 'plan-only']);
 $limit = max(10, min(500, (int)($options['limit'] ?? 300)));
+$planOnly = array_key_exists('plan-only', $options);
 $lock = fopen(sys_get_temp_dir() . '/fanza-doujin-refresh.lock', 'c');
 if ($lock === false || !flock($lock, LOCK_EX | LOCK_NB)) {
     fwrite(STDOUT, "別の巡回更新が実行中です。\n");
     exit(0);
 }
 
-$run = $pdo->prepare(
-    "INSERT INTO sync_runs (job_type, status, started_at) VALUES ('catalog-refresh', 'running', NOW())"
-);
-$run->execute();
-$runId = (int)$pdo->lastInsertId();
+$runId = 0;
 $processed = 0;
 $failed = 0;
 
@@ -35,11 +32,11 @@ try {
     $targets = [];
     $priorityLimit = min(100, $limit);
 
-    // 保存・Like作品は価格/販売状態を最低1日ごとに再確認する。毎6時間同じ作品を叩かない。
+    // 保存作品と購入導線へ進んだ作品を優先し、価格/販売状態を最低1日ごとに再確認する。
     $prioritySql =
         'SELECT s.work_cid, MAX(s.updated_at) AS priority_at '
         . 'FROM user_work_states s JOIN works w ON w.cid = s.work_cid '
-        . 'WHERE (s.saved = 1 OR s.liked = 1) AND w.is_active = 1 '
+        . 'WHERE s.saved = 1 AND w.is_active = 1 '
         . 'AND (w.price_checked_at IS NULL OR w.price_checked_at < DATE_SUB(NOW(), INTERVAL 1 DAY)) '
         . 'GROUP BY s.work_cid '
         . 'UNION ALL '
@@ -71,6 +68,17 @@ try {
         }
     }
 
+    if ($planOnly) {
+        fwrite(STDOUT, '巡回計画OK targets=' . count($targets) . "\n");
+        exit(0);
+    }
+
+    $run = $pdo->prepare(
+        "INSERT INTO sync_runs (job_type, status, started_at) VALUES ('catalog-refresh', 'running', NOW())"
+    );
+    $run->execute();
+    $runId = (int)$pdo->lastInsertId();
+
     foreach (array_keys($targets) as $cid) {
         try {
             $workRepository->refreshCid($cid);
@@ -94,9 +102,11 @@ try {
         exit(1);
     }
 } catch (Throwable $error) {
-    $pdo->prepare(
-        "UPDATE sync_runs SET status = 'failed', finished_at = NOW(), processed_count = ?, error_message = ? WHERE id = ?"
-    )->execute([$processed, mb_substr($error->getMessage(), 0, 512), $runId]);
+    if ($runId > 0) {
+        $pdo->prepare(
+            "UPDATE sync_runs SET status = 'failed', finished_at = NOW(), processed_count = ?, error_message = ? WHERE id = ?"
+        )->execute([$processed, mb_substr($error->getMessage(), 0, 512), $runId]);
+    }
     fwrite(STDERR, $error->getMessage() . "\n");
     exit(1);
 } finally {
