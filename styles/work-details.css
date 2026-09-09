@@ -15,8 +15,25 @@
   box-shadow: 0 24px 70px #000b;
 }
 
+.work-details-dialog[open] {
+  animation: work-details-enter 220ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
 .work-details-dialog::backdrop {
   background: #000000ad;
+}
+
+.work-details-dialog[open]::backdrop {
+  animation: work-details-backdrop-enter 220ms ease-out both;
+}
+
+.work-details-dialog.is-closing {
+  pointer-events: none;
+  animation: work-details-leave 180ms cubic-bezier(.4, 0, 1, 1) both;
+}
+
+.work-details-dialog.is-closing::backdrop {
+  animation: work-details-backdrop-leave 180ms ease-in both;
 }
 
 .work-details-panel {
@@ -175,6 +192,51 @@
   color: var(--text-muted);
   font-size: var(--font-small);
   text-align: center;
+}
+
+@keyframes work-details-enter {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(.985);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes work-details-leave {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(.99);
+    filter: blur(1px);
+  }
+}
+
+@keyframes work-details-backdrop-enter {
+  from { background: #0000; }
+  to { background: #000000ad; }
+}
+
+@keyframes work-details-backdrop-leave {
+  from { background: #000000ad; }
+  to { background: #0000; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .work-details-dialog[open],
+  .work-details-dialog[open]::backdrop,
+  .work-details-dialog.is-closing,
+  .work-details-dialog.is-closing::backdrop {
+    animation: none;
+  }
 }
 
 @media (max-height: 680px) {
