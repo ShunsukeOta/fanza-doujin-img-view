@@ -164,15 +164,12 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE TABLE IF NOT EXISTS user_work_states (
   anonymous_user_id CHAR(36) NOT NULL,
   work_cid VARCHAR(128) NOT NULL,
-  liked TINYINT(1) NOT NULL DEFAULT 0,
   saved TINYINT(1) NOT NULL DEFAULT 0,
-  liked_at DATETIME NULL,
   saved_at DATETIME NULL,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (anonymous_user_id, work_cid),
   KEY idx_user_work_states_updated (updated_at),
   KEY idx_user_work_states_saved (anonymous_user_id, saved, saved_at, work_cid),
-  KEY idx_user_work_states_work_reactions (work_cid, liked, saved),
   CONSTRAINT fk_user_work_states_user FOREIGN KEY (anonymous_user_id) REFERENCES anonymous_users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
