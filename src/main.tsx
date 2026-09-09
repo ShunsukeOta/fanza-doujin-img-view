@@ -21,6 +21,7 @@ import "@/styles/commerce.css";
 import "@/styles/viewport.css";
 import { hasAgeVerification } from "@/src/ageVerification";
 import { startAnalytics } from "@/src/analytics";
+import { installCommerceCtaTracking } from "@/src/commerceTracking";
 import { floorFromLocation, type FloorKey } from "@/src/floors";
 import { installMainResumeLifecycle, prepareMainResumeFallback } from "@/src/navigationState";
 import { installViewportSizing } from "@/src/viewport";
@@ -67,7 +68,9 @@ type MainExperienceProps = {
 
 function MainExperience({ initialFilters, initialCid, floor }: MainExperienceProps) {
   useEffect(() => {
-    if (floor === "comic") installMainResumeLifecycle();
+    if (floor !== "comic") return;
+    installMainResumeLifecycle();
+    return installCommerceCtaTracking();
   }, [floor]);
 
   if (floor !== "comic") {
