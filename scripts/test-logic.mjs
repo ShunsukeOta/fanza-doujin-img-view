@@ -54,5 +54,7 @@ const navigationCss = readFileSync("styles/navigation.css", "utf8");
 assert.doesNotMatch(navigationCss, /global-nav-main\.is-active/, "読むタブだけ特別なアクティブ色が残っている");
 const globalNav = readFileSync("components/GlobalNav.tsx", "utf8");
 assert.doesNotMatch(globalNav, /global-nav-main/, "読むタブだけ専用classが残っている");
+assert.doesNotMatch(globalNav, /NAVIGATION_SETTLE_MS|setTimeout\(/, "グローバルメニュー遷移に意図的な待機時間が残っている");
+assert.match(globalNav, /requestAnimationFrame/, "グローバルメニューの選択表示を描画してから即遷移する処理がない");
 
 console.log("logic regression tests: OK");
