@@ -20,7 +20,7 @@ type ProfileResponse = {
   ok: boolean;
   profile: {
     createdAt: string | null;
-    stats: { saved: number; liked: number; viewed: number };
+    stats: { saved: number; viewed: number };
     topGenres: Array<{ id: string; name: string; score: number }>;
     recentHistory: HistoryItem[];
   };
@@ -154,7 +154,7 @@ export function MyPage() {
               </div>
             </section>
 
-            <section className="profile-stats" aria-label="利用状況">
+            <section className="profile-stats profile-stats--two" aria-label="利用状況">
               <button type="button" onClick={() => navigateToSubpage("/saved", "mypage")}>
                 <span><BookmarkIcon /> 保存済み</span>
                 <strong>{data.profile.stats.saved.toLocaleString("ja-JP")}</strong>
@@ -163,10 +163,6 @@ export function MyPage() {
                 <span>見た作品</span>
                 <strong>{data.profile.stats.viewed.toLocaleString("ja-JP")}</strong>
               </button>
-              <div>
-                <span>いいね</span>
-                <strong>{data.profile.stats.liked.toLocaleString("ja-JP")}</strong>
-              </div>
             </section>
 
             <section className="profile-section">
@@ -250,7 +246,7 @@ export function MyPage() {
 
             <section className="profile-section profile-danger-zone">
               <div className="profile-section-head"><h2>データ管理</h2></div>
-              <p>この端末に紐づく閲覧履歴、保存、いいね、おすすめ情報、ビューアー設定、年齢確認情報を削除できます。</p>
+              <p>この端末に紐づく閲覧履歴、保存、おすすめ情報、ビューアー設定、年齢確認情報を削除できます。</p>
               <button className="danger-button" type="button" onClick={() => { setDeleteError(""); setDeleteOpen(true); }}>利用データを削除</button>
             </section>
           </>
@@ -263,7 +259,7 @@ export function MyPage() {
         <div className="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="delete-data-title">
           <div className="confirm-card">
             <h2 id="delete-data-title">利用データを削除しますか？</h2>
-            <p>閲覧履歴、保存、いいね、おすすめ情報、ビューアー設定、年齢確認情報を削除します。この操作は取り消せません。</p>
+            <p>閲覧履歴、保存、おすすめ情報、ビューアー設定、年齢確認情報を削除します。この操作は取り消せません。</p>
             {deleteError ? <div className="confirm-error" role="status">{deleteError}</div> : null}
             <div className="confirm-actions">
               <button type="button" className="confirm-cancel" disabled={deleting} onClick={() => setDeleteOpen(false)}>キャンセル</button>
