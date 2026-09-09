@@ -1,5 +1,4 @@
 import { BookmarkIcon, FeedSwipeIcon, SearchIcon, UserIcon } from "@/components/icons";
-import { floorContextPath, floorFromLocation } from "@/src/floors";
 import { navigateToSubpage, resumeMainFromSubpage, type NavOrigin } from "@/src/navigationState";
 
 type NavKey = "saved" | "main" | "search" | "mypage";
@@ -11,7 +10,7 @@ function currentPath(): string {
 
 function currentNav(): NavKey {
   const path = currentPath();
-  if (path === "/saved" || path === "/favorites") return "saved";
+  if (path === "/saved") return "saved";
   if (path === "/search") return "search";
   if (path === "/mypage" || path === "/history") return "mypage";
   return "main";
@@ -19,7 +18,7 @@ function currentNav(): NavKey {
 
 function currentOrigin(): NavOrigin {
   const path = currentPath();
-  if (path === "/saved" || path === "/favorites") return "saved";
+  if (path === "/saved") return "saved";
   if (path === "/search") return "search";
   if (path === "/mypage") return "mypage";
   if (path === "/history") return "history";
@@ -28,24 +27,14 @@ function currentOrigin(): NavOrigin {
 
 export function GlobalNav({ active = currentNav() }: Props) {
   const origin = currentOrigin();
-  const floor = floorFromLocation();
 
   const goMain = () => {
-    if (floor !== "comic") {
-      window.location.assign(floorContextPath(floor, "feed"));
-      return;
-    }
     if (origin !== "main") resumeMainFromSubpage();
   };
 
   const goSubpage = (path: "/saved" | "/search") => {
-    const context = path === "/saved" ? "saved" : "search";
-    const target = floorContextPath(floor, context);
-    const current = `${currentPath()}${window.location.search}`;
-    if (current === target) return;
-
-    if (floor === "comic") navigateToSubpage(path, origin);
-    else window.location.assign(target);
+    if (currentPath() === path) return;
+    navigateToSubpage(path, origin);
   };
 
   return (
@@ -85,8 +74,7 @@ export function GlobalNav({ active = currentNav() }: Props) {
         type="button"
         onClick={() => {
           if (currentPath() === "/mypage") return;
-          if (floor === "comic") navigateToSubpage("/mypage", origin);
-          else window.location.assign("/mypage");
+          navigateToSubpage("/mypage", origin);
         }}
         aria-label="マイページ"
         aria-current={currentPath() === "/mypage" ? "page" : undefined}
