@@ -20,22 +20,21 @@ for (const path of [
   "styles/page-scroll.css",
   "styles/pwa-layout.css",
   "styles/saved-enhancements.css",
+  "styles/commerce.css",
   "styles/video.css",
   "components/VideoWorkCard.tsx",
   "components/FloorSwitcher.tsx",
+  "components/FloorTabs.tsx",
   "components/ComingSoonFloorPage.tsx",
   "components/Onboarding.tsx",
   "styles/onboarding.css",
+  "src/floors.ts",
   "src/onboardingState.ts",
   "docs/onboarding-implementation.md",
   "server/app/src/ComicOnlyCleanup.php",
   "server/app/tests/comic-only-cleanup-integration.php",
 ]) {
   if (existsSync(path)) fail(`廃止済みファイル ${path} が残っています。`);
-}
-
-for (const path of ["components/FloorTabs.tsx", "src/floors.ts"]) {
-  if (!existsSync(path)) fail(`UIフロア切替に必要な ${path} がありません。`);
 }
 
 const styleFiles = [
@@ -60,15 +59,24 @@ mustNotContain(css, [
   ".genre-line",
   ".next-hint",
   ".reader-settings-note",
+  ".floor-tabs",
+  ".floor-tab",
+  ".floor-coming",
   ".floor-switcher",
+  ".search-kicker",
   ".video-feed-item",
   ".video-embed-player",
   ".video-swipe-zone",
   ".onboarding",
+  ".favorite-price-drop",
+  ".profile-status",
+  ".confirm-kicker",
+  ".age-gate-kicker",
 ], "CSS");
 mustContain(css, [
   ".feed-load-error",
   ".favorite-buy",
+  ".favorite-deal-badge",
   ".reader-fit-width",
   ".reader-cta-link",
   ".age-gate",
@@ -79,13 +87,19 @@ mustContain(css, [
   ".rating-filter",
   ".detail-search-form",
   ".search-result-grid",
-  ".floor-tabs",
-  ".floor-tab",
-  ".floor-coming-card",
+  ".search-result-buy",
+  "content-visibility: auto",
+  "will-change: auto",
   "--app-height",
+  "--page-gutter: 16px",
+  "--font-caption: 10px",
+  "--font-page-title: 24px",
 ], "CSS");
 if (!css.includes('font-family: "Noto Sans JP", sans-serif')) {
   fail("全体フォントがNoto Sans JPへ固定されていません。");
+}
+if (/font-size:\s*[0-9](?:\.[0-9]+)?px/.test(css)) {
+  fail("ユーザー向け文字に10px未満の固定font-sizeが残っています。");
 }
 
 const main = read("src/main.tsx");
@@ -101,41 +115,60 @@ mustContain(main, [
   "installMainResumeLifecycle",
   "installViewportSizing",
   "<SwipePreviewApp",
-  "<FloorTabs",
-  "floorFromLocation",
 ], "Main");
 mustNotContain(main, [
+  "FloorTabs",
   "FloorSwitcher",
-  "ComingSoonFloorPage",
-  'pathname === "/amateur"',
-  'pathname === "/actress"',
+  "FloorComingSoon",
+  "floorFromLocation",
+  "asset_type",
+  "category",
+  'pathname === "/favorites"',
+  'styles/commerce.css',
   'styles/video.css',
   "Onboarding",
   "onboardingState",
-  "onboarding.css",
-  "hasCompletedOnboarding",
-  "markOnboardingComplete",
-  "skipOnboarding",
 ], "Main");
 
-const floorUi = read("src/floors.ts");
-mustContain(floorUi, [
-  '"comic" | "actress" | "amateur"',
-  'label: "同人漫画"',
-  'label: "女優動画"',
-  'label: "素人動画"',
-  'available: false',
-  'floorContextPath',
-], "UIフロア定義");
-mustNotContain(floorUi, ["floor_key", "sample_movie_url", "/api/"], "UIフロア定義");
+const components = [
+  "components/AgeGate.tsx",
+  "components/GlobalNav.tsx",
+  "components/HistoryPage.tsx",
+  "components/LegalPages.tsx",
+  "components/MyPage.tsx",
+  "components/SavedPage.tsx",
+  "components/SearchPage.tsx",
+  "components/SwipePreviewApp.tsx",
+  "components/WorkCard.tsx",
+].map(read).join("\n");
+mustNotContain(components, [
+  "AGE RESTRICTED",
+  "AGE VERIFICATION",
+  "DISCOVER",
+  "COMING SOON",
+  "ANONYMOUS",
+  "DATA DELETE",
+  "NO IMAGE",
+  "初回リリース",
+  "Video Viewer",
+  "固定フィード",
+  "イベント保存期間",
+  "Reader UI",
+  "匿名ID",
+  "floorFromLocation",
+  "FloorTabs",
+  "FloorComingSoon",
+], "ユーザー画面");
 
-const floorTabs = read("components/FloorTabs.tsx");
-mustContain(floorTabs, ["FLOORS.map", "floorContextPath", "準備中", "FloorComingSoon"], "フロア切替UI");
-mustNotContain(floorTabs, ["fetch(", "fetchJson", "/api/", "VideoWorkCard"], "フロア切替UI");
+const icons = read("components/icons.tsx");
+mustNotContain(icons, ["DebugIcon"], "アイコン");
 
 const myPage = read("components/MyPage.tsx");
-mustContain(myPage, ["subscribeReaderSettings", "readerSettingsEqual"], "マイページ");
-mustNotContain(myPage, ["Onboarding", "guideOpen", "setGuideOpen", "操作ガイド"], "マイページ");
+mustContain(myPage, ["subscribeReaderSettings", "readerSettingsEqual", "ビューアー設定", "利用データを削除"], "マイページ");
+const ageGate = read("components/AgeGate.tsx");
+mustContain(ageGate, ["18歳以上ですか？", 'window.location.replace("about:blank")'], "年齢確認");
+const legal = read("components/LegalPages.tsx");
+mustContain(legal, ["プライバシーポリシー", "利用規約", "閲覧・操作履歴"], "法務ページ");
 
 const app = read("components/SwipePreviewApp.tsx");
 mustContain(app, ["WorkCard", "subscribeReaderSettings", "draftMinSamples", "RATING_OPTIONS", "ビューアー設定"], "Feed");
@@ -156,22 +189,20 @@ mustContain(searchPage, [
   "price_asc",
   "/api/search",
   "openWorkInMain(item.cid)",
-  "FloorTabs",
-  "floorFromLocation",
-  "FloorComingSoon",
+  "search-result-buy",
+  'placement: "search"',
 ], "詳細検索");
-mustNotContain(searchPage, ["VideoWorkCard", "sampleMovieUrl", "floor_key"], "詳細検索");
+mustNotContain(searchPage, ["floor", "Floor", "NO IMAGE"], "詳細検索");
 
 const savedPage = read("components/SavedPage.tsx");
 mustContain(savedPage, [
   "/api/saved",
   "openWorkInMain(item.cid)",
   "favorite-buy",
-  "FloorTabs",
-  "floorFromLocation",
-  "FloorComingSoon",
+  "favorite-deal-badge",
+  'placement: "saved"',
 ], "保存済み");
-mustNotContain(savedPage, ["VideoWorkCard", "sampleMovieUrl", "floor_key"], "保存済み");
+mustNotContain(savedPage, ["floor", "Floor", "NO IMAGE"], "保存済み");
 
 const globalNav = read("components/GlobalNav.tsx");
 mustContain(globalNav, [
@@ -179,14 +210,15 @@ mustContain(globalNav, [
   ">検索<",
   ">読む<",
   'navigateToSubpage("/mypage", origin)',
-  "floorFromLocation",
-  "floorContextPath",
 ], "グローバルメニュー");
-mustNotContain(globalNav, ["VideoWorkCard", "sampleMovieUrl", "floor_key"], "グローバルメニュー");
+mustNotContain(globalNav, ["floor", "Floor", "/favorites"], "グローバルメニュー");
 const navigationCss = read("styles/navigation.css");
 if (!navigationCss.includes("backdrop-filter: blur(22px)") || !navigationCss.includes("grid-template-columns: repeat(4")) {
   fail("4項目フローティング型グローバルメニューCSSがありません。");
 }
+
+const workUtils = read("src/workUtils.ts");
+mustContain(workUtils, ["isHttpUrl", "mergeUniqueByCid"], "作品共通処理");
 
 const navigation = read("src/navigationState.ts");
 mustContain(navigation, ["scrollLeftForLogicalPage", '"/history"', '"/search"', 'window.location.assign(`/work/${encodeURIComponent(normalized)}`)'], "復帰ナビゲーション");
@@ -233,7 +265,7 @@ if (sync.includes("fetchGenres")) {
 }
 
 const setupDb = read("server/app/cron/setup-db.php");
-mustContain(setupDb, ["idx_works_feed", "recommendation-v3-rebuild-20260907"], "DB setup");
+mustContain(setupDb, ["idx_works_feed", "recommendation-v3-rebuild-20260907", "recommendation-commerce-signals-20260909"], "DB setup");
 mustNotContain(setupDb, [
   "ComicOnlyCleanup",
   "multi-floor-amateur-video-20260908",
@@ -243,13 +275,6 @@ mustNotContain(setupDb, [
   "asset_bucket",
   "amateur",
 ], "DB setup");
-
-const searchApi = read("server/public/api/search.php");
-mustContain(searchApi, ["searchService->search"], "詳細検索API");
-mustNotContain(searchApi, ["floorKey", "amateur"], "詳細検索API");
-const savedApi = read("server/public/api/saved.php");
-mustContain(savedApi, ["userLibraryService->saved"], "保存API");
-mustNotContain(savedApi, ["floorKey", "amateur"], "保存API");
 
 const searchService = read("server/app/src/SearchService.php");
 mustContain(searchService, ["maker_query", "series_query", "genre_id", "price_asc", "feedItemsByCids"], "SearchService");
@@ -261,15 +286,18 @@ const htaccess = read("server/public/.htaccess");
 mustContain(htaccess, ["Content-Security-Policy", "work.php?cid=", "R=301", "QSD", "fonts.googleapis.com", "fonts.gstatic.com"], "本番ルーティング/CSP");
 mustNotContain(htaccess, ["litevideo", "frame-src https://*.dmm", "media-src 'self' https:"], "本番CSP");
 
+const health = read("server/public/api/health.php");
+mustNotContain(health, ["PHP_VERSION", "lastError", "runtime"], "公開ヘルスチェック");
+const bootstrap = read("server/app/bootstrap.php");
+if (!bootstrap.includes("error_log(get_class($error)")) fail("内部エラーがサーバーログへ退避されていません。");
+if (/return \$message/.test(bootstrap)) fail("RuntimeExceptionの内部文言を公開APIへ返しています。");
+
 const build = read("scripts/build-shin.mjs");
 mustContain(build, ['path !== "tests"', "server/public/work.php"], "本番ビルド");
 const indexHtml = read("index.html");
 if (!indexHtml.includes("fonts.googleapis.com") || !indexHtml.includes("Noto+Sans+JP")) {
   fail("Noto Sans JPのWeb Font読込がありません。");
 }
-
-const packageJson = read("package.json");
-mustNotContain(packageJson, ["comic-only-cleanup-integration.php", "ComicOnlyCleanup"], "package scripts");
 
 const meApi = read("server/public/api/me.php");
 mustContain(meApi, ["'DELETE'", "deleteProfile", "clear_anonymous_identity"], "匿名データ削除API");
@@ -280,7 +308,7 @@ mustNotContain(api, ["retryDelay", "retryAfterMs", "ApiError"], "API補助実装
 
 const readme = read("README.md");
 const shareDesign = read("docs/share-search-design.md");
-mustNotContain(readme, ["オンボーディング", "操作ガイド", "onboarding"], "README");
-mustNotContain(shareDesign, ["オンボーディング", "onboarding"], "共有・検索設計書");
+mustNotContain(readme, ["オンボーディング", "操作ガイド", "onboarding", "女優動画", "素人動画", "FloorTabs"], "README");
+mustNotContain(shareDesign, ["オンボーディング", "onboarding", "女優動画", "素人動画", "FloorTabs", "COMING SOON"], "共有・検索設計書");
 
 if (!process.exitCode) console.log("debt check: OK");
