@@ -7,7 +7,7 @@ import { trackEvent } from "@/src/analytics";
 import { fetchJson } from "@/src/api";
 import { openWorkInMain } from "@/src/navigationState";
 import { formatPrice } from "@/src/price";
-import { updateReaction } from "@/src/reactions";
+import { updateSaveState } from "@/src/saveState";
 import { isHttpUrl, mergeUniqueByCid } from "@/src/workUtils";
 
 type SavedResponse = {
@@ -86,7 +86,7 @@ export function SavedPage() {
     setPendingCid(item.cid);
     setError("");
     try {
-      await updateReaction("save", item.cid, false);
+      await updateSaveState(item.cid, false);
       setItems((current) => current.filter((candidate) => candidate.cid !== item.cid));
       setTotal((current) => Math.max(0, current - 1));
     } catch {
