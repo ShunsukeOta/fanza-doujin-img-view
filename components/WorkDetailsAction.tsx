@@ -72,6 +72,8 @@ export function WorkDetailsAction({
         className="work-details-dialog"
         aria-labelledby={`${dialogId}-title`}
         onClose={() => triggerRef.current?.focus({ preventScroll: true })}
+        onWheel={(event) => event.stopPropagation()}
+        onTouchMove={(event) => event.stopPropagation()}
         onClick={(event) => {
           if (event.target === event.currentTarget) closeDialog(dialogRef.current);
         }}

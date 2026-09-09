@@ -7,6 +7,7 @@
   margin: 0 auto;
   padding: 0;
   overflow: hidden;
+  overscroll-behavior: none;
   border: 1px solid #ffffff24;
   border-radius: 22px;
   background: #141414;
@@ -22,6 +23,7 @@
   max-height: min(72dvh, 640px);
   display: flex;
   flex-direction: column;
+  overscroll-behavior: none;
   background: linear-gradient(180deg, #191919, #111);
 }
 
@@ -62,8 +64,11 @@
 .work-details-scroll {
   min-height: 0;
   padding: var(--space-4);
+  overflow-x: hidden;
   overflow-y: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior-x: none;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -81,20 +86,20 @@
 }
 
 .work-details-list > div {
-  min-height: 45px;
-  padding: 10px 0;
+  min-height: 44px;
+  padding: 9px 0;
   border-bottom: 1px solid var(--border);
   display: grid;
-  grid-template-columns: 78px minmax(0, 1fr);
-  gap: var(--space-3);
-  align-items: start;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
 }
 
 .work-details-list dt {
   color: var(--text-muted);
   font-size: var(--font-caption);
   font-weight: 700;
-  line-height: 1.6;
+  line-height: 1.45;
 }
 
 .work-details-list dd {
@@ -103,7 +108,7 @@
   color: var(--text-secondary);
   font-size: var(--font-small);
   font-weight: 600;
-  line-height: 1.6;
+  line-height: 1.45;
   overflow-wrap: anywhere;
 }
 

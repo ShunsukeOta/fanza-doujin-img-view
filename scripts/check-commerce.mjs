@@ -27,6 +27,20 @@ requireText(readerCss, [
   ".is-reader-zoomed .reader-image-stage > img",
 ], "Reader CSS");
 
+const detailsAction = read("components/WorkDetailsAction.tsx");
+requireText(detailsAction, [
+  'onWheel={(event) => event.stopPropagation()}',
+  'onTouchMove={(event) => event.stopPropagation()}',
+], "作品詳細スクロール遮断");
+
+const detailsCss = read("styles/work-details.css");
+requireText(detailsCss, [
+  "overscroll-behavior-y: contain",
+  "touch-action: pan-y",
+  "grid-template-columns: 72px minmax(0, 1fr)",
+  "align-items: center",
+], "作品詳細CSS");
+
 const pagesCss = read("styles/pages.css");
 requireText(pagesCss, [
   ".favorite-card.is-price-drop",
