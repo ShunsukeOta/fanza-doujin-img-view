@@ -1,0 +1,111 @@
+.work-card {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.work-card-media {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: var(--surface-raised);
+  color: var(--text-subtle);
+}
+
+.work-card-media img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.work-card-body {
+  min-width: 0;
+  padding: 10px;
+}
+
+.work-card-title {
+  margin: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: var(--font-card-title);
+  line-height: 1.5;
+}
+
+.work-card-meta {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+  color: var(--text-secondary);
+  font-size: var(--font-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.work-card-actions {
+  margin-top: var(--space-2);
+  display: grid;
+  gap: 6px;
+}
+
+.work-card-actions :is(button, a) {
+  min-height: 42px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-weight: 800;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.work-list-error {
+  margin-top: var(--space-4);
+  color: #d28d8d;
+  font-size: var(--font-small);
+  text-align: center;
+}
+
+.work-list-more {
+  padding: var(--space-5) 0 var(--space-2);
+  display: flex;
+  justify-content: center;
+}
+
+.work-list-more button {
+  min-width: 140px;
+  min-height: 44px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  font-size: var(--font-small);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.work-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.work-grid .work-card-media {
+  aspect-ratio: 3 / 4;
+}
+
+.work-grid .work-card-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+@media (min-width: 620px) {
+  .work-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
