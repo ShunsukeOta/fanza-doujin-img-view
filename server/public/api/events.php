@@ -57,8 +57,8 @@ try {
         json_response(['ok' => true, ...$result], 202, ['Cache-Control' => 'no-store']);
     }
 
-    $reaction = $eventService->record($anonymousUserId, $sessionId, $payload);
-    json_response(['ok' => true, 'reaction' => $reaction], 201, ['Cache-Control' => 'no-store']);
+    $saveState = $eventService->record($anonymousUserId, $sessionId, $payload);
+    json_response(['ok' => true, 'saveState' => $saveState], 201, ['Cache-Control' => 'no-store']);
 } catch (Throwable $error) {
     $status = 500;
     if ($error instanceof RuntimeException && !($error instanceof PDOException)) {
