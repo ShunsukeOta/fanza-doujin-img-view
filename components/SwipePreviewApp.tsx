@@ -1,23 +1,19 @@
 import {
-  type ChangeEvent,
-  type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type WheelEvent as ReactWheelEvent,
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
 
 import { FocusModeToggle } from "@/components/FocusModeToggle";
 import { GlobalNav } from "@/components/GlobalNav";
-import { FilterIcon } from "@/components/icons";
+import { SettingsIcon } from "@/components/icons";
 import { WorkCard } from "@/components/WorkCard";
-import type { CatalogResponse, FeedItem, FilterValues, MetaResponse } from "@/lib/types";
+import type { CatalogResponse, FeedItem } from "@/lib/types";
 import { fetchJson } from "@/src/api";
 import { preloadAndDecodeImage } from "@/src/imagePreload";
-import { formatPrice } from "@/src/price";
 import {
   applyReaderControlsVisibility,
   loadReaderSettings,
@@ -26,35 +22,18 @@ import {
   subscribeReaderSettings,
   type ReaderSettings,
 } from "@/src/readerSettings";
+import { mergeUniqueByCid } from "@/src/workUtils";
 
-const DEFAULT_FILTERS: FilterValues = {
-  genreId: "",
-  minSamples: 1,
-  minReviews: 0,
-  minRating: 0,
-  minPrice: 0,
-  maxPrice: 0,
-  query: "",
-};
 const INITIAL_LIMIT = 6;
 const PREFETCH_THRESHOLD = 3;
 const WINDOW_RADIUS = 2;
-const RATING_OPTIONS = [1, 2, 3, 4, 5] as const;
 
-type Props = { initialFilters: FilterValues; initialCid: string };
+type Props = { initialCid: string };
 
 function buildCatalogQuery(
-  filters: FilterValues,
   options: { feedId?: string | null; cursor?: number; limit?: number; cid?: string } = {},
 ) {
   const params = new URLSearchParams({
-    genre_id: filters.genreId,
-    min_samples: String(filters.minSamples),
-    min_reviews: String(filters.minReviews),
-    min_rating: String(filters.minRating),
-    min_price: String(filters.minPrice),
-    max_price: String(filters.maxPrice),
-    q: filters.query,
     cursor: String(options.cursor ?? 0),
     limit: String(options.limit ?? INITIAL_LIMIT),
   });
@@ -63,38 +42,9 @@ function buildCatalogQuery(
   return params;
 }
 
-function buildPageQuery(filters: FilterValues, cid = "") {
-  const params = new URLSearchParams();
-  if (filters.genreId) params.set("genre_id", filters.genreId);
-  if (filters.minSamples !== 1) params.set("min_samples", String(filters.minSamples));
-  if (filters.minReviews) params.set("min_reviews", String(filters.minReviews));
-  if (filters.minRating) params.set("min_rating", String(filters.minRating));
-  if (filters.minPrice) params.set("min_price", String(filters.minPrice));
-  if (filters.maxPrice) params.set("max_price", String(filters.maxPrice));
-  if (filters.query.trim()) params.set("q", filters.query.trim());
-  if (cid.trim()) params.set("cid", cid.trim());
-  return params;
-}
-
-function mergeUniqueItems(current: FeedItem[], incoming: FeedItem[]): FeedItem[] {
-  const seen = new Set(current.map((item) => item.cid));
-  const additions = incoming.filter((item) => {
-    if (!item.cid || seen.has(item.cid)) return false;
-    seen.add(item.cid);
-    return true;
-  });
-  return [...current, ...additions];
-}
-
-function parseDraftInt(raw: string, fallback: number, min: number, max: number): number {
-  const parsed = Number.parseInt(raw.trim(), 10);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.max(min, Math.min(max, parsed));
-}
-
-export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
+export function SwipePreviewApp({ initialCid }: Props) {
   const feedRef = useRef<HTMLElement | null>(null);
-  const filterButtonRef = useRef<HTMLButtonElement | null>(null);
+  const settingsButtonRef = useRef<HTMLButtonElement | null>(null);
   const sheetRef = useRef<HTMLElement | null>(null);
   const feedScrollRaf = useRef<number | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -106,12 +56,7 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
   const wheelLockedUntil = useRef(0);
   const pageByCid = useRef(new Map<string, number>());
 
-  const [meta, setMeta] = useState<MetaResponse | null>(null);
   const [items, setItems] = useState<FeedItem[]>([]);
-  const [filters, setFilters] = useState(initialFilters);
-  const [draftFilters, setDraftFilters] = useState(initialFilters);
-  const [draftMinSamples, setDraftMinSamples] = useState(() => initialFilters.minSamples === 1 ? "" : String(initialFilters.minSamples));
-  const [draftMinReviews, setDraftMinReviews] = useState(() => initialFilters.minReviews === 0 ? "" : String(initialFilters.minReviews));
   const [readerSettings, setReaderSettings] = useState<ReaderSettings>(() => loadReaderSettings());
   const [feedId, setFeedId] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<number | null>(0);
@@ -120,8 +65,7 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [catalogError, setCatalogError] = useState("");
   const [loadMoreError, setLoadMoreError] = useState("");
-  const [metaError, setMetaError] = useState("");
-  const [sheetOpen, setSheetOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeWork, setActiveWork] = useState(0);
   const [toast, setToast] = useState("");
   const [targetTotal, setTargetTotal] = useState(0);
@@ -150,20 +94,7 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
     return () => applyReaderControlsVisibility(false);
   }, [readerSettings]);
 
-  const loadMeta = useCallback(async () => {
-    try {
-      setMeta(await fetchJson<MetaResponse>(
-        "/api/meta",
-        { headers: { Accept: "application/json" } },
-        "メタ情報の取得に失敗しました",
-      ));
-      setMetaError("");
-    } catch (error) {
-      setMetaError(error instanceof Error ? error.message : "メタ情報の取得に失敗しました。");
-    }
-  }, []);
-
-  const loadInitial = useCallback(async (nextFilters: FilterValues, nextCid = "") => {
+  const loadInitial = useCallback(async (nextCid = "") => {
     const requestGeneration = ++generation.current;
     initialAbort.current?.abort();
     moreAbort.current?.abort();
@@ -184,7 +115,7 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
     feedRef.current?.scrollTo({ top: 0, behavior: "auto" });
 
     try {
-      const query = buildCatalogQuery(nextFilters, { cursor: 0, limit: INITIAL_LIMIT, cid: nextCid });
+      const query = buildCatalogQuery({ cursor: 0, limit: INITIAL_LIMIT, cid: nextCid });
       const catalog = await fetchJson<CatalogResponse>(
         `/api/catalog?${query}`,
         {
@@ -224,7 +155,7 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
     if (manual) setLoadMoreError("");
 
     try {
-      const query = buildCatalogQuery(filters, { feedId, cursor: nextCursor, limit: INITIAL_LIMIT });
+      const query = buildCatalogQuery({ feedId, cursor: nextCursor, limit: INITIAL_LIMIT });
       const catalog = await fetchJson<CatalogResponse>(
         `/api/catalog?${query}`,
         {
@@ -235,7 +166,7 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
         "追加作品の取得に失敗しました",
       );
       if (generation.current !== requestGeneration) return;
-      setItems((current) => mergeUniqueItems(current, catalog.items));
+      setItems((current) => mergeUniqueByCid(current, catalog.items));
       setFeedId(catalog.feedId);
       setNextCursor(catalog.nextCursor);
       setHasMore(catalog.hasMore);
@@ -248,7 +179,7 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
       if (loadMoreInFlight.current === requestGeneration) loadMoreInFlight.current = null;
       if (generation.current === requestGeneration) setLoadingMore(false);
     }
-  }, [feedId, filters, hasMore, loadMoreError, nextCursor]);
+  }, [feedId, hasMore, loadMoreError, nextCursor]);
 
   const scrollToWork = useCallback((targetIndex: number, behavior: ScrollBehavior = "smooth") => {
     const feed = feedRef.current;
@@ -274,9 +205,8 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
   useEffect(() => {
     if (booted.current) return;
     booted.current = true;
-    void loadInitial(initialFilters, initialCid);
-    void loadMeta();
-  }, [initialCid, initialFilters, loadInitial, loadMeta]);
+    void loadInitial(initialCid);
+  }, [initialCid, loadInitial]);
 
   useEffect(() => {
     const feed = feedRef.current;
@@ -323,19 +253,18 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
   useEffect(() => {
     const sheet = sheetRef.current;
     const feed = feedRef.current;
-    if (sheet) sheet.inert = !sheetOpen;
-    if (feed) feed.inert = sheetOpen;
-    if (!sheetOpen) return;
+    if (sheet) sheet.inert = !settingsOpen;
+    if (feed) feed.inert = settingsOpen;
+    if (!settingsOpen) return;
+
     const previous = document.activeElement instanceof HTMLElement
       ? document.activeElement
-      : filterButtonRef.current;
-    window.requestAnimationFrame(() => sheet?.querySelector<HTMLElement>("input,select,button")?.focus());
+      : settingsButtonRef.current;
+    window.requestAnimationFrame(() => sheet?.querySelector<HTMLElement>("button,input")?.focus());
     const key = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setSheetOpen(false);
+      if (event.key === "Escape") setSettingsOpen(false);
       if (event.key === "Tab" && sheet) {
-        const focusable = [...sheet.querySelectorAll<HTMLElement>(
-          'button:not([disabled]),input:not([disabled]),select:not([disabled])',
-        )];
+        const focusable = [...sheet.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled])')];
         if (focusable.length === 0) return;
         const first = focusable[0];
         const last = focusable[focusable.length - 1];
@@ -353,7 +282,7 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
       document.removeEventListener("keydown", key);
       previous?.focus();
     };
-  }, [sheetOpen]);
+  }, [settingsOpen]);
 
   useEffect(() => () => {
     initialAbort.current?.abort();
@@ -361,69 +290,6 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     if (feedScrollRaf.current !== null) cancelAnimationFrame(feedScrollRaf.current);
   }, []);
-
-  const replaceUrl = useCallback((nextFilters: FilterValues, nextCid = "") => {
-    const query = buildPageQuery(nextFilters, nextCid);
-    window.history.replaceState(null, "", query.size ? `/?${query}` : "/");
-  }, []);
-
-  const applyFilters = async (event: FormEvent) => {
-    event.preventDefault();
-    if (draftFilters.minPrice > 0 && draftFilters.maxPrice > 0 && draftFilters.maxPrice < draftFilters.minPrice) return;
-    const next: FilterValues = {
-      ...draftFilters,
-      minSamples: parseDraftInt(draftMinSamples, 1, 1, 100),
-      minReviews: parseDraftInt(draftMinReviews, 0, 0, 100_000),
-      query: draftFilters.query.trim(),
-    };
-    setDraftFilters(next);
-    setDraftMinSamples(next.minSamples === 1 ? "" : String(next.minSamples));
-    setDraftMinReviews(next.minReviews === 0 ? "" : String(next.minReviews));
-    setFilters(next);
-    setSheetOpen(false);
-    replaceUrl(next);
-    await loadInitial(next);
-  };
-
-  const resetDraftFilters = () => {
-    setDraftFilters(DEFAULT_FILTERS);
-    setDraftMinSamples("");
-    setDraftMinReviews("");
-  };
-
-  const updateGenre = (event: ChangeEvent<HTMLSelectElement>) => {
-    setDraftFilters((old) => ({ ...old, genreId: event.target.value }));
-  };
-
-  const updateNumber = (
-    key: "minPrice" | "maxPrice",
-  ) => (event: ChangeEvent<HTMLInputElement>) => {
-    const raw = event.target.value.trim();
-    if (!raw) {
-      setDraftFilters((old) => ({ ...old, [key]: 0 }));
-      return;
-    }
-    const value = Number.parseInt(raw, 10);
-    if (Number.isFinite(value)) setDraftFilters((old) => ({ ...old, [key]: value }));
-  };
-
-  const priceInvalid = draftFilters.minPrice > 0
-    && draftFilters.maxPrice > 0
-    && draftFilters.maxPrice < draftFilters.minPrice;
-  const activeGenre = meta?.genres.find((genre) => genre.id === filters.genreId)?.name ?? "";
-  const activeCondition = useMemo(() => {
-    const parts: string[] = [];
-    if (filters.query) parts.push(`「${filters.query}」`);
-    if (activeGenre) parts.push(activeGenre);
-    if (filters.minPrice && filters.maxPrice) {
-      parts.push(`${formatPrice("", filters.minPrice)}〜${formatPrice("", filters.maxPrice)}`);
-    } else if (filters.minPrice) parts.push(`${formatPrice("", filters.minPrice)}以上`);
-    else if (filters.maxPrice) parts.push(`${formatPrice("", filters.maxPrice)}以下`);
-    if (filters.minSamples > 1) parts.push(`サンプル${filters.minSamples}枚以上`);
-    if (filters.minReviews) parts.push(`レビュー${filters.minReviews}件以上`);
-    if (filters.minRating) parts.push(`評価${filters.minRating}以上`);
-    return parts.length ? parts.join(" / ") : "すべてのコミック";
-  }, [activeGenre, filters]);
 
   const handleFeedKey = (event: ReactKeyboardEvent<HTMLElement>) => {
     if (event.target !== event.currentTarget) return;
@@ -437,6 +303,7 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
   };
 
   const handleWheel = (event: ReactWheelEvent<HTMLElement>) => {
+    if (event.target instanceof Element && event.target.closest("dialog[open]")) return;
     if (
       Math.abs(event.deltaY) < 24
       || Math.abs(event.deltaY) <= Math.abs(event.deltaX)
@@ -455,12 +322,14 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
             <span>{items.length ? activeWork + 1 : 0}</span> / {targetTotal ? targetTotal.toLocaleString("ja-JP") : items.length || "-"}
           </div>
           <button
-            ref={filterButtonRef}
+            ref={settingsButtonRef}
             className="icon-btn"
             type="button"
-            onClick={() => setSheetOpen(true)}
+            aria-label="ビューアー設定"
+            title="設定"
+            onClick={() => setSettingsOpen(true)}
           >
-            <FilterIcon /> 絞り込み
+            <SettingsIcon />
           </button>
         </div>
       </header>
@@ -471,7 +340,7 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
         ref={feedRef}
         className="feed"
         id="feed"
-        aria-label="同人コミックフィード"
+        aria-label="おすすめ同人コミックフィード"
         tabIndex={0}
         onKeyDown={handleFeedKey}
         onWheel={handleWheel}
@@ -492,7 +361,7 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
           <section className="empty-state">
             <div className="empty-card loading-card">
               <div className="spinner" aria-hidden="true" />
-              <h2>コミックを読み込んでいます</h2>
+              <h2>おすすめを読み込んでいます</h2>
             </div>
           </section>
         ) : catalogError ? (
@@ -500,15 +369,14 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
             <div className="empty-card">
               <h2>コミックを取得できませんでした</h2>
               <p>{catalogError}</p>
-              <button className="btn btn-primary" type="button" onClick={() => void loadInitial(filters, initialCid)}>再試行</button>
+              <button className="btn btn-primary" type="button" onClick={() => void loadInitial(initialCid)}>再試行</button>
             </div>
           </section>
         ) : items.length === 0 ? (
           <section className="empty-state">
             <div className="empty-card">
               <h2>表示できるコミックがありません</h2>
-              <p>絞り込み条件を変更してください。</p>
-              <button className="btn btn-primary" type="button" onClick={() => setSheetOpen(true)}>絞り込み</button>
+              <button className="btn btn-primary" type="button" onClick={() => void loadInitial(initialCid)}>再読み込み</button>
             </div>
           </section>
         ) : items.map((item, index) => Math.abs(index - activeWork) <= WINDOW_RADIUS ? (
@@ -557,23 +425,23 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
       {toast ? <div className="toast is-show" role="status">{toast}</div> : null}
 
       <div
-        className={`sheet-backdrop${sheetOpen ? " is-open" : ""}`}
-        onClick={() => setSheetOpen(false)}
+        className={`sheet-backdrop${settingsOpen ? " is-open" : ""}`}
+        onClick={() => setSettingsOpen(false)}
         aria-hidden="true"
       />
       <aside
         ref={sheetRef}
-        className={`sheet${sheetOpen ? " is-open" : ""}`}
-        id="filterSheet"
+        className={`sheet${settingsOpen ? " is-open" : ""}`}
+        id="readerSettingsSheet"
         role="dialog"
         aria-modal="true"
-        aria-label="コミックとビューアーを設定"
-        aria-hidden={!sheetOpen}
+        aria-label="ビューアー設定"
+        aria-hidden={!settingsOpen}
       >
         <div className="sheet-handle" />
         <div className="sheet-head">
           <div className="sheet-title">設定</div>
-          <button className="close-btn" type="button" onClick={() => setSheetOpen(false)} aria-label="閉じる">×</button>
+          <button className="close-btn" type="button" onClick={() => setSettingsOpen(false)} aria-label="閉じる">×</button>
         </div>
 
         <section className="reader-settings-panel" aria-labelledby="reader_settings_title">
@@ -629,97 +497,6 @@ export function SwipePreviewApp({ initialFilters, initialCid }: Props) {
             />
           </label>
         </section>
-
-        <form onSubmit={applyFilters}>
-          <div className="filters">
-            <div className="field field--full">
-              <label htmlFor="work_query">作品名・サークル・シリーズ</label>
-              <input
-                id="work_query"
-                type="search"
-                maxLength={100}
-                placeholder="キーワードで検索"
-                value={draftFilters.query}
-                onChange={(event) => setDraftFilters((old) => ({ ...old, query: event.target.value }))}
-              />
-            </div>
-            <div className="field field--full">
-              <label htmlFor="genre_id">ジャンル</label>
-              <select id="genre_id" value={draftFilters.genreId} onChange={updateGenre}>
-                <option value="">すべて</option>
-                {meta?.genres.map((genre) => <option value={genre.id} key={genre.id}>{genre.name}</option>)}
-              </select>
-              {metaError ? <div className="genre-note">ジャンル情報を取得できませんでした</div> : null}
-            </div>
-            <div className="field">
-              <label htmlFor="min_price">価格下限</label>
-              <input id="min_price" type="number" inputMode="numeric" min="0" max="10000000" placeholder="指定なし" value={draftFilters.minPrice || ""} onChange={updateNumber("minPrice")} />
-            </div>
-            <div className="field">
-              <label htmlFor="max_price">価格上限</label>
-              <input id="max_price" type="number" inputMode="numeric" min="0" max="10000000" placeholder="指定なし" value={draftFilters.maxPrice || ""} onChange={updateNumber("maxPrice")} />
-            </div>
-            {priceInvalid ? <div className="filter-error field--full">価格上限は価格下限以上にしてください。</div> : null}
-            <div className="field">
-              <label htmlFor="min_samples">最低サンプル枚数</label>
-              <input
-                id="min_samples"
-                type="number"
-                inputMode="numeric"
-                min="1"
-                max="100"
-                placeholder="未指定（1）"
-                value={draftMinSamples}
-                onChange={(event) => setDraftMinSamples(event.target.value)}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="min_reviews">最低レビュー件数</label>
-              <input
-                id="min_reviews"
-                type="number"
-                inputMode="numeric"
-                min="0"
-                max="100000"
-                placeholder="未指定（0）"
-                value={draftMinReviews}
-                onChange={(event) => setDraftMinReviews(event.target.value)}
-              />
-            </div>
-            <div className="field field--full">
-              <label id="min_rating_label">
-                最低平均評価（{draftFilters.minRating ? `${draftFilters.minRating}以上` : "未指定"}）
-              </label>
-              <div className="rating-filter" role="group" aria-labelledby="min_rating_label">
-                {RATING_OPTIONS.map((rating) => {
-                  const selected = draftFilters.minRating === rating;
-                  const filled = draftFilters.minRating >= rating;
-                  return (
-                    <button
-                      key={rating}
-                      type="button"
-                      className={`${filled ? "is-filled" : ""}${selected ? " is-selected" : ""}`.trim()}
-                      aria-pressed={selected}
-                      aria-label={`最低評価${rating}以上${selected ? "を解除" : "に設定"}`}
-                      onClick={() => setDraftFilters((old) => ({
-                        ...old,
-                        minRating: selected ? 0 : rating,
-                      }))}
-                    >
-                      <strong aria-hidden="true">★</strong>
-                      <span>{rating}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-          <div className="filter-summary">現在: {activeCondition}</div>
-          <div className="sheet-actions">
-            <button className="btn btn-secondary" type="button" onClick={resetDraftFilters}>絞り込み解除</button>
-            <button className="btn btn-primary" type="submit" disabled={loading || priceInvalid}>{loading ? "取得中…" : "この条件で見る"}</button>
-          </div>
-        </form>
       </aside>
     </>
   );
