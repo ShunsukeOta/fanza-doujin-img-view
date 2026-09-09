@@ -48,15 +48,42 @@ export function GlobalNav({ active = currentNav() }: Props) {
     pendingNavigationRef.current = null;
   };
 
+  const syncVisualToLocation = () => {
+    clearPendingNavigation();
+    const locationActive = currentNav();
+    visualActiveRef.current = locationActive;
+    setVisualActive(locationActive);
+  };
+
   useEffect(() => {
     if (pendingNavigationRef.current !== null) return;
     visualActiveRef.current = active;
     setVisualActive(active);
   }, [active]);
 
-  useEffect(() => () => {
-    if (navigationTimerRef.current !== null) window.clearTimeout(navigationTimerRef.current);
-    pendingNavigationRef.current = null;
+  useEffect(() => {
+    const handlePageHide = () => {
+      const locationActive = currentNav();
+      visualActiveRef.current = locationActive;
+      pendingNavigationRef.current = null;
+      if (navigationTimerRef.current !== null) {
+        window.clearTimeout(navigationTimerRef.current);
+        navigationTimerRef.current = null;
+      }
+      setVisualActive(locationActive);
+    };
+    const handleLocationRestore = () => syncVisualToLocation();
+
+    window.addEventListener("pagehide", handlePageHide);
+    window.addEventListener("pageshow", handleLocationRestore);
+    window.addEventListener("popstate", handleLocationRestore);
+    return () => {
+      window.removeEventListener("pagehide", handlePageHide);
+      window.removeEventListener("pageshow", handleLocationRestore);
+      window.removeEventListener("popstate", handleLocationRestore);
+      if (navigationTimerRef.current !== null) window.clearTimeout(navigationTimerRef.current);
+      pendingNavigationRef.current = null;
+    };
   }, []);
 
   const returnToCurrent = (target: NavKey) => {
