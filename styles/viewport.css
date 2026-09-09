@@ -1,0 +1,26 @@
+:root {
+  --app-height: 100dvh;
+}
+
+html,
+body,
+#root {
+  height: var(--app-height);
+}
+
+.feed,
+.subpage-shell {
+  height: 100%;
+}
+
+.empty-state,
+.age-gate,
+.legal-shell {
+  min-height: 100%;
+}
+
+@supports not (height: 100dvh) {
+  :root {
+    --app-height: 100vh;
+  }
+}
