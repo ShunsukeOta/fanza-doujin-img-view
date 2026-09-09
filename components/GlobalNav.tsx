@@ -35,6 +35,7 @@ function prefersReducedMotion(): boolean {
 
 export function GlobalNav({ active = currentNav() }: Props) {
   const origin = currentOrigin();
+  const navRef = useRef<HTMLElement | null>(null);
   const [visualActive, setVisualActive] = useState<NavKey>(active);
   const visualActiveRef = useRef<NavKey>(active);
   const navigationTimerRef = useRef<number | null>(null);
@@ -48,15 +49,48 @@ export function GlobalNav({ active = currentNav() }: Props) {
     pendingNavigationRef.current = null;
   };
 
+  const syncSnapshotDom = (target: NavKey) => {
+    const nav = navRef.current;
+    if (!nav) return;
+    nav.dataset.active = target;
+    nav.querySelectorAll<HTMLElement>("[data-nav-key]").forEach((item) => {
+      item.classList.toggle("is-active", item.dataset.navKey === target);
+    });
+  };
+
+  const syncVisualToLocation = () => {
+    clearPendingNavigation();
+    const locationActive = currentNav();
+    visualActiveRef.current = locationActive;
+    syncSnapshotDom(locationActive);
+    setVisualActive(locationActive);
+  };
+
   useEffect(() => {
     if (pendingNavigationRef.current !== null) return;
     visualActiveRef.current = active;
     setVisualActive(active);
   }, [active]);
 
-  useEffect(() => () => {
-    if (navigationTimerRef.current !== null) window.clearTimeout(navigationTimerRef.current);
-    pendingNavigationRef.current = null;
+  useEffect(() => {
+    const handlePageHide = () => {
+      clearPendingNavigation();
+      const locationActive = currentNav();
+      visualActiveRef.current = locationActive;
+      syncSnapshotDom(locationActive);
+      setVisualActive(locationActive);
+    };
+    const handleLocationRestore = () => syncVisualToLocation();
+
+    window.addEventListener("pagehide", handlePageHide);
+    window.addEventListener("pageshow", handleLocationRestore);
+    window.addEventListener("popstate", handleLocationRestore);
+    return () => {
+      window.removeEventListener("pagehide", handlePageHide);
+      window.removeEventListener("pageshow", handleLocationRestore);
+      window.removeEventListener("popstate", handleLocationRestore);
+      clearPendingNavigation();
+    };
   }, []);
 
   const returnToCurrent = (target: NavKey) => {
@@ -119,10 +153,11 @@ export function GlobalNav({ active = currentNav() }: Props) {
   };
 
   return (
-    <nav className="global-nav" data-active={visualActive} aria-label="グローバルメニュー">
+    <nav ref={navRef} className="global-nav" data-active={visualActive} aria-label="グローバルメニュー">
       <span className="global-nav-indicator" aria-hidden="true" />
       <button
         className={`global-nav-item${visualActive === "main" ? " is-active" : ""}`}
+        data-nav-key="main"
         type="button"
         onClick={goMain}
         aria-current={active === "main" ? "page" : undefined}
@@ -133,6 +168,7 @@ export function GlobalNav({ active = currentNav() }: Props) {
       </button>
       <button
         className={`global-nav-item${visualActive === "search" ? " is-active" : ""}`}
+        data-nav-key="search"
         type="button"
         onClick={() => goSubpage("/search", "search")}
         aria-current={active === "search" ? "page" : undefined}
@@ -143,6 +179,7 @@ export function GlobalNav({ active = currentNav() }: Props) {
       </button>
       <button
         className={`global-nav-item${visualActive === "saved" ? " is-active" : ""}`}
+        data-nav-key="saved"
         type="button"
         onClick={() => goSubpage("/saved", "saved")}
         aria-current={active === "saved" ? "page" : undefined}
@@ -153,6 +190,7 @@ export function GlobalNav({ active = currentNav() }: Props) {
       </button>
       <button
         className={`global-nav-item${visualActive === "mypage" ? " is-active" : ""}`}
+        data-nav-key="mypage"
         type="button"
         onClick={goMyPage}
         aria-label="マイページ"
