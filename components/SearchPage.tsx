@@ -1,8 +1,10 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
+import { FloorComingSoon, FloorTabs } from "@/components/FloorTabs";
 import { GlobalNav } from "@/components/GlobalNav";
 import type { FeedItem, MetaResponse } from "@/lib/types";
 import { fetchJson } from "@/src/api";
+import { floorFromLocation } from "@/src/floors";
 import { openWorkInMain } from "@/src/navigationState";
 import { formatPrice } from "@/src/price";
 
@@ -107,6 +109,7 @@ function mergeUnique(current: FeedItem[], incoming: FeedItem[]): FeedItem[] {
 }
 
 export function SearchPage() {
+  const floor = floorFromLocation();
   const [meta, setMeta] = useState<MetaResponse | null>(null);
   const [draft, setDraft] = useState<SearchFilters>(() => parseFilters());
   const [applied, setApplied] = useState<SearchFilters>(() => parseFilters());
@@ -114,7 +117,7 @@ export function SearchPage() {
   const [total, setTotal] = useState(0);
   const [nextCursor, setNextCursor] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(floor === "comic");
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
 
@@ -125,6 +128,7 @@ export function SearchPage() {
   }, [draft.maxPrice, draft.minPrice]);
 
   const runSearch = useCallback(async (filters: SearchFilters, cursor = 0, append = false) => {
+    if (floor !== "comic") return;
     append ? setLoadingMore(true) : setLoading(true);
     setError("");
     try {
@@ -146,20 +150,21 @@ export function SearchPage() {
     } finally {
       append ? setLoadingMore(false) : setLoading(false);
     }
-  }, []);
+  }, [floor]);
 
   useEffect(() => {
+    if (floor !== "comic") return;
     void fetchJson<MetaResponse>(
       "/api/meta",
       { headers: { Accept: "application/json" }, credentials: "same-origin" },
       "ジャンル情報を取得できませんでした",
     ).then(setMeta).catch(() => setMeta(null));
     void runSearch(applied);
-  }, [applied, runSearch]);
+  }, [applied, floor, runSearch]);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (priceInvalid) return;
+    if (floor !== "comic" || priceInvalid) return;
     const normalized: SearchFilters = {
       ...draft,
       query: draft.query.trim(),
@@ -192,6 +197,21 @@ export function SearchPage() {
     setApplied(empty);
   };
 
+  if (floor !== "comic") {
+    return (
+      <div className="subpage-shell search-shell">
+        <header className="subpage-header search-header">
+          <div><p className="search-kicker">DISCOVER</p><h1>詳細検索</h1></div>
+        </header>
+        <main className="subpage-content search-content">
+          <FloorTabs activeFloor={floor} context="search" />
+          <FloorComingSoon floor={floor} />
+        </main>
+        <GlobalNav active="search" />
+      </div>
+    );
+  }
+
   return (
     <div className="subpage-shell search-shell">
       <header className="subpage-header search-header">
@@ -202,6 +222,7 @@ export function SearchPage() {
       </header>
 
       <main className="subpage-content search-content">
+        <FloorTabs activeFloor="comic" context="search" />
         <form className="detail-search-form" onSubmit={submit}>
           <div className="detail-search-grid">
             <label className="detail-search-field detail-search-field--wide">
