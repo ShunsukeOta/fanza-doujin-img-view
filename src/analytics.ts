@@ -6,7 +6,6 @@ export type AnalyticsEventType =
   | "sample_complete"
   | "cta_view"
   | "view_end"
-  | "like_toggle"
   | "save_toggle"
   | "share"
   | "affiliate_click";

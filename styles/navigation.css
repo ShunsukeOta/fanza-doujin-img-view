@@ -71,16 +71,6 @@
   color: #f6f6f6;
 }
 
-.global-nav-main.is-active {
-  background: linear-gradient(135deg, #ff315f, #e91e50);
-  color: #fff;
-  box-shadow: 0 7px 18px #ff2d5538, inset 0 1px 0 #ffffff29;
-}
-
-.global-nav-main.is-active svg {
-  stroke-width: 2;
-}
-
 @media (hover: hover) {
   .global-nav-item:not(.is-active):hover {
     background: #ffffff09;

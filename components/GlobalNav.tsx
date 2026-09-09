@@ -40,7 +40,7 @@ export function GlobalNav({ active = currentNav() }: Props) {
   return (
     <nav className="global-nav" aria-label="グローバルメニュー">
       <button
-        className={`global-nav-item global-nav-main${active === "main" ? " is-active" : ""}`}
+        className={`global-nav-item${active === "main" ? " is-active" : ""}`}
         type="button"
         onClick={goMain}
         aria-current={active === "main" ? "page" : undefined}

@@ -66,9 +66,6 @@ final class UserLibraryService
                 ? $savedPrice - $currentPrice
                 : null;
             $item['viewerSaved'] = true;
-            $item['viewerLiked'] = false;
-            $item['likeCount'] = 0;
-            $item['saveCount'] = 0;
             $items[] = $item;
         }
 
@@ -166,12 +163,6 @@ final class UserLibraryService
         $savedStmt->execute([$uid]);
         $saved = (int)$savedStmt->fetchColumn();
 
-        $likedStmt = $pdo->prepare(
-            'SELECT COUNT(*) FROM user_work_states WHERE anonymous_user_id = ? AND liked = 1'
-        );
-        $likedStmt->execute([$uid]);
-        $liked = (int)$likedStmt->fetchColumn();
-
         $viewedStmt = $pdo->prepare(
             "SELECT COUNT(DISTINCT work_cid) FROM events "
             . "WHERE anonymous_user_id = ? AND event_type IN ('work_impression', 'impression')"
@@ -196,7 +187,7 @@ final class UserLibraryService
 
         return [
             'createdAt' => $user['created_at'] ?? null,
-            'stats' => ['saved' => $saved, 'liked' => $liked, 'viewed' => $viewed],
+            'stats' => ['saved' => $saved, 'viewed' => $viewed],
             'topGenres' => $topGenres,
             'recentHistory' => $this->history($uid, 4)['items'],
         ];

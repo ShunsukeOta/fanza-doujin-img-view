@@ -10,11 +10,8 @@ export type FloorInfo = {
 
 export type Genre = { id: string; name: string; ruby: string };
 
-export type ReactionSummary = {
+export type SaveState = {
   cid: string;
-  likeCount: number;
-  saveCount: number;
-  viewerLiked: boolean;
   viewerSaved: boolean;
 };
 
@@ -40,10 +37,7 @@ export type FeedItem = {
   feedId?: string | null;
   rank?: number;
   recommendationSource?: string;
-  likeCount: number;
-  saveCount: number;
-  viewerLiked: boolean;
-  viewerSaved: boolean;
+  viewerSaved?: boolean;
 };
 
 export type CatalogResponse = {
@@ -65,14 +59,4 @@ export type MetaResponse = {
   floor: FloorInfo;
   genres: Genre[];
   recommenderVersion?: string;
-};
-
-export type FilterValues = {
-  genreId: string;
-  minSamples: number;
-  minReviews: number;
-  minRating: number;
-  minPrice: number;
-  maxPrice: number;
-  query: string;
 };

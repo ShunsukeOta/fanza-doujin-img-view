@@ -8,9 +8,9 @@ import {
   useState,
 } from "react";
 
-import { BookmarkIcon, ExternalIcon, HeartIcon, ShareIcon } from "@/components/icons";
+import { BookmarkIcon, ExternalIcon, ShareIcon } from "@/components/icons";
 import { WorkDetailsAction } from "@/components/WorkDetailsAction";
-import type { FeedItem, ReactionSummary } from "@/lib/types";
+import type { FeedItem, SaveState } from "@/lib/types";
 import { createViewId, trackEvent } from "@/src/analytics";
 import { preloadAndDecodeImages } from "@/src/imagePreload";
 import { formatPrice } from "@/src/price";
@@ -22,7 +22,7 @@ import {
   tapNavigationDelta,
 } from "@/src/readerMath";
 import type { ReaderSettings } from "@/src/readerSettings";
-import { loadReactions, updateReaction } from "@/src/reactions";
+import { loadSaveStates, updateSaveState } from "@/src/saveState";
 
 type LoadState = "pending" | "loaded" | "error";
 type GestureAxis = "x" | "y" | "pan" | null;
@@ -97,16 +97,12 @@ function midpoint(a: Point, b: Point): Point {
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }
 
-function formatCount(value: number) {
-  return Math.max(0, value).toLocaleString("ja-JP");
-}
-
 function validExternalUrl(value: string) {
   return /^https?:\/\//i.test(value);
 }
 
 function isInteractiveTarget(target: EventTarget | null) {
-  return target instanceof Element && Boolean(target.closest("a,button,input,select,textarea,label"));
+  return target instanceof Element && Boolean(target.closest("a,button,input,select,textarea,label,dialog"));
 }
 
 function initialDetails(item: FeedItem): WorkDetails {
@@ -152,11 +148,8 @@ export function WorkCard({
   const [loadStates, setLoadStates] = useState<LoadState[]>(loadStatesRef.current);
   const [retryNonce, setRetryNonce] = useState<Record<number, number>>({});
   const [zoom, setZoom] = useState<ZoomState>(DEFAULT_ZOOM);
-  const [liked, setLiked] = useState(item.viewerLiked);
-  const [saved, setSaved] = useState(item.viewerSaved);
-  const [likeCount, setLikeCount] = useState(item.likeCount);
-  const [saveCount, setSaveCount] = useState(item.saveCount);
-  const [reactionPending, setReactionPending] = useState<"like" | "save" | null>(null);
+  const [saved, setSaved] = useState(item.viewerSaved === true);
+  const [savePending, setSavePending] = useState(false);
   const [details, setDetails] = useState<WorkDetails>(() => initialDetails(item));
   const [detailsLoading, setDetailsLoading] = useState(false);
 
@@ -186,12 +179,45 @@ export function WorkCard({
 
     const baseWidth = image.offsetWidth;
     const baseHeight = image.offsetHeight;
-    const maxX = Math.max(0, (baseWidth * scale - stage.clientWidth) / 2);
-    const maxY = Math.max(0, (baseHeight * scale - stage.clientHeight) / 2);
+
+    if (scale <= 1.02) {
+      const maxX = Math.max(0, (baseWidth * scale - stage.clientWidth) / 2);
+      const maxY = Math.max(0, (baseHeight * scale - stage.clientHeight) / 2);
+      return {
+        scale,
+        x: clamp(x, -maxX, maxX),
+        y: clamp(y, -maxY, maxY),
+      };
+    }
+
+    const track = trackRef.current;
+    if (!track) return { scale, x, y };
+    const viewport = track.getBoundingClientRect();
+    const stageRect = stage.getBoundingClientRect();
+    const centerX = stageRect.left + stageRect.width / 2;
+    const centerY = stageRect.top + stageRect.height / 2;
+
+    const clampToViewport = (
+      value: number,
+      center: number,
+      scaledSize: number,
+      viewportStart: number,
+      viewportEnd: number,
+    ) => {
+      const viewportSize = viewportEnd - viewportStart;
+      if (scaledSize <= viewportSize) {
+        return viewportStart + viewportSize / 2 - center;
+      }
+      const half = scaledSize / 2;
+      const min = viewportEnd - center - half;
+      const max = viewportStart - center + half;
+      return clamp(value, min, max);
+    };
+
     return {
       scale,
-      x: clamp(x, -maxX, maxX),
-      y: clamp(y, -maxY, maxY),
+      x: clampToViewport(x, centerX, baseWidth * scale, viewport.left, viewport.right),
+      y: clampToViewport(y, centerY, baseHeight * scale, viewport.top, viewport.bottom),
     };
   }, []);
 
@@ -425,13 +451,15 @@ export function WorkCard({
     setRetryNonce({});
     setDetails(initialDetails(item));
     detailsRequested.current = false;
+    setSaved(item.viewerSaved === true);
+    setSavePending(false);
     resetZoom();
     const page = clamp(initialPage, 0, item.images.length);
     currentPageRef.current = page;
     setCurrentPage(page);
     const frame = requestAnimationFrame(() => goToPage(page, "auto"));
     return () => cancelAnimationFrame(frame);
-  }, [goToPage, initialPage, item.cid, item.images, resetZoom]);
+  }, [goToPage, initialPage, item, resetZoom]);
 
   useEffect(() => {
     resetZoom();
@@ -521,30 +549,24 @@ export function WorkCard({
     return () => clearTimeout(timer);
   }, [ctaPage, currentPage, index, isActive, item.cid, item.feedId, item.images.length, item.rank, loadDetails, loadStates]);
 
-  useEffect(() => {
-    setLiked(item.viewerLiked);
-    setSaved(item.viewerSaved);
-    setLikeCount(item.likeCount);
-    setSaveCount(item.saveCount);
-  }, [item.cid, item.likeCount, item.saveCount, item.viewerLiked, item.viewerSaved]);
-
-  const applyReaction = useCallback((reaction: ReactionSummary) => {
-    setLiked(reaction.viewerLiked);
-    setSaved(reaction.viewerSaved);
-    setLikeCount(reaction.likeCount);
-    setSaveCount(reaction.saveCount);
+  const applySaveState = useCallback((state: SaveState) => {
+    setSaved(state.viewerSaved);
   }, []);
 
   useEffect(() => {
-    if (!isActive || reactionPending) return;
+    setSaved(item.viewerSaved === true);
+  }, [item.cid, item.viewerSaved]);
+
+  useEffect(() => {
+    if (!isActive || savePending) return;
     let cancelled = false;
-    void loadReactions([item.cid])
+    void loadSaveStates([item.cid])
       .then((rows) => {
-        if (!cancelled && rows[item.cid]) applyReaction(rows[item.cid]);
+        if (!cancelled && rows[item.cid]) applySaveState(rows[item.cid]);
       })
       .catch(() => undefined);
     return () => { cancelled = true; };
-  }, [applyReaction, isActive, item.cid, reactionPending]);
+  }, [applySaveState, isActive, item.cid, savePending]);
 
   useEffect(() => () => {
     if (pageTimer.current) clearTimeout(pageTimer.current);
@@ -855,30 +877,19 @@ export function WorkCard({
     animateFeedToWork(index);
   };
 
-  const toggleReaction = async (type: "like" | "save") => {
-    if (reactionPending) return;
-    const current = type === "like" ? liked : saved;
-    const next = !current;
-    const oldLike = likeCount;
-    const oldSave = saveCount;
-    setReactionPending(type);
-    if (type === "like") {
-      setLiked(next);
-      setLikeCount((count) => Math.max(0, count + (next ? 1 : -1)));
-    } else {
-      setSaved(next);
-      setSaveCount((count) => Math.max(0, count + (next ? 1 : -1)));
-    }
+  const toggleSave = async () => {
+    if (savePending) return;
+    const previous = saved;
+    const next = !previous;
+    setSavePending(true);
+    setSaved(next);
     try {
-      applyReaction(await updateReaction(type, item.cid, next, eventContext()));
+      applySaveState(await updateSaveState(item.cid, next, eventContext()));
     } catch {
-      setLiked(liked);
-      setSaved(saved);
-      setLikeCount(oldLike);
-      setSaveCount(oldSave);
-      onToast(type === "like" ? "いいねを保存できませんでした" : "保存状態を更新できませんでした");
+      setSaved(previous);
+      onToast("保存状態を更新できませんでした");
     } finally {
-      setReactionPending(null);
+      setSavePending(false);
     }
   };
 
@@ -969,8 +980,8 @@ export function WorkCard({
             <button
               className={`reader-cta-save${saved ? " is-active" : ""}`}
               type="button"
-              disabled={reactionPending !== null}
-              onClick={() => void toggleReaction("save")}
+              disabled={savePending}
+              onClick={() => void toggleSave()}
             >
               <BookmarkIcon /> {saved ? "保存済み" : "あとで読む"}
             </button>
@@ -1091,24 +1102,13 @@ export function WorkCard({
           }, true)}
         />
         <button
-          className={`action-btn${liked ? " is-active" : ""}`}
-          type="button"
-          disabled={reactionPending !== null}
-          onClick={() => void toggleReaction("like")}
-        >
-          <span className="action-icon"><HeartIcon /></span>
-          <span className="action-label">いいね</span>
-          <span className="action-count">{formatCount(likeCount)}</span>
-        </button>
-        <button
           className={`action-btn${saved ? " is-active" : ""}`}
           type="button"
-          disabled={reactionPending !== null}
-          onClick={() => void toggleReaction("save")}
+          disabled={savePending}
+          onClick={() => void toggleSave()}
         >
           <span className="action-icon"><BookmarkIcon /></span>
           <span className="action-label">保存</span>
-          <span className="action-count">{formatCount(saveCount)}</span>
         </button>
         <button className="action-btn" type="button" onClick={share}>
           <span className="action-icon"><ShareIcon /></span>

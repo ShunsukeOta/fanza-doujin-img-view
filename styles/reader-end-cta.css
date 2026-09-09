@@ -1,0 +1,63 @@
+/*
+ * 最終サンプルの次は独立した1画面を増やさず、2pxだけの仮想ページでCTA状態を表現する。
+ * 2pxは src/readerMath.ts の CTA_OVERLAY_STRIP_PX と同期する。
+ */
+.preview-cta-page {
+  flex: 0 0 2px;
+  width: 2px;
+  min-width: 2px;
+  padding: 0;
+  overflow: visible;
+  background: transparent;
+}
+
+.preview-cta-page::before {
+  position: fixed;
+  z-index: 1;
+  inset: 0;
+  opacity: 0;
+  visibility: hidden;
+  background: rgba(4, 4, 4, .34);
+  backdrop-filter: blur(16px) brightness(.56);
+  -webkit-backdrop-filter: blur(16px) brightness(.56);
+  pointer-events: none;
+  transition: opacity 150ms ease, visibility 150ms ease;
+}
+
+.preview-cta-page .reader-cta {
+  position: fixed;
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  width: min(340px, calc(100vw - 40px));
+  max-height: calc(100dvh - var(--header-h) - var(--global-nav-h) - var(--nav-safe-bottom) - 56px);
+  overflow-y: auto;
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-50%, -50%) scale(.98);
+  pointer-events: none;
+  transition: opacity 150ms ease, transform 150ms ease, visibility 150ms ease;
+}
+
+.feed-item[data-reader-cta="1"] .manga-reader-track {
+  z-index: 30;
+}
+
+.feed-item[data-reader-cta="1"] .preview-cta-page::before {
+  opacity: 1;
+  visibility: visible;
+}
+
+.feed-item[data-reader-cta="1"] .preview-cta-page .reader-cta {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, -50%) scale(1);
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preview-cta-page::before,
+  .preview-cta-page .reader-cta {
+    transition: none;
+  }
+}

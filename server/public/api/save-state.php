@@ -35,9 +35,9 @@ try {
     [$anonymousUserId] = anonymous_identity();
     json_response([
         'ok' => true,
-        'reactions' => $eventService->reactionSummaries($anonymousUserId, $cids),
+        'saveStates' => $eventService->saveStates($anonymousUserId, $cids),
         'generatedAt' => date(DATE_ATOM),
     ], 200, ['Cache-Control' => 'private, no-store']);
 } catch (Throwable $error) {
-    json_response(['error' => public_error_message($error, '情報を取得できませんでした。')], 500, ['Cache-Control' => 'no-store']);
+    json_response(['error' => public_error_message($error, '保存状態を取得できませんでした。')], 500, ['Cache-Control' => 'no-store']);
 }

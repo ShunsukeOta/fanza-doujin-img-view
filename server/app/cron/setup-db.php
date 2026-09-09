@@ -49,15 +49,34 @@ function ensure_column(PDO $pdo, string $table, string $column, string $definiti
     }
 }
 
-function ensure_index(PDO $pdo, string $table, string $index, string $definition): void
+function index_exists(PDO $pdo, string $table, string $index): bool
 {
     $stmt = $pdo->prepare(
         'SELECT COUNT(*) FROM information_schema.statistics '
         . 'WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ?'
     );
     $stmt->execute([$table, $index]);
-    if ((int)$stmt->fetchColumn() === 0) {
+    return (int)$stmt->fetchColumn() > 0;
+}
+
+function ensure_index(PDO $pdo, string $table, string $index, string $definition): void
+{
+    if (!index_exists($pdo, $table, $index)) {
         $pdo->exec("ALTER TABLE `{$table}` ADD INDEX `{$index}` {$definition}");
+    }
+}
+
+function drop_index_if_exists(PDO $pdo, string $table, string $index): void
+{
+    if (index_exists($pdo, $table, $index)) {
+        $pdo->exec("ALTER TABLE `{$table}` DROP INDEX `{$index}`");
+    }
+}
+
+function drop_column_if_exists(PDO $pdo, string $table, string $column): void
+{
+    if (column_exists($pdo, $table, $column)) {
+        $pdo->exec("ALTER TABLE `{$table}` DROP COLUMN `{$column}`");
     }
 }
 
@@ -82,8 +101,8 @@ function rebuild_genre_scores(PDO $pdo): void
         . 'SELECT signals.anonymous_user_id, wg.genre_id, '
         . 'LEAST(20, GREATEST(-12, SUM(signals.signal_score / SQRT(gc.genre_count)))), NOW() '
         . 'FROM ('
-        . 'SELECT s.anonymous_user_id, s.work_cid, (s.liked * 4 + s.saved * 5) AS signal_score '
-        . 'FROM user_work_states s WHERE s.liked = 1 OR s.saved = 1 '
+        . 'SELECT s.anonymous_user_id, s.work_cid, 7.0 AS signal_score '
+        . 'FROM user_work_states s WHERE s.saved = 1 '
         . 'UNION ALL '
         . 'SELECT e.anonymous_user_id, e.work_cid, 10.0 AS signal_score '
         . 'FROM events e WHERE e.event_type = \'affiliate_click\' AND e.work_cid <> \'\' '
@@ -144,8 +163,7 @@ foreach ($eventColumns as $name => $definition) {
     ensure_column($pdo, 'events', $name, $definition);
 }
 
-ensure_column($pdo, 'user_work_states', 'liked_at', 'DATETIME NULL AFTER saved');
-ensure_column($pdo, 'user_work_states', 'saved_at', 'DATETIME NULL AFTER liked_at');
+ensure_column($pdo, 'user_work_states', 'saved_at', 'DATETIME NULL AFTER saved');
 
 ensure_index($pdo, 'works', 'idx_works_feed', '(is_active, sample_count, review_count, rating)');
 ensure_index($pdo, 'works', 'idx_works_price', '(is_active, price_value)');
@@ -156,7 +174,6 @@ ensure_index($pdo, 'events', 'idx_events_user_type_time', '(anonymous_user_id, e
 ensure_index($pdo, 'events', 'idx_events_user_work_type', '(anonymous_user_id, work_cid, event_type)');
 ensure_index($pdo, 'events', 'idx_events_created', '(created_at)');
 ensure_index($pdo, 'events', 'idx_events_feed_rank', '(feed_id, rank_position)');
-ensure_index($pdo, 'user_work_states', 'idx_user_work_states_work_reactions', '(work_cid, liked, saved)');
 ensure_index($pdo, 'user_work_states', 'idx_user_work_states_saved', '(anonymous_user_id, saved, saved_at, work_cid)');
 
 $uniqueEventIndex = $pdo->prepare(
@@ -175,7 +192,6 @@ $pdo->exec('UPDATE works SET price_checked_at = last_seen_at WHERE price_checked
 $pdo->exec('UPDATE works SET availability_checked_at = last_seen_at WHERE availability_checked_at IS NULL');
 $pdo->exec('UPDATE works SET details_checked_at = last_seen_at WHERE details_checked_at IS NULL');
 $pdo->exec('UPDATE works SET next_refresh_at = DATE_ADD(NOW(), INTERVAL MOD(CRC32(cid), 10080) MINUTE) WHERE next_refresh_at IS NULL');
-$pdo->exec('UPDATE user_work_states SET liked_at = updated_at WHERE liked = 1 AND liked_at IS NULL');
 $pdo->exec('UPDATE user_work_states SET saved_at = updated_at WHERE saved = 1 AND saved_at IS NULL');
 
 $priceRows = $pdo->query("SELECT cid, price FROM works WHERE price_value IS NULL AND price <> ''")->fetchAll();
@@ -216,7 +232,6 @@ if (!migration_applied($pdo, $commerceRebuildId)) {
     $pdo->beginTransaction();
     try {
         rebuild_genre_scores($pdo);
-        // 既存固定Feedは旧嗜好スコアで並んでいるため、次アクセスで新しい推薦を生成する。
         $pdo->exec('DELETE FROM feed_sessions');
         mark_migration($pdo, $commerceRebuildId);
         $pdo->commit();
@@ -226,6 +241,19 @@ if (!migration_applied($pdo, $commerceRebuildId)) {
         }
         throw $error;
     }
+}
+
+$saveOnlyId = 'recommendation-save-only-20260909';
+if (!migration_applied($pdo, $saveOnlyId)) {
+    // 旧リアクション用indexを先に外し、保存データを維持したままいいね列だけを除去する。
+    drop_index_if_exists($pdo, 'user_work_states', 'idx_user_work_states_work_reactions');
+    drop_column_if_exists($pdo, 'user_work_states', 'liked_at');
+    drop_column_if_exists($pdo, 'user_work_states', 'liked');
+    $pdo->exec("DELETE FROM events WHERE event_type = 'like_toggle'");
+    rebuild_genre_scores($pdo);
+    // 固定Feedは旧重みで生成済みなので全破棄し、次アクセスで保存中心の推薦を作り直す。
+    $pdo->exec('DELETE FROM feed_sessions');
+    mark_migration($pdo, $saveOnlyId);
 }
 
 $works = (int)$pdo->query('SELECT COUNT(*) FROM works')->fetchColumn();
