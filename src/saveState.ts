@@ -30,7 +30,10 @@ export async function updateSaveState(
   }, "保存状態の更新に失敗しました");
 
   if (!data.saveState) throw new Error("保存状態を取得できませんでした。");
-  return data.saveState;
+  return {
+    cid: data.saveState.cid,
+    viewerSaved: Boolean(data.saveState.viewerSaved),
+  };
 }
 
 export async function loadSaveStates(cids: string[]): Promise<Record<string, SaveState>> {
@@ -44,5 +47,8 @@ export async function loadSaveStates(cids: string[]): Promise<Record<string, Sav
     cache: "no-store",
   }, "保存状態の取得に失敗しました");
 
-  return data.saveStates ?? {};
+  return Object.fromEntries(Object.entries(data.saveStates ?? {}).map(([cid, state]) => [
+    cid,
+    { cid, viewerSaved: Boolean(state.viewerSaved) },
+  ]));
 }
