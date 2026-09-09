@@ -151,6 +151,32 @@ assert_test(count($historySecond['items']) === 1, '閲覧履歴2ページ目が1
 assert_test(($historySecond['items'][0]['cid'] ?? '') === 'audit_003', '閲覧履歴カーソルの続きが不正');
 assert_test($historySecond['hasMore'] === false, '閲覧履歴最終ページでhasMoreがfalseではない');
 
+$eventService->record($uid, '44444444-4444-4444-8444-444444444444', [
+    'eventId' => '55555555-5555-4555-8555-555555555551',
+    'eventType' => 'affiliate_click',
+    'cid' => 'audit_001',
+    'placement' => 'reader_end',
+]);
+$scoreStmt = $pdo->prepare(
+    'SELECT score FROM user_genre_scores WHERE anonymous_user_id = ? AND genre_id = ? LIMIT 1'
+);
+$scoreStmt->execute([$uid, 'audit_genre']);
+$scoreAfterFirstClick = (float)$scoreStmt->fetchColumn();
+assert_test(abs($scoreAfterFirstClick - 10.0) < 0.01, '初回FANZAクリックが最強シグナルとして10点加算されていない');
+
+$eventService->record($uid, '44444444-4444-4444-8444-444444444444', [
+    'eventId' => '55555555-5555-4555-8555-555555555552',
+    'eventType' => 'affiliate_click',
+    'cid' => 'audit_001',
+    'placement' => 'reader_end',
+]);
+$scoreStmt->execute([$uid, 'audit_genre']);
+$scoreAfterRepeatClick = (float)$scoreStmt->fetchColumn();
+assert_test(
+    abs($scoreAfterRepeatClick - $scoreAfterFirstClick) < 0.01,
+    '同一作品への7日以内FANZAクリック連打で嗜好スコアが重複加点されている',
+);
+
 $profile = $userLibraryService->profile($uid);
 assert_test(($profile['stats']['saved'] ?? 0) === 3, 'profileの保存件数が不正');
 assert_test(($profile['stats']['viewed'] ?? 0) === 3, 'profileの閲覧件数が不正');

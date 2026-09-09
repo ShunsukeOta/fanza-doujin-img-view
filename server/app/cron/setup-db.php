@@ -79,13 +79,32 @@ function rebuild_genre_scores(PDO $pdo): void
     $pdo->exec('DELETE FROM user_genre_scores');
     $pdo->exec(
         'INSERT INTO user_genre_scores (anonymous_user_id, genre_id, score, updated_at) '
-        . 'SELECT s.anonymous_user_id, wg.genre_id, '
-        . 'LEAST(20, GREATEST(-12, SUM((s.liked * 4 + s.saved * 5) / SQRT(gc.genre_count)))), NOW() '
-        . 'FROM user_work_states s '
-        . 'JOIN work_genres wg ON wg.work_cid = s.work_cid '
-        . 'JOIN (SELECT work_cid, COUNT(*) AS genre_count FROM work_genres GROUP BY work_cid) gc ON gc.work_cid = s.work_cid '
-        . 'WHERE s.liked = 1 OR s.saved = 1 '
-        . 'GROUP BY s.anonymous_user_id, wg.genre_id'
+        . 'SELECT signals.anonymous_user_id, wg.genre_id, '
+        . 'LEAST(20, GREATEST(-12, SUM(signals.signal_score / SQRT(gc.genre_count)))), NOW() '
+        . 'FROM ('
+        . 'SELECT s.anonymous_user_id, s.work_cid, (s.liked * 4 + s.saved * 5) AS signal_score '
+        . 'FROM user_work_states s WHERE s.liked = 1 OR s.saved = 1 '
+        . 'UNION ALL '
+        . 'SELECT e.anonymous_user_id, e.work_cid, 10.0 AS signal_score '
+        . 'FROM events e WHERE e.event_type = \'affiliate_click\' AND e.work_cid <> \'\' '
+        . 'AND e.created_at >= DATE_SUB(NOW(), INTERVAL 90 DAY) '
+        . 'GROUP BY e.anonymous_user_id, e.work_cid '
+        . 'UNION ALL '
+        . 'SELECT e.anonymous_user_id, e.work_cid, 1.0 AS signal_score '
+        . 'FROM events e WHERE e.event_type = \'sample_complete\' AND e.work_cid <> \'\' '
+        . 'AND e.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) '
+        . 'GROUP BY e.anonymous_user_id, e.work_cid '
+        . 'UNION ALL '
+        . 'SELECT e.anonymous_user_id, e.work_cid, '
+        . 'LEAST(3.0, AVG(COALESCE(e.read_ratio, 0)) * 2.5) AS signal_score '
+        . 'FROM events e WHERE e.event_type = \'view_end\' AND e.work_cid <> \'\' '
+        . 'AND e.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) '
+        . 'GROUP BY e.anonymous_user_id, e.work_cid'
+        . ') signals '
+        . 'JOIN work_genres wg ON wg.work_cid = signals.work_cid '
+        . 'JOIN (SELECT work_cid, COUNT(*) AS genre_count FROM work_genres GROUP BY work_cid) gc '
+        . 'ON gc.work_cid = signals.work_cid '
+        . 'GROUP BY signals.anonymous_user_id, wg.genre_id'
     );
 }
 
@@ -183,6 +202,23 @@ if (!migration_applied($pdo, $rebuildId)) {
     try {
         rebuild_genre_scores($pdo);
         mark_migration($pdo, $rebuildId);
+        $pdo->commit();
+    } catch (Throwable $error) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $error;
+    }
+}
+
+$commerceRebuildId = 'recommendation-commerce-signals-20260909';
+if (!migration_applied($pdo, $commerceRebuildId)) {
+    $pdo->beginTransaction();
+    try {
+        rebuild_genre_scores($pdo);
+        // 既存固定Feedは旧嗜好スコアで並んでいるため、次アクセスで新しい推薦を生成する。
+        $pdo->exec('DELETE FROM feed_sessions');
+        mark_migration($pdo, $commerceRebuildId);
         $pdo->commit();
     } catch (Throwable $error) {
         if ($pdo->inTransaction()) {

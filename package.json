@@ -10,7 +10,7 @@
     "build:shin": "npm run build && node scripts/build-shin.mjs",
     "typecheck": "tsc --noEmit",
     "check:php": "find server -name '*.php' -print0 | xargs -0 -n1 php -l",
-    "check:debt": "node scripts/check-debt.mjs && node scripts/check-pwa-layout.mjs",
+    "check:debt": "node scripts/check-debt.mjs && node scripts/check-pwa-layout.mjs && node scripts/check-commerce.mjs",
     "test:logic": "rm -rf .tmp-test && tsc src/readerMath.ts src/price.ts --target ES2022 --module NodeNext --moduleResolution NodeNext --outDir .tmp-test --skipLibCheck && node scripts/test-logic.mjs && rm -rf .tmp-test"
   },
   "engines": {
