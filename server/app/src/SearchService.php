@@ -59,23 +59,14 @@ final class SearchService
         )));
 
         $hydrated = $this->works->feedItemsByCids($cids);
-        $reactions = $this->events->reactionSummaries($anonymousUserId, $cids);
+        $saveStates = $this->events->saveStates($anonymousUserId, $cids);
         $items = [];
         foreach ($cids as $cid) {
             $item = $hydrated[$cid] ?? null;
             if (!is_array($item) || ($item['available'] ?? true) === false) {
                 continue;
             }
-            $reaction = $reactions[$cid] ?? [
-                'likeCount' => 0,
-                'saveCount' => 0,
-                'viewerLiked' => false,
-                'viewerSaved' => false,
-            ];
-            $item['likeCount'] = (int)($reaction['likeCount'] ?? 0);
-            $item['saveCount'] = (int)($reaction['saveCount'] ?? 0);
-            $item['viewerLiked'] = (bool)($reaction['viewerLiked'] ?? false);
-            $item['viewerSaved'] = (bool)($reaction['viewerSaved'] ?? false);
+            $item['viewerSaved'] = (bool)($saveStates[$cid]['viewerSaved'] ?? false);
             $items[] = $item;
         }
 
