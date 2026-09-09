@@ -10,6 +10,8 @@ import {
 } from "@/src/readerResumeState";
 import type { NavOrigin, SubpagePath } from "@/src/routes";
 
+export type { NavOrigin } from "@/src/routes";
+
 function rememberMainBeforeSubpage(subpage: SubpagePath): void {
   const snapshot = readActiveReader();
   if (!snapshot) return;
