@@ -6,8 +6,8 @@ AddType application/manifest+json .webmanifest
 <IfModule mod_rewrite.c>
   RewriteEngine On
 
-  RewriteRule ^api/(catalog|search|meta|diagnostics|debug|health|events|reactions|saved|history|me|work-details)\.php$ - [L]
-  RewriteRule ^api/(catalog|search|meta|diagnostics|debug|health|events|reactions|saved|history|me|work-details)/?$ api/$1.php [L,QSA]
+  RewriteRule ^api/(catalog|search|meta|diagnostics|debug|health|events|save-state|saved|history|me|work-details)\.php$ - [L]
+  RewriteRule ^api/(catalog|search|meta|diagnostics|debug|health|events|save-state|saved|history|me|work-details)/?$ api/$1.php [L,QSA]
   RewriteRule ^api/ - [R=404,L]
 
   RewriteRule ^favorites/?$ /saved [R=301,L]
