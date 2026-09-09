@@ -9,15 +9,16 @@ if (PHP_SAPI !== 'cli') {
 
 require dirname(__DIR__) . '/bootstrap.php';
 
-$pdo = $database->connection();
-if (!$pdo || !$fanza->configured()) {
-    fwrite(STDERR, "DBまたはFANZA APIが利用できません。\n");
-    exit(1);
-}
-
 $options = getopt('', ['limit::', 'plan-only']);
 $limit = max(10, min(500, (int)($options['limit'] ?? 300)));
 $planOnly = array_key_exists('plan-only', $options);
+
+$pdo = $database->connection();
+if (!$pdo || (!$planOnly && !$fanza->configured())) {
+    fwrite(STDERR, $planOnly ? "DBが利用できません。\n" : "DBまたはFANZA APIが利用できません。\n");
+    exit(1);
+}
+
 $lock = fopen(sys_get_temp_dir() . '/fanza-doujin-refresh.lock', 'c');
 if ($lock === false || !flock($lock, LOCK_EX | LOCK_NB)) {
     fwrite(STDOUT, "別の巡回更新が実行中です。\n");
@@ -54,7 +55,6 @@ try {
         $targets[(string)$row['work_cid']] = true;
     }
 
-    // 残り枠でDB全体をnext_refresh_at順に巡回し、旧作も必ず長期的に更新する。
     $remaining = max(0, $limit - count($targets));
     if ($remaining > 0) {
         $stmt = $pdo->prepare(
