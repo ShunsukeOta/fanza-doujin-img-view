@@ -46,6 +46,8 @@ requireText(workCards, [
   ".work-card",
   ".work-card-media",
   ".work-card-actions",
+  ".work-card-primary",
+  ".work-card-secondary",
   ".work-list-more",
 ], "共通作品カードCSS");
 
@@ -60,8 +62,8 @@ requireText(pagesCss, [
 const discoveryCss = read("styles/discovery.css");
 requireText(discoveryCss, [
   ".search-result-saved",
-  ".work-card-primary",
-  ".work-card-secondary",
+  ".search-result-thumb",
+  ".detail-search-form",
 ], "検索CSS");
 
 const tracking = read("src/commerceTracking.ts");
