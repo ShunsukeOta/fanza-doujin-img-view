@@ -62,4 +62,8 @@ assert.match(globalNav, /className="global-nav-indicator"/, "背景ピル自体�
 assert.match(globalNav, /transitionend/, "背景ピルの移動完了と画面遷移が同期していない");
 assert.match(globalNav, /NAVIGATION_FALLBACK_MS = 180/, "背景ピル遷移失敗時の短いfallbackがない");
 
+const viewportCss = readFileSync("styles/viewport.css", "utf8");
+assert.match(viewportCss, /\.header-actions\s*\{[\s\S]*margin-right:\s*0/, "縦フィードの設定ボタンが右端から不要にずれている");
+assert.match(viewportCss, /\.app-header\s*\{[\s\S]*padding-right:\s*max\(var\(--space-3\), env\(safe-area-inset-right\)\)/, "縦フィード右上UIが右safe-areaを考慮していない");
+
 console.log("logic regression tests: OK");
