@@ -1,14 +1,13 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
-import { FloorComingSoon, FloorTabs } from "@/components/FloorTabs";
 import { GlobalNav } from "@/components/GlobalNav";
 import { ExternalIcon } from "@/components/icons";
 import type { FeedItem, MetaResponse } from "@/lib/types";
 import { trackEvent } from "@/src/analytics";
 import { fetchJson } from "@/src/api";
-import { floorFromLocation } from "@/src/floors";
 import { openWorkInMain } from "@/src/navigationState";
 import { formatPrice } from "@/src/price";
+import { isHttpUrl, mergeUniqueByCid } from "@/src/workUtils";
 
 type SearchSort = "popular" | "rating" | "new" | "price_asc";
 
@@ -45,10 +44,6 @@ function boundedNumberText(value: string | null, min: number, max: number): stri
   if (!value || !/^\d+$/.test(value)) return "";
   const parsed = Number.parseInt(value, 10);
   return String(Math.max(min, Math.min(max, parsed)));
-}
-
-function validAffiliateUrl(value: string): boolean {
-  return /^https?:\/\//i.test(value);
 }
 
 function parseFilters(): SearchFilters {
@@ -109,13 +104,7 @@ function pageUrl(filters: SearchFilters): string {
   return `/search${query ? `?${query}` : ""}`;
 }
 
-function mergeUnique(current: FeedItem[], incoming: FeedItem[]): FeedItem[] {
-  const seen = new Set(current.map((item) => item.cid));
-  return [...current, ...incoming.filter((item) => item.cid && !seen.has(item.cid) && Boolean(seen.add(item.cid)))];
-}
-
 export function SearchPage() {
-  const floor = floorFromLocation();
   const [meta, setMeta] = useState<MetaResponse | null>(null);
   const [draft, setDraft] = useState<SearchFilters>(() => parseFilters());
   const [applied, setApplied] = useState<SearchFilters>(() => parseFilters());
@@ -123,7 +112,7 @@ export function SearchPage() {
   const [total, setTotal] = useState(0);
   const [nextCursor, setNextCursor] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(floor === "comic");
+  const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
 
@@ -134,7 +123,6 @@ export function SearchPage() {
   }, [draft.maxPrice, draft.minPrice]);
 
   const runSearch = useCallback(async (filters: SearchFilters, cursor = 0, append = false) => {
-    if (floor !== "comic") return;
     append ? setLoadingMore(true) : setLoading(true);
     setError("");
     try {
@@ -143,7 +131,7 @@ export function SearchPage() {
         { headers: { Accept: "application/json", "Cache-Control": "no-cache" }, credentials: "same-origin", cache: "no-store" },
         "検索結果を取得できませんでした",
       );
-      setItems((current) => append ? mergeUnique(current, data.items ?? []) : data.items ?? []);
+      setItems((current) => append ? mergeUniqueByCid(current, data.items ?? []) : data.items ?? []);
       setTotal(data.total ?? 0);
       setNextCursor(data.nextCursor);
       setHasMore(data.hasMore);
@@ -156,21 +144,20 @@ export function SearchPage() {
     } finally {
       append ? setLoadingMore(false) : setLoading(false);
     }
-  }, [floor]);
+  }, []);
 
   useEffect(() => {
-    if (floor !== "comic") return;
     void fetchJson<MetaResponse>(
       "/api/meta",
       { headers: { Accept: "application/json" }, credentials: "same-origin" },
       "ジャンル情報を取得できませんでした",
     ).then(setMeta).catch(() => setMeta(null));
     void runSearch(applied);
-  }, [applied, floor, runSearch]);
+  }, [applied, runSearch]);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (floor !== "comic" || priceInvalid) return;
+    if (priceInvalid) return;
     const normalized: SearchFilters = {
       ...draft,
       query: draft.query.trim(),
@@ -203,32 +190,13 @@ export function SearchPage() {
     setApplied(empty);
   };
 
-  if (floor !== "comic") {
-    return (
-      <div className="subpage-shell search-shell">
-        <header className="subpage-header search-header">
-          <div><p className="search-kicker">DISCOVER</p><h1>詳細検索</h1></div>
-        </header>
-        <main className="subpage-content search-content">
-          <FloorTabs activeFloor={floor} context="search" />
-          <FloorComingSoon floor={floor} />
-        </main>
-        <GlobalNav active="search" />
-      </div>
-    );
-  }
-
   return (
     <div className="subpage-shell search-shell">
       <header className="subpage-header search-header">
-        <div>
-          <p className="search-kicker">DISCOVER</p>
-          <h1>詳細検索</h1>
-        </div>
+        <h1>詳細検索</h1>
       </header>
 
       <main className="subpage-content search-content">
-        <FloorTabs activeFloor="comic" context="search" />
         <form className="detail-search-form" onSubmit={submit}>
           <div className="detail-search-grid">
             <label className="detail-search-field detail-search-field--wide">
@@ -317,12 +285,12 @@ export function SearchPage() {
             <>
               <div className="search-result-grid">
                 {items.map((item) => {
-                  const canBuy = item.available !== false && validAffiliateUrl(item.affiliateUrl);
+                  const canBuy = item.available !== false && isHttpUrl(item.affiliateUrl);
                   const priceLabel = formatPrice(item.price, item.priceValue ?? null);
                   return (
                     <article className="search-result-card" key={item.cid}>
                       <button className="search-result-thumb" type="button" onClick={() => openWorkInMain(item.cid)} aria-label={`${item.title}のサンプルを読む`}>
-                        {item.images[0] ? <img src={item.images[0]} alt="" loading="lazy" decoding="async" /> : <span>NO IMAGE</span>}
+                        {item.images[0] ? <img src={item.images[0]} alt="" loading="lazy" decoding="async" /> : <span>画像なし</span>}
                         {item.viewerSaved ? <span className="search-result-saved">保存済み</span> : null}
                       </button>
                       <div className="search-result-body">

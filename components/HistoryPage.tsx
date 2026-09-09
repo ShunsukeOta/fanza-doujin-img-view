@@ -5,6 +5,7 @@ import type { FeedItem } from "@/lib/types";
 import { fetchJson } from "@/src/api";
 import { navigateToSubpage, openWorkInMain } from "@/src/navigationState";
 import { formatPrice } from "@/src/price";
+import { mergeUniqueByCid } from "@/src/workUtils";
 
 type HistoryItem = FeedItem & { viewedAt?: string };
 
@@ -26,18 +27,6 @@ function formatViewedAt(value?: string): string {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
-}
-
-function mergeUnique(current: HistoryItem[], incoming: HistoryItem[]): HistoryItem[] {
-  const seen = new Set(current.map((item) => item.cid));
-  return [
-    ...current,
-    ...incoming.filter((item) => {
-      if (!item.cid || seen.has(item.cid)) return false;
-      seen.add(item.cid);
-      return true;
-    }),
-  ];
 }
 
 export function HistoryPage() {
@@ -84,7 +73,7 @@ export function HistoryPage() {
         { headers: { Accept: "application/json" }, credentials: "same-origin", cache: "no-store" },
         "閲覧履歴を追加取得できませんでした",
       );
-      setItems((current) => mergeUnique(current, data.items ?? []));
+      setItems((current) => mergeUniqueByCid(current, data.items ?? []));
       setCursor(data.nextCursor);
       setHasMore(data.hasMore);
     } catch (requestError) {
@@ -130,7 +119,7 @@ export function HistoryPage() {
         ) : items.length === 0 ? (
           <div className="subpage-state">
             <strong>まだ閲覧履歴がありません</strong>
-            <p>コミックフィードで表示した作品がここに並びます。履歴はイベント保存期間の範囲で表示されます。</p>
+            <p>閲覧した作品がここに表示されます。</p>
             <button type="button" onClick={() => window.location.assign("/")}>コミックを探す</button>
           </div>
         ) : (
@@ -139,7 +128,7 @@ export function HistoryPage() {
               {items.map((item) => (
                 <article className="history-card" key={item.cid}>
                   <button className="history-thumb" type="button" onClick={() => openWorkInMain(item.cid)} aria-label={`${item.title || item.cid}を開く`}>
-                    {item.images[0] ? <img src={item.images[0]} alt="" loading="lazy" decoding="async" /> : <span>NO IMAGE</span>}
+                    {item.images[0] ? <img src={item.images[0]} alt="" loading="lazy" decoding="async" /> : <span>画像なし</span>}
                   </button>
                   <div className="history-body">
                     <span className="history-viewed-at">{formatViewedAt(item.viewedAt)}</span>

@@ -39,10 +39,6 @@ export function ShareIcon() {
   );
 }
 
-export function DebugIcon() {
-  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 9h8v8H8zM9 5v4M15 5v4M9 17v3M15 17v3M5 10h3M16 10h3M5 16h3M16 16h3" /></svg>;
-}
-
 export function ExternalIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8" /></svg>;
 }

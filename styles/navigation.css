@@ -10,13 +10,13 @@
   bottom: max(8px, var(--nav-safe-bottom));
   width: min(440px, calc(100% - 20px));
   height: 58px;
-  padding: 4px;
+  padding: var(--space-1);
   border: 1px solid #ffffff1f;
   border-radius: 19px;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: stretch;
-  gap: 4px;
+  gap: var(--space-1);
   transform: translateX(-50%);
   background: rgba(14, 14, 14, .9);
   box-shadow: 0 14px 38px #00000066, inset 0 1px 0 #ffffff0d;
@@ -27,7 +27,7 @@
 .global-nav-item {
   min-width: 0;
   min-height: 48px;
-  padding: 5px 5px 4px;
+  padding: 5px 4px 4px;
   border: 0;
   border-radius: 15px;
   display: flex;
@@ -37,7 +37,7 @@
   gap: 2px;
   background: transparent;
   color: #7f7f7f;
-  font-size: 9px;
+  font-size: var(--font-caption);
   font-weight: 700;
   line-height: 1.1;
   cursor: pointer;
@@ -97,7 +97,6 @@
 
   .global-nav-item {
     padding-inline: 2px;
-    font-size: 8px;
   }
 }
 

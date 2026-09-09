@@ -19,8 +19,20 @@
   --radius-md: 14px;
   --radius-lg: 18px;
   --radius-pill: 999px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --page-gutter: 16px;
+  --font-caption: 10px;
+  --font-small: 11px;
+  --font-body: 12px;
+  --font-card-title: 13px;
+  --font-section-title: 15px;
+  --font-page-title: 24px;
   --header-h: 56px;
-  font-family: "Noto Sans JP", sans-serif;
 }
 
 * {
@@ -33,22 +45,18 @@ body {
   width: 100%;
   height: 100vh;
   margin: 0;
-}
-
-#root {
-  width: 100%;
-  height: 100%;
-  margin: 0;
-}
-
-html,
-body {
   background: var(--bg);
   color: var(--text);
   font-family: "Noto Sans JP", sans-serif;
   overscroll-behavior: none;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
 }
 
 body {
@@ -60,7 +68,6 @@ input,
 select,
 textarea {
   font: inherit;
-  font-family: "Noto Sans JP", sans-serif;
 }
 
 button,
@@ -88,7 +95,7 @@ button:disabled {
 .spinner {
   width: 28px;
   height: 28px;
-  margin-bottom: 15px;
+  margin-bottom: var(--space-4);
 }
 
 .mini-spinner {
@@ -118,7 +125,7 @@ button:disabled {
 }
 
 .empty-card h2 {
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-2);
   font-size: 20px;
   line-height: 1.35;
 }
@@ -126,12 +133,12 @@ button:disabled {
 .empty-card p {
   margin: 0;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--font-card-title);
   line-height: 1.7;
 }
 
 .empty-card .btn {
-  margin-top: 18px;
+  margin-top: var(--space-5);
   padding-inline: 18px;
 }
 
@@ -163,7 +170,7 @@ button:disabled {
   bottom: 0;
   max-height: min(88dvh, 820px);
   overflow: auto;
-  padding: 8px 14px calc(18px + env(safe-area-inset-bottom));
+  padding: var(--space-2) var(--page-gutter) calc(18px + env(safe-area-inset-bottom));
   border: 1px solid var(--border);
   border-bottom: 0;
   border-radius: 20px 20px 0 0;
@@ -181,7 +188,7 @@ button:disabled {
 .sheet-handle {
   width: 38px;
   height: 4px;
-  margin: 2px auto 12px;
+  margin: 2px auto var(--space-3);
   border-radius: var(--radius-pill);
   background: #444;
 }
@@ -190,8 +197,8 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 14px;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
 }
 
 .sheet-title {
@@ -216,7 +223,7 @@ button:disabled {
 .filters {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .field {
@@ -230,24 +237,25 @@ button:disabled {
 .field label {
   display: block;
   margin-bottom: 6px;
-  color: #aaa;
-  font-size: 11px;
+  color: var(--text-muted);
+  font-size: var(--font-small);
 }
 
 .field input,
 .field select {
   width: 100%;
   height: 46px;
-  padding: 0 12px;
+  padding: 0 var(--space-3);
   border: 1px solid #343434;
   border-radius: 11px;
   outline: none;
   background: var(--surface-control);
   color: var(--text);
+  font-size: var(--font-body);
 }
 
 .field input::placeholder {
-  color: #666;
+  color: var(--text-subtle);
 }
 
 .field input:focus,
@@ -284,7 +292,7 @@ button:disabled {
 
 .rating-filter button > span {
   color: #777;
-  font-size: 8px;
+  font-size: var(--font-caption);
   font-weight: 700;
   line-height: 1;
 }
@@ -310,24 +318,24 @@ button:disabled {
 .filter-error {
   margin-top: -3px;
   color: var(--danger);
-  font-size: 10px;
+  font-size: var(--font-caption);
   line-height: 1.45;
 }
 
 .filter-summary {
-  margin: 14px 0 0;
-  padding: 11px 12px;
+  margin: var(--space-4) 0 0;
+  padding: 11px var(--space-3);
   border-radius: 11px;
   background: #1a1a1a;
-  color: #999;
-  font-size: 10px;
+  color: var(--text-muted);
+  font-size: var(--font-caption);
   line-height: 1.6;
 }
 
 .genre-note {
   margin-top: 5px;
   color: #a76d6d;
-  font-size: 10px;
+  font-size: var(--font-caption);
 }
 
 .sheet-actions {
@@ -335,9 +343,9 @@ button:disabled {
   bottom: 0;
   display: grid;
   grid-template-columns: 1fr 1.7fr;
-  gap: 9px;
-  margin-top: 14px;
-  padding-top: 10px;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
   background: linear-gradient(180deg, transparent, #141414 18%);
 }
 
@@ -346,6 +354,7 @@ button:disabled {
   padding: 0 14px;
   border: 0;
   border-radius: 11px;
+  font-size: var(--font-small);
   font-weight: 800;
   cursor: pointer;
 }
@@ -370,7 +379,7 @@ button:disabled {
   border-radius: var(--radius-pill);
   background: #f5f5f5;
   color: #111;
-  font-size: 11px;
+  font-size: var(--font-small);
   font-weight: 750;
   text-align: center;
   opacity: 0;
@@ -389,7 +398,7 @@ button:disabled {
   .field select { padding-inline: 9px; }
   .rating-filter { gap: 4px; }
   .rating-filter button { border-radius: 9px; }
-  .sheet { padding-left: 10px; padding-right: 10px; }
+  .sheet { padding-left: var(--space-3); padding-right: var(--space-3); }
 }
 
 @media (min-width: 760px) {

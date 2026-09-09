@@ -20,7 +20,7 @@ export function AgeGate({ onVerified }: Props) {
       window.history.back();
       return;
     }
-    window.location.replace("https://www.google.com/");
+    window.location.replace("about:blank");
   };
 
   if (denied) {
@@ -28,7 +28,6 @@ export function AgeGate({ onVerified }: Props) {
       <div className="age-gate" role="dialog" aria-modal="true" aria-labelledby="age-denied-title">
         <div className="age-gate-card age-gate-card--denied">
           <span className="age-gate-badge" aria-hidden="true">18+</span>
-          <p className="age-gate-kicker">AGE RESTRICTED</p>
           <h1 id="age-denied-title">このサービスは利用できません</h1>
           <p className="age-gate-description">
             本サービスには成人向け作品が含まれるため、18歳未満の方は利用できません。
@@ -45,10 +44,7 @@ export function AgeGate({ onVerified }: Props) {
       <div className="age-gate-card">
         <div className="age-gate-head">
           <span className="age-gate-badge" aria-hidden="true">18+</span>
-          <div>
-            <p className="age-gate-kicker">AGE VERIFICATION</p>
-            <h1 id="age-gate-title">18歳以上ですか？</h1>
-          </div>
+          <h1 id="age-gate-title">18歳以上ですか？</h1>
         </div>
 
         <p className="age-gate-description">
@@ -63,7 +59,7 @@ export function AgeGate({ onVerified }: Props) {
           />
           <span>
             <strong>この端末で確認を記憶する</strong>
-            <small>オフにすると、このブラウザを閉じるまでだけ有効です。</small>
+            <small>オフにすると、このブラウザを閉じるまで有効です。</small>
           </span>
         </label>
 
@@ -73,7 +69,7 @@ export function AgeGate({ onVerified }: Props) {
         </div>
 
         <p className="age-gate-note">
-          「18歳以上です」を選択すると、<a href="/terms">利用規約</a>と<a href="/privacy">プライバシーポリシー</a>を確認したうえで利用するものとします。
+          「18歳以上です」を選択すると、<a href="/terms">利用規約</a>と<a href="/privacy">プライバシーポリシー</a>に同意したものとみなします。
         </p>
       </div>
     </div>

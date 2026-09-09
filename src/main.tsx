@@ -2,8 +2,6 @@ import { StrictMode, type ReactNode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 import { AgeGate } from "@/components/AgeGate";
-import { FloorComingSoon, FloorTabs } from "@/components/FloorTabs";
-import { GlobalNav } from "@/components/GlobalNav";
 import { HistoryPage } from "@/components/HistoryPage";
 import { PrivacyPolicyPage, TermsPage } from "@/components/LegalPages";
 import { MyPage } from "@/components/MyPage";
@@ -17,12 +15,10 @@ import "@/styles/pages.css";
 import "@/styles/reader.css";
 import "@/styles/discovery.css";
 import "@/styles/accessibility.css";
-import "@/styles/commerce.css";
 import "@/styles/viewport.css";
 import { hasAgeVerification } from "@/src/ageVerification";
 import { startAnalytics } from "@/src/analytics";
 import { installCommerceCtaTracking } from "@/src/commerceTracking";
-import { floorFromLocation, type FloorKey } from "@/src/floors";
 import { installMainResumeLifecycle, prepareMainResumeFallback } from "@/src/navigationState";
 import { installViewportSizing } from "@/src/viewport";
 
@@ -63,34 +59,15 @@ function workCidFromPath(pathname: string): string {
 type MainExperienceProps = {
   initialFilters: FilterValues;
   initialCid: string;
-  floor: FloorKey;
 };
 
-function MainExperience({ initialFilters, initialCid, floor }: MainExperienceProps) {
+function MainExperience({ initialFilters, initialCid }: MainExperienceProps) {
   useEffect(() => {
-    if (floor !== "comic") return;
     installMainResumeLifecycle();
     return installCommerceCtaTracking();
-  }, [floor]);
+  }, []);
 
-  if (floor !== "comic") {
-    return (
-      <div className="floor-coming-feed">
-        <FloorTabs activeFloor={floor} context="feed" overlay />
-        <main className="floor-coming-feed-content">
-          <FloorComingSoon floor={floor} />
-        </main>
-        <GlobalNav active="main" />
-      </div>
-    );
-  }
-
-  return (
-    <>
-      <FloorTabs activeFloor="comic" context="feed" overlay />
-      <SwipePreviewApp initialFilters={initialFilters} initialCid={initialCid} />
-    </>
-  );
+  return <SwipePreviewApp initialFilters={initialFilters} initialCid={initialCid} />;
 }
 
 function ProtectedExperience({ children }: { children: ReactNode }) {
@@ -108,19 +85,12 @@ function ProtectedExperience({ children }: { children: ReactNode }) {
 }
 
 const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
-const floor = floorFromLocation();
-const protectedSubpages = ["/saved", "/search", "/mypage", "/history", "/favorites"];
-if (floor === "comic" && ![...protectedSubpages, "/privacy", "/terms"].includes(pathname)) {
+const protectedSubpages = ["/saved", "/search", "/mypage", "/history"];
+if (![...protectedSubpages, "/privacy", "/terms"].includes(pathname)) {
   prepareMainResumeFallback();
 }
 
 const params = new URLSearchParams(window.location.search);
-if (params.has("asset_type") || params.has("category")) {
-  params.delete("asset_type");
-  params.delete("category");
-  const cleaned = params.toString();
-  window.history.replaceState(null, "", `${window.location.pathname}${cleaned ? `?${cleaned}` : ""}${window.location.hash}`);
-}
 const initialFilters: FilterValues = {
   genreId: (params.get("genre_id") ?? "").slice(0, 64),
   minSamples: boundedInt(params, "min_samples", 1, 1, 100),
@@ -130,7 +100,7 @@ const initialFilters: FilterValues = {
   maxPrice: boundedInt(params, "max_price", 0, 0, 10_000_000),
   query: (params.get("q") ?? "").slice(0, 100),
 };
-const workCid = workCidFromPath(pathname) || (params.get("cid") ?? "");
+const workCid = workCidFromPath(pathname);
 
 const root = document.getElementById("root");
 if (!root) throw new Error("#root が見つかりません。");
@@ -138,21 +108,17 @@ if (!root) throw new Error("#root が見つかりません。");
 installViewportSizing();
 registerServiceWorker();
 
-if (pathname === "/favorites") {
-  window.location.replace("/saved");
-} else {
-  let app: ReactNode;
-  if (pathname === "/privacy") app = <PrivacyPolicyPage />;
-  else if (pathname === "/terms") app = <TermsPage />;
-  else {
-    let protectedPage: ReactNode;
-    if (pathname === "/saved") protectedPage = <SavedPage />;
-    else if (pathname === "/search") protectedPage = <SearchPage />;
-    else if (pathname === "/mypage") protectedPage = <MyPage />;
-    else if (pathname === "/history") protectedPage = <HistoryPage />;
-    else protectedPage = <MainExperience initialFilters={initialFilters} initialCid={workCid} floor={floor} />;
-    app = <ProtectedExperience>{protectedPage}</ProtectedExperience>;
-  }
-
-  createRoot(root).render(<StrictMode>{app}</StrictMode>);
+let app: ReactNode;
+if (pathname === "/privacy") app = <PrivacyPolicyPage />;
+else if (pathname === "/terms") app = <TermsPage />;
+else {
+  let protectedPage: ReactNode;
+  if (pathname === "/saved") protectedPage = <SavedPage />;
+  else if (pathname === "/search") protectedPage = <SearchPage />;
+  else if (pathname === "/mypage") protectedPage = <MyPage />;
+  else if (pathname === "/history") protectedPage = <HistoryPage />;
+  else protectedPage = <MainExperience initialFilters={initialFilters} initialCid={workCid} />;
+  app = <ProtectedExperience>{protectedPage}</ProtectedExperience>;
 }
+
+createRoot(root).render(<StrictMode>{app}</StrictMode>);

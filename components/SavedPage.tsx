@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { FloorComingSoon, FloorTabs } from "@/components/FloorTabs";
 import { GlobalNav } from "@/components/GlobalNav";
 import { BookmarkIcon, ExternalIcon } from "@/components/icons";
 import type { FeedItem } from "@/lib/types";
 import { trackEvent } from "@/src/analytics";
 import { fetchJson } from "@/src/api";
-import { floorFromLocation } from "@/src/floors";
 import { openWorkInMain } from "@/src/navigationState";
 import { formatPrice } from "@/src/price";
 import { updateReaction } from "@/src/reactions";
+import { isHttpUrl, mergeUniqueByCid } from "@/src/workUtils";
 
 type SavedResponse = {
   ok: boolean;
@@ -19,35 +18,17 @@ type SavedResponse = {
   hasMore: boolean;
 };
 
-function validAffiliateUrl(value: string): boolean {
-  return /^https?:\/\//i.test(value);
-}
-
-function mergeUniqueItems(current: FeedItem[], incoming: FeedItem[]): FeedItem[] {
-  const seen = new Set(current.map((item) => item.cid));
-  return [
-    ...current,
-    ...incoming.filter((item) => {
-      if (!item.cid || seen.has(item.cid)) return false;
-      seen.add(item.cid);
-      return true;
-    }),
-  ];
-}
-
 export function SavedPage() {
-  const floor = floorFromLocation();
   const [items, setItems] = useState<FeedItem[]>([]);
   const [total, setTotal] = useState(0);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(floor === "comic");
+  const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
   const [pendingCid, setPendingCid] = useState("");
 
   const load = useCallback(async () => {
-    if (floor !== "comic") return;
     setLoading(true);
     setError("");
     try {
@@ -71,14 +52,14 @@ export function SavedPage() {
     } finally {
       setLoading(false);
     }
-  }, [floor]);
+  }, []);
 
   useEffect(() => {
-    if (floor === "comic") void load();
-  }, [floor, load]);
+    void load();
+  }, [load]);
 
   const loadMore = async () => {
-    if (floor !== "comic" || !hasMore || !cursor || loadingMore) return;
+    if (!hasMore || !cursor || loadingMore) return;
 
     setLoadingMore(true);
     setError("");
@@ -89,7 +70,7 @@ export function SavedPage() {
         { headers: { Accept: "application/json" }, credentials: "same-origin", cache: "no-store" },
         "保存済み作品を追加取得できませんでした",
       );
-      setItems((current) => mergeUniqueItems(current, data.items ?? []));
+      setItems((current) => mergeUniqueByCid(current, data.items ?? []));
       setCursor(data.nextCursor);
       setHasMore(data.hasMore);
     } catch (requestError) {
@@ -100,7 +81,7 @@ export function SavedPage() {
   };
 
   const removeSaved = async (item: FeedItem) => {
-    if (floor !== "comic" || pendingCid) return;
+    if (pendingCid) return;
 
     setPendingCid(item.cid);
     setError("");
@@ -114,19 +95,6 @@ export function SavedPage() {
       setPendingCid("");
     }
   };
-
-  if (floor !== "comic") {
-    return (
-      <div className="subpage-shell">
-        <header className="subpage-header"><h1>保存済み</h1></header>
-        <main className="subpage-content floor-aware-content">
-          <FloorTabs activeFloor={floor} context="saved" />
-          <FloorComingSoon floor={floor} />
-        </main>
-        <GlobalNav active="saved" />
-      </div>
-    );
-  }
 
   return (
     <div className="subpage-shell">
@@ -142,8 +110,7 @@ export function SavedPage() {
         </button>
       </header>
 
-      <main className="subpage-content floor-aware-content">
-        <FloorTabs activeFloor="comic" context="saved" />
+      <main className="subpage-content">
         <div className="subpage-summary" aria-label={`保存した作品 ${total}件`}>
           <span>保存した作品 <strong>{total.toLocaleString("ja-JP")}</strong>件</span>
         </div>
@@ -163,14 +130,14 @@ export function SavedPage() {
           <div className="subpage-state">
             <span className="subpage-state-icon"><BookmarkIcon /></span>
             <strong>まだ保存した作品がありません</strong>
-            <p>コミックフィードで「保存」を押した作品がここに並びます。</p>
+            <p>「保存」を押した作品がここに並びます。</p>
             <button type="button" onClick={() => window.location.assign("/")}>コミックを探す</button>
           </div>
         ) : (
           <>
             <div className="favorite-grid">
               {items.map((item) => {
-                const canBuy = item.available !== false && validAffiliateUrl(item.affiliateUrl);
+                const canBuy = item.available !== false && isHttpUrl(item.affiliateUrl);
                 const priceDrop = typeof item.priceDropValue === "number" && item.priceDropValue > 0
                   ? item.priceDropValue
                   : null;
@@ -188,7 +155,7 @@ export function SavedPage() {
                       {item.images[0] ? (
                         <img src={item.images[0]} alt="" loading="lazy" decoding="async" />
                       ) : (
-                        <div className="favorite-noimage">NO IMAGE</div>
+                        <div className="favorite-noimage">画像なし</div>
                       )}
                       {item.available === false ? <span className="favorite-type">販売終了</span> : null}
                       {priceDrop !== null ? <span className="favorite-deal-badge">値下げ</span> : null}
