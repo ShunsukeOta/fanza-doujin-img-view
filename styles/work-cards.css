@@ -35,6 +35,17 @@
   line-height: 1.5;
 }
 
+.work-card-subtitle,
+.work-card-tags {
+  margin: 5px 0 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-caption);
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .work-card-meta {
   margin-top: 6px;
   display: flex;
@@ -44,6 +55,7 @@
   font-size: var(--font-caption);
   font-variant-numeric: tabular-nums;
 }
+.work-card-meta small { color: var(--text-muted); }
 
 .work-card-actions {
   margin-top: var(--space-2);
@@ -52,16 +64,41 @@
 }
 
 .work-card-actions :is(button, a) {
-  min-height: 42px;
+  min-height: 44px;
+  padding: 0 var(--space-2);
   border-radius: 9px;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
+  font-size: var(--font-small);
   font-weight: 800;
   text-align: center;
   text-decoration: none;
   cursor: pointer;
+}
+
+.work-card-secondary {
+  border: 1px solid var(--border-strong);
+  background: var(--surface-control);
+  color: var(--text-secondary);
+}
+
+.work-card-primary {
+  border: 0;
+  background: #f0f0f0;
+  color: #090909;
+}
+
+.work-card-primary svg {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .work-list-error {
