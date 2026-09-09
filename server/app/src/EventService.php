@@ -18,13 +18,13 @@ final class EventService
         'sample_complete',
         'cta_view',
         'view_end',
-        'like_toggle',
         'save_toggle',
         'share',
         'affiliate_click',
     ];
     private const RATE_LIMIT_PER_MINUTE = 600;
     private const AFFILIATE_CLICK_WEIGHT = 10.0;
+    private const SAVE_WEIGHT = 7.0;
     private const SAMPLE_COMPLETE_WEIGHT = 1.0;
 
     public function __construct(private readonly Database $database)
@@ -63,7 +63,7 @@ final class EventService
         return ['accepted' => $accepted, 'duplicates' => $duplicates];
     }
 
-    public function reactionSummaries(string $anonymousUserId, array $cids): array
+    public function saveStates(string $anonymousUserId, array $cids): array
     {
         $normalized = $this->normalizeCids($cids);
         if ($normalized === []) {
@@ -71,9 +71,9 @@ final class EventService
         }
         $pdo = $this->database->connection();
         if (!$pdo) {
-            return $this->emptyReactionSummaries($normalized);
+            return $this->emptySaveStates($normalized);
         }
-        return $this->reactionSummariesWithPdo($pdo, $anonymousUserId, $normalized);
+        return $this->saveStatesWithPdo($pdo, $anonymousUserId, $normalized);
     }
 
     private function recordOne(PDO $pdo, string $uid, string $sid, array $payload): ?array
@@ -100,8 +100,8 @@ final class EventService
             $existing = $pdo->prepare('SELECT event_type, work_cid FROM events WHERE event_id = ? LIMIT 1');
             $existing->execute([$eventId]);
             if ($existing->fetch()) {
-                if ($eventType === 'like_toggle' || $eventType === 'save_toggle') {
-                    return $this->reactionSummariesWithPdo($pdo, $uid, [$cid])[$cid] ?? null;
+                if ($eventType === 'save_toggle') {
+                    return $this->saveStatesWithPdo($pdo, $uid, [$cid])[$cid] ?? null;
                 }
                 return ['_duplicate' => true];
             }
@@ -181,13 +181,12 @@ final class EventService
                 $this->applyGenreAffinity($pdo, $uid, $cid, $delta);
             }
 
-            $reaction = null;
-            if ($eventType === 'like_toggle' || $eventType === 'save_toggle') {
-                $reaction = $this->reactionSummariesWithPdo($pdo, $uid, [$cid])[$cid] ?? null;
-            }
+            $saveState = $eventType === 'save_toggle'
+                ? ($this->saveStatesWithPdo($pdo, $uid, [$cid])[$cid] ?? null)
+                : null;
 
             $pdo->commit();
-            return $reaction;
+            return $saveState;
         } catch (Throwable $error) {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
@@ -222,7 +221,9 @@ final class EventService
                 7,
                 self::AFFILIATE_CLICK_WEIGHT,
             ),
-            // 読了は明確な興味シグナルだが、view_endと重複するため小さく補助加点する。
+            // 保存はサービス内で唯一の明示的な好み操作として強く扱う。
+            'save_toggle' => $this->saveDelta($pdo, $uid, $cid, self::SAVE_WEIGHT, $active),
+            // 読了はview_endと重複するため補助シグナルに留める。
             'sample_complete' => $this->firstEventWeight(
                 $pdo,
                 $uid,
@@ -232,8 +233,6 @@ final class EventService
                 self::SAMPLE_COMPLETE_WEIGHT,
             ),
             'share' => 2.0,
-            'like_toggle' => $this->toggleDelta($pdo, $uid, $cid, 'liked', 'liked_at', 4.0, $active),
-            'save_toggle' => $this->toggleDelta($pdo, $uid, $cid, 'saved', 'saved_at', 5.0, $active),
             'view_end' => $this->viewDelta($dwell ?? 0, $ratio ?? 0.0, $metadata),
             default => 0.0,
         };
@@ -262,7 +261,6 @@ final class EventService
         $loaded = ($metadata['sampleLoaded'] ?? false) === true;
         $progress = max(0, (int)($metadata['progressedPages'] ?? 0));
 
-        // 画像未表示や初期1枚を見ただけの短時間離脱は読了率に関係なく加点しない。
         if (!$loaded) {
             return 0.0;
         }
@@ -281,49 +279,34 @@ final class EventService
         return $dwellScore + $readScore + $progressScore;
     }
 
-    private function toggleDelta(
-        PDO $pdo,
-        string $uid,
-        string $cid,
-        string $column,
-        string $timeColumn,
-        float $weight,
-        ?bool $active,
-    ): float {
+    private function saveDelta(PDO $pdo, string $uid, string $cid, float $weight, ?bool $active): float
+    {
         if ($active === null) {
-            return 0;
+            return 0.0;
         }
 
         $state = $pdo->prepare(
-            'SELECT liked, saved FROM user_work_states WHERE anonymous_user_id = ? AND work_cid = ? FOR UPDATE'
+            'SELECT saved FROM user_work_states WHERE anonymous_user_id = ? AND work_cid = ? FOR UPDATE'
         );
         $state->execute([$uid, $cid]);
         $row = $state->fetch();
-        $previous = is_array($row) ? (bool)$row[$column] : false;
+        $previous = is_array($row) ? (bool)$row['saved'] : false;
 
         if (!is_array($row)) {
             $insert = $pdo->prepare(
                 'INSERT INTO user_work_states '
-                . '(anonymous_user_id, work_cid, liked, saved, liked_at, saved_at, updated_at) '
-                . 'VALUES (?, ?, ?, ?, ?, ?, NOW())'
+                . '(anonymous_user_id, work_cid, saved, saved_at, updated_at) VALUES (?, ?, ?, ?, NOW())'
             );
-            $insert->execute([
-                $uid,
-                $cid,
-                $column === 'liked' && $active ? 1 : 0,
-                $column === 'saved' && $active ? 1 : 0,
-                $column === 'liked' && $active ? date('Y-m-d H:i:s') : null,
-                $column === 'saved' && $active ? date('Y-m-d H:i:s') : null,
-            ]);
+            $insert->execute([$uid, $cid, $active ? 1 : 0, $active ? date('Y-m-d H:i:s') : null]);
         } elseif ($previous !== $active) {
-            $sql = "UPDATE user_work_states SET {$column} = ?, {$timeColumn} = "
+            $sql = 'UPDATE user_work_states SET saved = ?, saved_at = '
                 . ($active ? 'NOW()' : 'NULL')
                 . ', updated_at = NOW() WHERE anonymous_user_id = ? AND work_cid = ?';
             $pdo->prepare($sql)->execute([$active ? 1 : 0, $uid, $cid]);
         }
 
         if ($previous === $active) {
-            return 0;
+            return 0.0;
         }
         return $active ? $weight : -$weight;
     }
@@ -353,49 +336,34 @@ final class EventService
         }
     }
 
-    private function reactionSummariesWithPdo(PDO $pdo, string $uid, array $cids): array
+    private function saveStatesWithPdo(PDO $pdo, string $uid, array $cids): array
     {
         $cids = $this->normalizeCids($cids);
-        $result = $this->emptyReactionSummaries($cids);
+        $result = $this->emptySaveStates($cids);
         if ($cids === []) {
             return $result;
         }
 
         $placeholders = implode(',', array_fill(0, count($cids), '?'));
-        $counts = $pdo->prepare(
-            "SELECT work_cid, COALESCE(SUM(liked), 0) AS like_count, COALESCE(SUM(saved), 0) AS save_count "
-            . "FROM user_work_states WHERE work_cid IN ({$placeholders}) GROUP BY work_cid"
-        );
-        $counts->execute($cids);
-        foreach ($counts->fetchAll() as $row) {
-            $cid = (string)$row['work_cid'];
-            $result[$cid]['likeCount'] = (int)$row['like_count'];
-            $result[$cid]['saveCount'] = (int)$row['save_count'];
-        }
-
         $viewer = $pdo->prepare(
-            "SELECT work_cid, liked, saved FROM user_work_states "
+            "SELECT work_cid, saved FROM user_work_states "
             . "WHERE anonymous_user_id = ? AND work_cid IN ({$placeholders})"
         );
         $viewer->execute([$uid, ...$cids]);
         foreach ($viewer->fetchAll() as $row) {
             $cid = (string)$row['work_cid'];
-            $result[$cid]['viewerLiked'] = (bool)$row['liked'];
             $result[$cid]['viewerSaved'] = (bool)$row['saved'];
         }
 
         return $result;
     }
 
-    private function emptyReactionSummaries(array $cids): array
+    private function emptySaveStates(array $cids): array
     {
         $result = [];
         foreach ($cids as $cid) {
             $result[$cid] = [
                 'cid' => $cid,
-                'likeCount' => 0,
-                'saveCount' => 0,
-                'viewerLiked' => false,
                 'viewerSaved' => false,
             ];
         }
