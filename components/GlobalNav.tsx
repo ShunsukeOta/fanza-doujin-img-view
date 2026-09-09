@@ -1,8 +1,12 @@
+import { useEffect, useRef, useState } from "react";
+
 import { BookmarkIcon, FeedSwipeIcon, SearchIcon, UserIcon } from "@/components/icons";
 import { navigateToSubpage, resumeMainFromSubpage, type NavOrigin } from "@/src/navigationState";
 
 type NavKey = "saved" | "main" | "search" | "mypage";
 type Props = { active?: NavKey };
+
+const NAVIGATION_MOTION_MS = 240;
 
 function currentPath(): string {
   return window.location.pathname.replace(/\/+$/, "") || "/";
@@ -25,22 +29,57 @@ function currentOrigin(): NavOrigin {
   return "main";
 }
 
+function prefersReducedMotion(): boolean {
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+}
+
 export function GlobalNav({ active = currentNav() }: Props) {
   const origin = currentOrigin();
+  const [visualActive, setVisualActive] = useState<NavKey>(active);
+  const navigationTimerRef = useRef<number | null>(null);
 
-  const goMain = () => {
-    if (origin !== "main") resumeMainFromSubpage();
+  useEffect(() => {
+    setVisualActive(active);
+  }, [active]);
+
+  useEffect(() => () => {
+    if (navigationTimerRef.current !== null) window.clearTimeout(navigationTimerRef.current);
+  }, []);
+
+  const moveThenNavigate = (target: NavKey, navigate: () => void) => {
+    if (navigationTimerRef.current !== null) window.clearTimeout(navigationTimerRef.current);
+    const shouldAnimate = visualActive !== target && !prefersReducedMotion();
+    setVisualActive(target);
+    if (!shouldAnimate) {
+      navigate();
+      return;
+    }
+    navigationTimerRef.current = window.setTimeout(() => {
+      navigationTimerRef.current = null;
+      navigate();
+    }, NAVIGATION_MOTION_MS);
   };
 
-  const goSubpage = (path: "/saved" | "/search") => {
+  const goMain = () => {
+    if (origin === "main") return;
+    moveThenNavigate("main", resumeMainFromSubpage);
+  };
+
+  const goSubpage = (path: "/saved" | "/search", target: "saved" | "search") => {
     if (currentPath() === path) return;
-    navigateToSubpage(path, origin);
+    moveThenNavigate(target, () => navigateToSubpage(path, origin));
+  };
+
+  const goMyPage = () => {
+    if (currentPath() === "/mypage") return;
+    moveThenNavigate("mypage", () => navigateToSubpage("/mypage", origin));
   };
 
   return (
-    <nav className="global-nav" aria-label="グローバルメニュー">
+    <nav className="global-nav" data-active={visualActive} aria-label="グローバルメニュー">
+      <span className="global-nav-indicator" aria-hidden="true" />
       <button
-        className={`global-nav-item${active === "main" ? " is-active" : ""}`}
+        className={`global-nav-item${visualActive === "main" ? " is-active" : ""}`}
         type="button"
         onClick={goMain}
         aria-current={active === "main" ? "page" : undefined}
@@ -50,9 +89,9 @@ export function GlobalNav({ active = currentNav() }: Props) {
         <span>読む</span>
       </button>
       <button
-        className={`global-nav-item${active === "search" ? " is-active" : ""}`}
+        className={`global-nav-item${visualActive === "search" ? " is-active" : ""}`}
         type="button"
-        onClick={() => goSubpage("/search")}
+        onClick={() => goSubpage("/search", "search")}
         aria-current={active === "search" ? "page" : undefined}
         aria-label="詳細検索"
       >
@@ -60,9 +99,9 @@ export function GlobalNav({ active = currentNav() }: Props) {
         <span>検索</span>
       </button>
       <button
-        className={`global-nav-item${active === "saved" ? " is-active" : ""}`}
+        className={`global-nav-item${visualActive === "saved" ? " is-active" : ""}`}
         type="button"
-        onClick={() => goSubpage("/saved")}
+        onClick={() => goSubpage("/saved", "saved")}
         aria-current={active === "saved" ? "page" : undefined}
         aria-label="保存済み"
       >
@@ -70,12 +109,9 @@ export function GlobalNav({ active = currentNav() }: Props) {
         <span>保存</span>
       </button>
       <button
-        className={`global-nav-item${active === "mypage" ? " is-active" : ""}`}
+        className={`global-nav-item${visualActive === "mypage" ? " is-active" : ""}`}
         type="button"
-        onClick={() => {
-          if (currentPath() === "/mypage") return;
-          navigateToSubpage("/mypage", origin);
-        }}
+        onClick={goMyPage}
         aria-label="マイページ"
         aria-current={currentPath() === "/mypage" ? "page" : undefined}
       >
