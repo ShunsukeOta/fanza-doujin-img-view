@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { FloorComingSoon, FloorTabs } from "@/components/FloorTabs";
 import { GlobalNav } from "@/components/GlobalNav";
-import { BookmarkIcon } from "@/components/icons";
+import { BookmarkIcon, ExternalIcon } from "@/components/icons";
 import type { FeedItem } from "@/lib/types";
 import { trackEvent } from "@/src/analytics";
 import { fetchJson } from "@/src/api";
@@ -174,10 +174,14 @@ export function SavedPage() {
                 const priceDrop = typeof item.priceDropValue === "number" && item.priceDropValue > 0
                   ? item.priceDropValue
                   : null;
+                const savedPrice = typeof item.savedPriceValue === "number" ? item.savedPriceValue : null;
+                const currentPrice = typeof item.priceValue === "number" ? item.priceValue : null;
+                const currentPriceLabel = formatPrice(item.price, currentPrice);
+                const savedPriceLabel = savedPrice !== null ? formatPrice("", savedPrice) : "";
 
                 return (
                   <article
-                    className={`favorite-card${item.available === false ? " is-unavailable" : ""}`}
+                    className={`favorite-card${item.available === false ? " is-unavailable" : ""}${priceDrop !== null ? " is-price-drop" : ""}`}
                     key={item.cid}
                   >
                     <div className="favorite-thumb">
@@ -187,6 +191,7 @@ export function SavedPage() {
                         <div className="favorite-noimage">NO IMAGE</div>
                       )}
                       {item.available === false ? <span className="favorite-type">販売終了</span> : null}
+                      {priceDrop !== null ? <span className="favorite-deal-badge">値下げ</span> : null}
                       <button
                         className="favorite-save-toggle"
                         type="button"
@@ -203,12 +208,16 @@ export function SavedPage() {
                       <h2>{item.title || item.cid}</h2>
                       <div className="favorite-meta">
                         <span>★ {item.rating.toFixed(1)} <small>({item.reviews}件)</small></span>
-                        {item.price ? <span>{formatPrice(item.price, item.priceValue ?? null)}</span> : null}
+                        {priceDrop === null && currentPriceLabel ? <span>{currentPriceLabel}</span> : null}
                       </div>
                       {priceDrop !== null ? (
-                        <p className="favorite-price-drop">
-                          保存時より {formatPrice("", priceDrop)} 値下げ
-                        </p>
+                        <div className="favorite-deal">
+                          <span className="favorite-deal-prices">
+                            {savedPriceLabel ? <del>{savedPriceLabel}</del> : null}
+                            {currentPriceLabel ? <strong>{currentPriceLabel}</strong> : null}
+                          </span>
+                          <span>保存時より {formatPrice("", priceDrop)} お得</span>
+                        </div>
                       ) : null}
                       {item.genres.length > 0 ? (
                         <p className="favorite-genres">{item.genres.slice(0, 4).join(" / ")}</p>
@@ -220,11 +229,11 @@ export function SavedPage() {
                           type="button"
                           onClick={() => openWorkInMain(item.cid)}
                         >
-                          サンプル
+                          サンプルを読む
                         </button>
                         {canBuy ? (
                           <a
-                            className="favorite-buy"
+                            className={`favorite-buy${priceDrop !== null ? " is-deal" : ""}`}
                             href={item.affiliateUrl}
                             target="_blank"
                             rel="noopener noreferrer sponsored"
@@ -232,9 +241,14 @@ export function SavedPage() {
                               eventType: "affiliate_click",
                               cid: item.cid,
                               placement: "saved",
+                              metadata: {
+                                priceDropValue: priceDrop,
+                                savedPriceValue: savedPrice,
+                                priceValue: currentPrice,
+                              },
                             }, true)}
                           >
-                            FANZAで見る
+                            {priceDrop !== null ? "値下げ中にFANZAで見る" : "FANZAで見る"} <ExternalIcon />
                           </a>
                         ) : null}
                       </div>
