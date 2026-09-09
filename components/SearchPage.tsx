@@ -2,6 +2,15 @@ import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react
 
 import { GlobalNav } from "@/components/GlobalNav";
 import { ExternalIcon } from "@/components/icons";
+import {
+  WorkCardActions,
+  WorkCardBody,
+  WorkCardFrame,
+  WorkCardMedia,
+  WorkCardMeta,
+  WorkCardTitle,
+  WorkListFeedback,
+} from "@/components/WorkCardPrimitives";
 import type { FeedItem, MetaResponse } from "@/lib/types";
 import { trackEvent } from "@/src/analytics";
 import { fetchJson } from "@/src/api";
@@ -152,6 +161,9 @@ export function SearchPage() {
       { headers: { Accept: "application/json" }, credentials: "same-origin" },
       "ジャンル情報を取得できませんでした",
     ).then(setMeta).catch(() => setMeta(null));
+  }, []);
+
+  useEffect(() => {
     void runSearch(applied);
   }, [applied, runSearch]);
 
@@ -192,9 +204,7 @@ export function SearchPage() {
 
   return (
     <div className="subpage-shell search-shell">
-      <header className="subpage-header search-header">
-        <h1>詳細検索</h1>
-      </header>
+      <header className="subpage-header search-header"><h1>詳細検索</h1></header>
 
       <main className="subpage-content search-content">
         <form className="detail-search-form" onSubmit={submit}>
@@ -210,44 +220,17 @@ export function SearchPage() {
                 {meta?.genres.map((genre) => <option value={genre.id} key={genre.id}>{genre.name}</option>)}
               </select>
             </label>
-            <label className="detail-search-field">
-              <span>サークル</span>
-              <input type="search" maxLength={100} placeholder="サークル名" value={draft.maker} onChange={(event) => setDraft((current) => ({ ...current, maker: event.target.value }))} />
-            </label>
-            <label className="detail-search-field detail-search-field--wide">
-              <span>シリーズ</span>
-              <input type="search" maxLength={100} placeholder="シリーズ名" value={draft.series} onChange={(event) => setDraft((current) => ({ ...current, series: event.target.value }))} />
-            </label>
-            <label className="detail-search-field">
-              <span>価格下限</span>
-              <input type="number" inputMode="numeric" min="0" max="10000000" placeholder="指定なし" value={draft.minPrice} onChange={(event) => setDraft((current) => ({ ...current, minPrice: event.target.value }))} />
-            </label>
-            <label className="detail-search-field">
-              <span>価格上限</span>
-              <input type="number" inputMode="numeric" min="0" max="10000000" placeholder="指定なし" value={draft.maxPrice} onChange={(event) => setDraft((current) => ({ ...current, maxPrice: event.target.value }))} />
-            </label>
-            <label className="detail-search-field">
-              <span>最低サンプル枚数</span>
-              <input type="number" inputMode="numeric" min="1" max="100" placeholder="空欄 = 1" value={draft.minSamples} onChange={(event) => setDraft((current) => ({ ...current, minSamples: event.target.value }))} />
-            </label>
-            <label className="detail-search-field">
-              <span>最低レビュー件数</span>
-              <input type="number" inputMode="numeric" min="0" max="100000" placeholder="空欄 = 0" value={draft.minReviews} onChange={(event) => setDraft((current) => ({ ...current, minReviews: event.target.value }))} />
-            </label>
+            <label className="detail-search-field"><span>サークル</span><input type="search" maxLength={100} placeholder="サークル名" value={draft.maker} onChange={(event) => setDraft((current) => ({ ...current, maker: event.target.value }))} /></label>
+            <label className="detail-search-field detail-search-field--wide"><span>シリーズ</span><input type="search" maxLength={100} placeholder="シリーズ名" value={draft.series} onChange={(event) => setDraft((current) => ({ ...current, series: event.target.value }))} /></label>
+            <label className="detail-search-field"><span>価格下限</span><input type="number" inputMode="numeric" min="0" max="10000000" placeholder="指定なし" value={draft.minPrice} onChange={(event) => setDraft((current) => ({ ...current, minPrice: event.target.value }))} /></label>
+            <label className="detail-search-field"><span>価格上限</span><input type="number" inputMode="numeric" min="0" max="10000000" placeholder="指定なし" value={draft.maxPrice} onChange={(event) => setDraft((current) => ({ ...current, maxPrice: event.target.value }))} /></label>
+            <label className="detail-search-field"><span>最低サンプル枚数</span><input type="number" inputMode="numeric" min="1" max="100" placeholder="空欄 = 1" value={draft.minSamples} onChange={(event) => setDraft((current) => ({ ...current, minSamples: event.target.value }))} /></label>
+            <label className="detail-search-field"><span>最低レビュー件数</span><input type="number" inputMode="numeric" min="0" max="100000" placeholder="空欄 = 0" value={draft.minReviews} onChange={(event) => setDraft((current) => ({ ...current, minReviews: event.target.value }))} /></label>
             <fieldset className="detail-search-rating detail-search-field--wide">
               <legend>最低評価</legend>
               <div className="detail-rating-stars" role="group" aria-label="最低評価">
                 {RATING_OPTIONS.map((rating) => (
-                  <button
-                    type="button"
-                    className={draft.minRating >= rating ? "is-active" : ""}
-                    aria-pressed={draft.minRating === rating}
-                    aria-label={`評価${rating}以上${draft.minRating === rating ? "を解除" : ""}`}
-                    onClick={() => setDraft((current) => ({ ...current, minRating: current.minRating === rating ? 0 : rating }))}
-                    key={rating}
-                  >
-                    ★
-                  </button>
+                  <button type="button" className={draft.minRating >= rating ? "is-active" : ""} aria-pressed={draft.minRating === rating} aria-label={`評価${rating}以上${draft.minRating === rating ? "を解除" : ""}`} onClick={() => setDraft((current) => ({ ...current, minRating: current.minRating === rating ? 0 : rating }))} key={rating}>★</button>
                 ))}
                 <span>{draft.minRating ? `${draft.minRating}以上` : "未指定"}</span>
               </div>
@@ -255,10 +238,7 @@ export function SearchPage() {
             <label className="detail-search-field detail-search-field--wide">
               <span>並び順</span>
               <select value={draft.sort} onChange={(event) => setDraft((current) => ({ ...current, sort: event.target.value as SearchSort }))}>
-                <option value="popular">人気順</option>
-                <option value="rating">評価順</option>
-                <option value="new">新着順</option>
-                <option value="price_asc">価格が安い順</option>
+                <option value="popular">人気順</option><option value="rating">評価順</option><option value="new">新着順</option><option value="price_asc">価格が安い順</option>
               </select>
             </label>
           </div>
@@ -270,11 +250,7 @@ export function SearchPage() {
         </form>
 
         <section className="search-results" aria-live="polite">
-          <div className="search-results-head">
-            <h2>検索結果</h2>
-            <span><strong>{total.toLocaleString("ja-JP")}</strong>件</span>
-          </div>
-
+          <div className="search-results-head"><h2>検索結果</h2><span><strong>{total.toLocaleString("ja-JP")}</strong>件</span></div>
           {loading ? (
             <div className="subpage-state"><div className="spinner" aria-hidden="true" /><strong>作品を検索しています</strong></div>
           ) : error && items.length === 0 ? (
@@ -283,59 +259,36 @@ export function SearchPage() {
             <div className="subpage-state"><strong>条件に一致する作品がありません</strong><p>条件を少し緩めて再検索してください。</p></div>
           ) : (
             <>
-              <div className="search-result-grid">
+              <div className="work-grid search-result-grid">
                 {items.map((item) => {
                   const canBuy = item.available !== false && isHttpUrl(item.affiliateUrl);
                   const priceLabel = formatPrice(item.price, item.priceValue ?? null);
                   return (
-                    <article className="search-result-card" key={item.cid}>
-                      <button className="search-result-thumb" type="button" onClick={() => openWorkInMain(item.cid)} aria-label={`${item.title}のサンプルを読む`}>
+                    <WorkCardFrame className="search-result-card" key={item.cid}>
+                      <button className="work-card-media search-result-thumb" type="button" onClick={() => openWorkInMain(item.cid)} aria-label={`${item.title}のサンプルを読む`}>
                         {item.images[0] ? <img src={item.images[0]} alt="" loading="lazy" decoding="async" /> : <span>画像なし</span>}
                         {item.viewerSaved ? <span className="search-result-saved">保存済み</span> : null}
                       </button>
-                      <div className="search-result-body">
-                        <h3>{item.title || item.cid}</h3>
-                        {item.maker ? <p className="search-result-maker">{item.maker}</p> : null}
-                        <div className="search-result-meta">
-                          <span>★ {item.rating.toFixed(1)} <small>({item.reviews}件)</small></span>
-                          {priceLabel ? <span>{priceLabel}</span> : null}
-                        </div>
-                        {item.genres.length ? <p className="search-result-genres">{item.genres.slice(0, 3).join(" / ")}</p> : null}
-                        {item.series?.length ? <p className="search-result-series">{item.series.slice(0, 2).join(" / ")}</p> : null}
-                        <div className={`search-result-actions${canBuy ? " has-buy" : ""}`}>
-                          <button className="search-result-open" type="button" onClick={() => openWorkInMain(item.cid)}>サンプルを読む</button>
+                      <WorkCardBody>
+                        <WorkCardTitle>{item.title || item.cid}</WorkCardTitle>
+                        {item.maker ? <p className="work-card-subtitle">{item.maker}</p> : null}
+                        <WorkCardMeta><span>★ {item.rating.toFixed(1)} <small>({item.reviews}件)</small></span>{priceLabel ? <span>{priceLabel}</span> : null}</WorkCardMeta>
+                        {item.genres.length ? <p className="work-card-tags">{item.genres.slice(0, 3).join(" / ")}</p> : null}
+                        {item.series?.length ? <p className="work-card-tags">{item.series.slice(0, 2).join(" / ")}</p> : null}
+                        <WorkCardActions className={canBuy ? "has-buy" : ""}>
+                          <button className="work-card-secondary" type="button" onClick={() => openWorkInMain(item.cid)}>サンプルを読む</button>
                           {canBuy ? (
-                            <a
-                              className="search-result-buy"
-                              href={item.affiliateUrl}
-                              target="_blank"
-                              rel="noopener noreferrer sponsored"
-                              onClick={() => trackEvent({
-                                eventType: "affiliate_click",
-                                cid: item.cid,
-                                placement: "search",
-                                metadata: {
-                                  rating: item.rating,
-                                  reviews: item.reviews,
-                                  priceValue: item.priceValue ?? null,
-                                },
-                              }, true)}
-                            >
+                            <a className="work-card-primary search-result-buy" href={item.affiliateUrl} target="_blank" rel="noopener noreferrer sponsored" onClick={() => trackEvent({ eventType: "affiliate_click", cid: item.cid, placement: "search", metadata: { rating: item.rating, reviews: item.reviews, priceValue: item.priceValue ?? null } }, true)}>
                               FANZAで見る <ExternalIcon />
                             </a>
                           ) : null}
-                        </div>
-                      </div>
-                    </article>
+                        </WorkCardActions>
+                      </WorkCardBody>
+                    </WorkCardFrame>
                   );
                 })}
               </div>
-              {error ? <p className="saved-inline-error">{error}</p> : null}
-              {hasMore && nextCursor !== null ? (
-                <div className="saved-load-more">
-                  <button type="button" disabled={loadingMore} onClick={() => void runSearch(applied, nextCursor, true)}>{loadingMore ? "読み込み中…" : "さらに表示"}</button>
-                </div>
-              ) : null}
+              <WorkListFeedback error={error} hasMore={hasMore && nextCursor !== null} loadingMore={loadingMore} onLoadMore={() => { if (nextCursor !== null) void runSearch(applied, nextCursor, true); }} />
             </>
           )}
         </section>
