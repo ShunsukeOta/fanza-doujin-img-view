@@ -10,6 +10,7 @@ import { SearchPage } from "@/components/SearchPage";
 import { SwipePreviewApp } from "@/components/SwipePreviewApp";
 import "@/styles/globals.css";
 import "@/styles/navigation.css";
+import "@/styles/work-cards.css";
 import "@/styles/pages.css";
 import "@/styles/reader.css";
 import "@/styles/reader-zoom.css";
@@ -21,6 +22,7 @@ import { hasAgeVerification } from "@/src/ageVerification";
 import { startAnalytics } from "@/src/analytics";
 import { installCommerceCtaTracking } from "@/src/commerceTracking";
 import { installMainResumeLifecycle, prepareMainResumeFallback } from "@/src/navigationState";
+import { isKnownStandalonePage, normalizePathname, workCidFromPath } from "@/src/routes";
 import { installViewportSizing } from "@/src/viewport";
 
 function registerServiceWorker(): void {
@@ -30,20 +32,14 @@ function registerServiceWorker(): void {
   }, { once: true });
 }
 
-function workCidFromPath(pathname: string): string {
-  const match = pathname.match(/^\/work\/([^/]+)$/);
-  if (!match) return "";
-  try {
-    return decodeURIComponent(match[1]).slice(0, 256);
-  } catch {
-    return "";
-  }
-}
-
 function MainExperience({ initialCid }: { initialCid: string }) {
   useEffect(() => {
-    installMainResumeLifecycle();
-    return installCommerceCtaTracking();
+    const uninstallResume = installMainResumeLifecycle();
+    const uninstallCommerce = installCommerceCtaTracking();
+    return () => {
+      uninstallResume();
+      uninstallCommerce();
+    };
   }, []);
 
   return <SwipePreviewApp initialCid={initialCid} />;
@@ -63,12 +59,10 @@ function ProtectedExperience({ children }: { children: ReactNode }) {
   return children;
 }
 
-const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
-const protectedSubpages = ["/saved", "/search", "/mypage", "/history"];
-if (![...protectedSubpages, "/privacy", "/terms"].includes(pathname)) {
+const pathname = normalizePathname();
+if (!isKnownStandalonePage(pathname)) {
   prepareMainResumeFallback();
 }
-
 const workCid = workCidFromPath(pathname);
 
 const root = document.getElementById("root");
