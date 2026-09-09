@@ -1,0 +1,58 @@
+name: 本番health診断
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: SSHを設定
+        env:
+          SHIN_SSH_PRIVATE_KEY: ${{ secrets.SHIN_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$SHIN_SSH_PRIVATE_KEY"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SHIN_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_shin"
+          chmod 600 "$HOME/.ssh/id_shin"
+          ssh-keyscan -T 10 -p 10022 -H wp983575.wpx.jp > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: 本番healthをCLI診断
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/id_shin" -p 10022 \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
+            wp983575@wp983575.wpx.jp "bash -s" <<'REMOTE'
+          set -u
+          BASE="$HOME/wp983575.wpx.jp"
+          echo '--- php health.php ---'
+          /usr/bin/php8.3 -d display_errors=1 "$BASE/public_html/api/health.php" 2>&1 || true
+          echo
+          echo '--- bootstrap / DB checks ---'
+          /usr/bin/php8.3 -d display_errors=1 -r '
+            require getenv("HOME") . "/wp983575.wpx.jp/app/bootstrap.php";
+            echo "bootstrap=ok\n";
+            echo "db=" . ($database->connection() ? "connected" : "disconnected") . "\n";
+            echo "catalog=" . ($database->hasUsableCatalog() ? "ready" : "not-ready") . "\n";
+            echo "fanza=" . ($fanza->configured() ? "configured" : "not-configured") . "\n";
+          ' 2>&1 || true
+          REMOTE
+
+      - name: HTTP healthレスポンスを確認
+        run: |
+          set -euo pipefail
+          curl --silent --show-error --connect-timeout 10 --max-time 30 \
+            -D /tmp/health-headers -o /tmp/health-body \
+            https://wp983575.wpx.jp/api/health || true
+          echo '--- status / headers ---'
+          cat /tmp/health-headers
+          echo '--- body ---'
+          cat /tmp/health-body
