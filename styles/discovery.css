@@ -136,38 +136,6 @@
   font-weight: 800;
 }
 
-.work-card-subtitle,
-.work-card-tags {
-  margin: 5px 0 0;
-  overflow: hidden;
-  color: var(--text-muted);
-  font-size: var(--font-caption);
-  line-height: 1.45;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.work-card-meta small { color: var(--text-muted); }
-.work-card-secondary {
-  border: 1px solid var(--border-strong);
-  background: var(--surface-control);
-  color: var(--text-secondary);
-}
-.work-card-primary {
-  border: 0;
-  background: #f0f0f0;
-  color: #090909;
-}
-.work-card-primary svg {
-  width: 13px;
-  height: 13px;
-  flex: 0 0 auto;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
 @media (max-width: 380px) {
   .detail-search-grid { gap: var(--space-2); }
   .detail-rating-stars { padding-inline: 7px; }
