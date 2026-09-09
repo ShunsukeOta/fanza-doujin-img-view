@@ -2,7 +2,9 @@ import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react
 
 import { FloorComingSoon, FloorTabs } from "@/components/FloorTabs";
 import { GlobalNav } from "@/components/GlobalNav";
+import { ExternalIcon } from "@/components/icons";
 import type { FeedItem, MetaResponse } from "@/lib/types";
+import { trackEvent } from "@/src/analytics";
 import { fetchJson } from "@/src/api";
 import { floorFromLocation } from "@/src/floors";
 import { openWorkInMain } from "@/src/navigationState";
@@ -43,6 +45,10 @@ function boundedNumberText(value: string | null, min: number, max: number): stri
   if (!value || !/^\d+$/.test(value)) return "";
   const parsed = Number.parseInt(value, 10);
   return String(Math.max(min, Math.min(max, parsed)));
+}
+
+function validAffiliateUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value);
 }
 
 function parseFilters(): SearchFilters {
@@ -310,23 +316,51 @@ export function SearchPage() {
           ) : (
             <>
               <div className="search-result-grid">
-                {items.map((item) => (
-                  <article className="search-result-card" key={item.cid}>
-                    <button className="search-result-thumb" type="button" onClick={() => openWorkInMain(item.cid)} aria-label={`${item.title}のサンプルを読む`}>
-                      {item.images[0] ? <img src={item.images[0]} alt="" loading="lazy" decoding="async" /> : <span>NO IMAGE</span>}
-                    </button>
-                    <div className="search-result-body">
-                      <h3>{item.title || item.cid}</h3>
-                      {item.maker ? <p className="search-result-maker">{item.maker}</p> : null}
-                      <div className="search-result-meta">
-                        <span>★ {item.rating.toFixed(1)} <small>({item.reviews}件)</small></span>
-                        {item.price ? <span>{formatPrice(item.price, item.priceValue ?? null)}</span> : null}
+                {items.map((item) => {
+                  const canBuy = item.available !== false && validAffiliateUrl(item.affiliateUrl);
+                  const priceLabel = formatPrice(item.price, item.priceValue ?? null);
+                  return (
+                    <article className="search-result-card" key={item.cid}>
+                      <button className="search-result-thumb" type="button" onClick={() => openWorkInMain(item.cid)} aria-label={`${item.title}のサンプルを読む`}>
+                        {item.images[0] ? <img src={item.images[0]} alt="" loading="lazy" decoding="async" /> : <span>NO IMAGE</span>}
+                        {item.viewerSaved ? <span className="search-result-saved">保存済み</span> : null}
+                      </button>
+                      <div className="search-result-body">
+                        <h3>{item.title || item.cid}</h3>
+                        {item.maker ? <p className="search-result-maker">{item.maker}</p> : null}
+                        <div className="search-result-meta">
+                          <span>★ {item.rating.toFixed(1)} <small>({item.reviews}件)</small></span>
+                          {priceLabel ? <span>{priceLabel}</span> : null}
+                        </div>
+                        {item.genres.length ? <p className="search-result-genres">{item.genres.slice(0, 3).join(" / ")}</p> : null}
+                        {item.series?.length ? <p className="search-result-series">{item.series.slice(0, 2).join(" / ")}</p> : null}
+                        <div className={`search-result-actions${canBuy ? " has-buy" : ""}`}>
+                          <button className="search-result-open" type="button" onClick={() => openWorkInMain(item.cid)}>サンプルを読む</button>
+                          {canBuy ? (
+                            <a
+                              className="search-result-buy"
+                              href={item.affiliateUrl}
+                              target="_blank"
+                              rel="noopener noreferrer sponsored"
+                              onClick={() => trackEvent({
+                                eventType: "affiliate_click",
+                                cid: item.cid,
+                                placement: "search",
+                                metadata: {
+                                  rating: item.rating,
+                                  reviews: item.reviews,
+                                  priceValue: item.priceValue ?? null,
+                                },
+                              }, true)}
+                            >
+                              FANZAで見る <ExternalIcon />
+                            </a>
+                          ) : null}
+                        </div>
                       </div>
-                      {item.series?.length ? <p className="search-result-series">{item.series.slice(0, 2).join(" / ")}</p> : null}
-                      <button className="search-result-open" type="button" onClick={() => openWorkInMain(item.cid)}>サンプルを読む</button>
-                    </div>
-                  </article>
-                ))}
+                    </article>
+                  );
+                })}
               </div>
               {error ? <p className="saved-inline-error">{error}</p> : null}
               {hasMore && nextCursor !== null ? (
