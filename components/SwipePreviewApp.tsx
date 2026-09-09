@@ -14,6 +14,7 @@ import { WorkCard } from "@/components/WorkCard";
 import type { CatalogResponse, FeedItem } from "@/lib/types";
 import { fetchJson } from "@/src/api";
 import { preloadAndDecodeImage } from "@/src/imagePreload";
+import { rememberActiveReader } from "@/src/readerResumeState";
 import {
   applyReaderControlsVisibility,
   loadReaderSettings,
@@ -224,6 +225,13 @@ export function SwipePreviewApp({ initialCid }: Props) {
   }, [items]);
 
   useEffect(() => {
+    const item = items[activeWork];
+    if (!item) return;
+    const page = pageByCid.current.get(item.cid) ?? 0;
+    rememberActiveReader({ cid: item.cid, pageIndex: page, isCta: page >= item.images.length });
+  }, [activeWork, items]);
+
+  useEffect(() => {
     if (loading || loadingMore || !hasMore || nextCursor === null || items.length === 0 || loadMoreError) return;
     if (activeWork >= items.length - PREFETCH_THRESHOLD) void loadMore();
   }, [activeWork, hasMore, items.length, loadMore, loadMoreError, loading, loadingMore, nextCursor]);
@@ -390,6 +398,9 @@ export function SwipePreviewApp({ initialCid }: Props) {
             onToggleControls={toggleReaderControls}
             onPageChange={(workCid, page, isCta) => {
               pageByCid.current.set(workCid, page);
+              if (index === activeWork) {
+                rememberActiveReader({ cid: workCid, pageIndex: page, isCta });
+              }
               if (isCta || page >= Math.max(0, item.images.length - 2)) {
                 const nextImage = items[index + 1]?.images?.[0];
                 if (nextImage) void preloadAndDecodeImage(nextImage, "high");
