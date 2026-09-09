@@ -15,7 +15,6 @@ import "@/styles/pages.css";
 import "@/styles/reader.css";
 import "@/styles/discovery.css";
 import "@/styles/accessibility.css";
-import "@/styles/commerce.css";
 import "@/styles/viewport.css";
 import { hasAgeVerification } from "@/src/ageVerification";
 import { startAnalytics } from "@/src/analytics";
