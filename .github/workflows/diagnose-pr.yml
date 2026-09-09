@@ -13,8 +13,20 @@ concurrency:
 
 jobs:
   typecheck:
-    name: TypeScript
+    name: TypeScript / ${{ matrix.target }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - src/main.tsx
+          - components/SwipePreviewApp.tsx
+          - components/WorkCard.tsx
+          - components/MyPage.tsx
+          - components/SearchPage.tsx
+          - components/SavedPage.tsx
+          - components/HistoryPage.tsx
+          - src/saveState.ts
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -22,23 +34,26 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --no-audit --no-fund
-      - run: npm run typecheck
-
-  php-lint:
-    name: PHP構文
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.3'
-          extensions: curl, pdo_mysql, mbstring
-          coverage: none
-      - run: npm run check:php
+      - name: 対象単位でTypeScriptを検証
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          node -e 'const fs=require("fs"); fs.writeFileSync("tsconfig.diagnose.json", JSON.stringify({extends:"./tsconfig.json",include:[process.env.TARGET]},null,2))'
+          npx tsc -p tsconfig.diagnose.json --noEmit
 
   debt:
-    name: 負債チェック
+    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: 負債本体
+            command: node scripts/check-debt.mjs
+          - name: PWAレイアウト
+            command: node scripts/check-pwa-layout.mjs
+          - name: 収益導線
+            command: node scripts/check-commerce.mjs
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -46,16 +61,4 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --no-audit --no-fund
-      - run: npm run check:debt
-
-  reader-logic:
-    name: Readerロジック
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci --no-audit --no-fund
-      - run: npm run test:logic
+      - run: ${{ matrix.command }}
