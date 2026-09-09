@@ -17,10 +17,12 @@ import "@/styles/pages.css";
 import "@/styles/reader.css";
 import "@/styles/discovery.css";
 import "@/styles/accessibility.css";
+import "@/styles/viewport.css";
 import { hasAgeVerification } from "@/src/ageVerification";
 import { startAnalytics } from "@/src/analytics";
 import { floorFromLocation, type FloorKey } from "@/src/floors";
 import { installMainResumeLifecycle, prepareMainResumeFallback } from "@/src/navigationState";
+import { installViewportSizing } from "@/src/viewport";
 
 function boundedInt(
   params: URLSearchParams,
@@ -129,6 +131,7 @@ const workCid = workCidFromPath(pathname) || (params.get("cid") ?? "");
 const root = document.getElementById("root");
 if (!root) throw new Error("#root が見つかりません。");
 
+installViewportSizing();
 registerServiceWorker();
 
 if (pathname === "/favorites") {

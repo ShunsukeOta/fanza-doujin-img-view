@@ -145,7 +145,7 @@ jobs:
             "wp983575@wp983575.wpx.jp:wp983575.wpx.jp/.releases/${GITHUB_SHA}/app/config.local.php"
           rm -f /tmp/config.local.php
 
-      - name: 本番切替前にコミック専用DB移行を完了
+      - name: 本番切替前にDB schemaを更新
         shell: bash
         run: |
           set -euo pipefail
@@ -153,7 +153,6 @@ jobs:
             -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
             wp983575@wp983575.wpx.jp "set -eu; APP=\"\$HOME/wp983575.wpx.jp/.releases/${GITHUB_SHA}/app\"; chmod 600 \"\$APP/config.local.php\"; /usr/bin/php8.3 \"\$APP/cron/setup-db.php\"")"
           printf '%s\n' "$SETUP_OUTPUT"
-          printf '%s\n' "$SETUP_OUTPUT" | grep -F 'コミック専用DB cleanup' >/dev/null
           WORKS="$(printf '%s\n' "$SETUP_OUTPUT" | sed -n 's/.*works=\([0-9][0-9]*\).*/\1/p' | tail -n 1)"
           test -n "$WORKS"
           if [ "$WORKS" -eq 0 ]; then

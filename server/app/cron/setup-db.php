@@ -8,7 +8,6 @@ if (PHP_SAPI !== 'cli') {
 }
 
 require dirname(__DIR__) . '/bootstrap.php';
-require_once dirname(__DIR__) . '/src/ComicOnlyCleanup.php';
 
 $pdo = $database->connection();
 if (!$pdo) {
@@ -89,15 +88,6 @@ function rebuild_genre_scores(PDO $pdo): void
         . 'GROUP BY s.anonymous_user_id, wg.genre_id'
     );
 }
-
-$cleanup = \SwipePreview\ComicOnlyCleanup::run($pdo);
-fwrite(
-    STDOUT,
-    'コミック専用DB cleanup removed_works=' . $cleanup['removedWorks']
-    . ' removed_events=' . $cleanup['removedEvents']
-    . ' removed_states=' . $cleanup['removedStates']
-    . ' dropped_columns=' . $cleanup['droppedColumns'] . "\n",
-);
 
 $workColumns = [
     'product_url' => 'TEXT NULL AFTER title',
