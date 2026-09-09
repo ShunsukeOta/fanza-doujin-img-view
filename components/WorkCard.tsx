@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import { BookmarkIcon, ExternalIcon, HeartIcon, ShareIcon } from "@/components/icons";
+import { WorkDetailsAction } from "@/components/WorkDetailsAction";
 import type { FeedItem, ReactionSummary } from "@/lib/types";
 import { createViewId, trackEvent } from "@/src/analytics";
 import { preloadAndDecodeImages } from "@/src/imagePreload";
@@ -882,8 +883,7 @@ export function WorkCard({
   };
 
   const share = async () => {
-    const url = new URL("/", location.origin);
-    url.searchParams.set("cid", item.cid);
+    const url = new URL(`/work/${encodeURIComponent(item.cid)}`, location.origin);
     try {
       if (navigator.share) await navigator.share({ title: item.title || "FANZA同人作品", url: url.toString() });
       else if (navigator.clipboard) await navigator.clipboard.writeText(url.toString());
@@ -1075,6 +1075,21 @@ export function WorkCard({
       </div>
 
       <div className="action-rail">
+        <WorkDetailsAction
+          item={item}
+          priceLabel={ctaPrice}
+          totalPages={totalPages}
+          detailsLoading={detailsLoading}
+          available={details.available}
+          affiliateUrl={affiliateUrl}
+          onOpen={() => void loadDetails()}
+          onAffiliateClick={() => trackEvent({
+            eventType: "affiliate_click",
+            cid: item.cid,
+            ...eventContext(),
+            placement: "details",
+          }, true)}
+        />
         <button
           className={`action-btn${liked ? " is-active" : ""}`}
           type="button"
